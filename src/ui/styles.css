@@ -858,14 +858,24 @@ body {
   }
 }
 
-/* ---- Pigg Island 風スパイク（絵柄テスト） ----
- * ゲーム本体には無関係。試作の質感確認だけが目的なので、共通トークンには寄せず、
- * ここに直接ベタ書きする（本採用するなら別途ちゃんと設計し直す）。 */
+
+/* ---- Pigg Island 風スパイク（絵柄テスト・操作つき） ----
+ * ゲーム本体には無関係。試作の質感・操作感の確認だけが目的なので、共通トークンには寄せず、
+ * ここに直接ベタ書きする（本採用するなら別途ちゃんと設計し直す）。
+ * カメラは Canvas を使わず「プレイヤーを画面中心に固定し、世界ごと逆に動かす」方式。 */
 .pigg-field {
   position: fixed;
   inset: 0;
   overflow: hidden;
   background: #4fb0d8;
+  touch-action: none;
+}
+
+.pigg-world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  will-change: transform;
 }
 
 .pigg-field-ground {
@@ -878,11 +888,72 @@ body {
 .pigg-obj {
   position: absolute;
   transform: translate(-50%, -100%);
-  /* 生成画像は滑らかな塗りなので、ドット絵と違って拡大縮小もぼかしたままでよい */
   image-rendering: auto;
   filter: drop-shadow(0 6px 6px rgb(0 0 0 / 0.18));
   pointer-events: none;
   user-select: none;
+}
+
+/* 仮の主人公（絵が無いのでプレースホルダー）。画面中心に固定し、World 側を動かす。 */
+.pigg-player {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 40px;
+  height: 40px;
+  pointer-events: none;
+  will-change: transform;
+  transition: none;
+}
+
+.pigg-player-shadow {
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  width: 26px;
+  height: 10px;
+  background: rgb(0 0 0 / 0.28);
+  border-radius: 50%;
+  transform: translateX(-50%);
+}
+
+.pigg-player-mark {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  width: 26px;
+  height: 26px;
+  background: #ffcf5c;
+  border: 3px solid #3d2b2e;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  box-shadow: 0 2px 0 rgb(0 0 0 / 0.2);
+}
+
+.pigg-joystick {
+  position: fixed;
+  width: 84px;
+  height: 84px;
+  margin-left: -42px;
+  margin-top: -42px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.35);
+  border: 2px solid rgb(255 255 255 / 0.7);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.pigg-joystick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 40px;
+  height: 40px;
+  margin-left: -20px;
+  margin-top: -20px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.85);
+  box-shadow: 0 2px 4px rgb(0 0 0 / 0.25);
 }
 
 .pigg-field-badge {
@@ -900,6 +971,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  pointer-events: none;
+  z-index: 4;
 }
 
 .pigg-field-badge span {
@@ -921,4 +994,5 @@ body {
   font-size: 15px;
   color: #3d2b2e;
   box-shadow: 0 3px 0 #3d2b2e;
+  z-index: 5;
 }
