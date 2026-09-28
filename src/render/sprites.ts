@@ -414,6 +414,34 @@ function decorShipGrid(): Grid {
   return g;
 }
 
+/** 遺跡入口の崩れたアーチ（見た目だけの置物）。コード版フォールバックは簡素な門形。 */
+function decorArchGrid(): Grid {
+  const g = newGrid(32, 24);
+  rect(g, 2, 8, 7, 23, 'q');
+  rect(g, 24, 8, 29, 23, 'q');
+  rect(g, 2, 4, 29, 9, 'R');
+  for (const [x, y] of [
+    [4, 12],
+    [26, 16],
+  ] as [number, number][]) {
+    circleFill(g, x, y, 1, 'x');
+  }
+  outlineShape(g, 'K');
+  return g;
+}
+
+/** 広場のかがり火（見た目だけの置物）。コード版フォールバックは石の囲いと炎。 */
+function decorCampfireGrid(): Grid {
+  const g = newGrid(16, 16);
+  circleFill(g, 8, 13, 6, 'R');
+  circleFill(g, 8, 13, 4, 'K');
+  rect(g, 6, 10, 9, 13, 'z');
+  circleFill(g, 8, 7, 3, 'd');
+  circleFill(g, 8, 5, 2, 'i');
+  outlineShape(g, 'K');
+  return g;
+}
+
 // ---------------------------------------------------------------------------
 // 設備（遺跡・作業台）
 //
@@ -813,10 +841,13 @@ function fStoneStatueGrid(): Grid {
 // ---------------------------------------------------------------------------
 // プレイヤー（4 方向 × 2 歩行フレーム。right は left を左右反転して作る）
 
-function playerGrid(dir: 'down' | 'up' | 'left', frame: 0 | 1): Grid {
+function playerGrid(dir: 'down' | 'up' | 'left', frame: 0 | 1 | 2): Grid {
   const g = newGrid(16, 16);
-  const frontLeg = frame === 0 ? 'n' : 'N';
-  const backLeg = frame === 0 ? 'N' : 'n';
+  // frame 2 は仮素材では frame 1 と同じ扱い（コード版はあくまでフォールバックなので、
+  // 3 コマ目の専用ポーズまでは持たない）。
+  const step = frame === 0 ? 0 : 1;
+  const frontLeg = step === 0 ? 'n' : 'N';
+  const backLeg = step === 0 ? 'N' : 'n';
   rect(g, 5, 13, 6, 15, frontLeg);
   rect(g, 9, 13, 10, 15, backLeg);
   rect(g, 4, 8, 11, 13, 'm');
@@ -867,6 +898,36 @@ function toolHoeGrid(): Grid {
   rect(g, 7, 2, 8, 12, 'b');
   rect(g, 3, 12, 12, 14, 'O');
   outlineShape(g, 'K');
+  return g;
+}
+
+// ---------------------------------------------------------------------------
+// エフェクト（fx_*）のコード版フォールバック。ごく小さいので簡素な形でよい。
+
+function fxSparkleGrid(): Grid {
+  const g = newGrid(6, 6);
+  px(g, 2, 0, 'e');
+  px(g, 3, 0, 'e');
+  px(g, 2, 5, 'e');
+  px(g, 3, 5, 'e');
+  px(g, 0, 2, 'e');
+  px(g, 0, 3, 'e');
+  px(g, 5, 2, 'e');
+  px(g, 5, 3, 'e');
+  circleFill(g, 2, 2, 1, 'i');
+  return g;
+}
+
+function fxLeafGrid(): Grid {
+  const g = newGrid(6, 6);
+  circleFill(g, 3, 3, 2, 'l');
+  outlineShape(g, 'K');
+  return g;
+}
+
+function fxDustGrid(): Grid {
+  const g = newGrid(6, 6);
+  circleFill(g, 3, 3, 2, 'R');
   return g;
 }
 
@@ -1004,16 +1065,14 @@ export function setArtMode(mode: ArtMode): void {
 
 import atlasMeta from '../assets/kenney-atlas.json';
 import atlasUrl from '../assets/kenney-atlas.png?url';
+import { getTextureImage, type TextureName } from './textures';
 
 type AtlasRect = { x: number; y: number; w: number; h: number };
 const ATLAS: Record<string, AtlasRect> = atlasMeta;
 
 let atlasImage: HTMLImageElement | null = null;
 
-/** Kenney アトラス画像を読み込む。main.tsx から最初の描画前に await される。
- *  失敗しても解決する（getSprite はコード版にフォールバックする）ので、
- *  ここで例外を投げて画面を止めることはない。 */
-export function loadArt(): Promise<void> {
+function loadAtlasImage(): Promise<void> {
   return new Promise((resolve) => {
     if (typeof Image === 'undefined') {
       resolve();
@@ -1028,6 +1087,51 @@ export function loadArt(): Promise<void> {
     };
     img.onerror = () => resolve();
     img.src = atlasUrl as unknown as string;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// ChatGPT 生成のドット絵（src/assets/gen/*.png）。1 art px = 1 png px。
+// tex_*.png（地面テクスチャ）は render/textures.ts が読み込むので、ここでは除く。
+// import.meta.glob は静的解析でファイル一覧を集めるだけ（Image は作らない）ので、
+// このファイル自体は Canvas の無いテスト環境でも import できる。
+
+const genUrls = import.meta.glob('../assets/gen/*.png', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+}) as Record<string, string>;
+
+const genImages = new Map<string, HTMLImageElement>();
+
+function loadGenImages(): Promise<void> {
+  const entries = Object.entries(genUrls).filter(([path]) => !path.includes('/tex_'));
+  if (entries.length === 0 || typeof Image === 'undefined') return Promise.resolve();
+  const loaders = entries.map(
+    ([path, url]) =>
+      new Promise<void>((resolve) => {
+        const name = path.slice(path.lastIndexOf('/') + 1).replace(/\.png$/, '');
+        const img = new Image();
+        img.onload = () => {
+          genImages.set(name, img);
+          resolve();
+        };
+        img.onerror = () => resolve();
+        img.src = url;
+      })
+  );
+  return Promise.all(loaders).then(() => undefined);
+}
+
+/** ChatGPT 生成アセット＋Kenney アトラスを読み込む。main.tsx から最初の描画前に await される。
+ *  どちらも失敗して構わない（getSprite はコード版にフォールバックする）ので、
+ *  ここで例外を投げて画面を止めることはない。main.tsx 側は 1.5 秒のタイムアウトで
+ *  レースさせているが、これらの読み込みはタイムアウト後もバックグラウンドで続き、
+ *  終わり次第キャッシュを消す＝次の rAF フレームで本物の絵に差し替わる。 */
+export function loadArt(): Promise<void> {
+  return Promise.all([loadAtlasImage(), loadGenImages()]).then(() => {
+    bakedCache.clear();
+    dataUrlCache.clear();
   });
 }
 
@@ -1058,6 +1162,8 @@ export type SpriteName =
   | 'decor_brokenStone'
   | 'decor_pillar'
   | 'decor_ship'
+  | 'decor_arch'
+  | 'decor_campfire'
   | 'station_ruins'
   | 'station_workbench'
   | 'station_dock'
@@ -1098,17 +1204,25 @@ export type SpriteName =
   | 'f_veggieStand'
   | 'f_flowerArch'
   | 'f_stoneStatue'
+  | 'f_ruinPillar'
   | 'player_down0'
   | 'player_down1'
+  | 'player_down2'
   | 'player_up0'
   | 'player_up1'
+  | 'player_up2'
   | 'player_left0'
   | 'player_left1'
+  | 'player_left2'
   | 'player_right0'
   | 'player_right1'
+  | 'player_right2'
   | 'tool_axe'
   | 'tool_pick'
   | 'tool_hoe'
+  | 'fx_sparkle'
+  | 'fx_leaf'
+  | 'fx_dust'
   | 'slot_bench'
   | 'slot_landmark'
   | 'slot_path'
@@ -1125,6 +1239,7 @@ export interface SpriteDef {
 
 const playerLeft0 = gridToRows(playerGrid('left', 0));
 const playerLeft1 = gridToRows(playerGrid('left', 1));
+const playerLeft2 = gridToRows(playerGrid('left', 2));
 
 export const SPRITE_DEFS: Record<SpriteName, SpriteDef> = {
   grass: { rows: gridToRows(tileGrass(0, [])), palette: PALETTE },
@@ -1164,6 +1279,8 @@ export const SPRITE_DEFS: Record<SpriteName, SpriteDef> = {
   decor_brokenStone: { rows: gridToRows(decorBrokenStoneGrid()), palette: PALETTE },
   decor_pillar: { rows: gridToRows(decorPillarGrid()), palette: PALETTE },
   decor_ship: { rows: gridToRows(decorShipGrid()), palette: PALETTE },
+  decor_arch: { rows: gridToRows(decorArchGrid()), palette: PALETTE },
+  decor_campfire: { rows: gridToRows(decorCampfireGrid()), palette: PALETTE },
   station_ruins: { rows: gridToRows(stationRuinsGrid()), palette: PALETTE },
   station_workbench: { rows: gridToRows(stationWorkbenchGrid()), palette: PALETTE },
   station_dock: { rows: gridToRows(stationDockGrid()), palette: PALETTE },
@@ -1208,19 +1325,28 @@ export const SPRITE_DEFS: Record<SpriteName, SpriteDef> = {
   f_veggieStand: { rows: gridToRows(fVeggieStandGrid()), palette: PALETTE },
   f_flowerArch: { rows: gridToRows(fFlowerArchGrid()), palette: PALETTE },
   f_stoneStatue: { rows: gridToRows(fStoneStatueGrid()), palette: PALETTE },
+  f_ruinPillar: { rows: gridToRows(decorPillarGrid()), palette: PALETTE },
 
   player_down0: { rows: gridToRows(playerGrid('down', 0)), palette: PALETTE },
   player_down1: { rows: gridToRows(playerGrid('down', 1)), palette: PALETTE },
+  player_down2: { rows: gridToRows(playerGrid('down', 2)), palette: PALETTE },
   player_up0: { rows: gridToRows(playerGrid('up', 0)), palette: PALETTE },
   player_up1: { rows: gridToRows(playerGrid('up', 1)), palette: PALETTE },
+  player_up2: { rows: gridToRows(playerGrid('up', 2)), palette: PALETTE },
   player_left0: { rows: playerLeft0, palette: PALETTE },
   player_left1: { rows: playerLeft1, palette: PALETTE },
+  player_left2: { rows: playerLeft2, palette: PALETTE },
   player_right0: { rows: mirrorRows(playerLeft0), palette: PALETTE },
   player_right1: { rows: mirrorRows(playerLeft1), palette: PALETTE },
+  player_right2: { rows: mirrorRows(playerLeft2), palette: PALETTE },
 
   tool_axe: { rows: gridToRows(toolAxeGrid()), palette: PALETTE },
   tool_pick: { rows: gridToRows(toolPickGrid()), palette: PALETTE },
   tool_hoe: { rows: gridToRows(toolHoeGrid()), palette: PALETTE },
+
+  fx_sparkle: { rows: gridToRows(fxSparkleGrid()), palette: PALETTE },
+  fx_leaf: { rows: gridToRows(fxLeafGrid()), palette: PALETTE },
+  fx_dust: { rows: gridToRows(fxDustGrid()), palette: PALETTE },
 
   slot_bench: { rows: gridToRows(slotBenchGrid()), palette: PALETTE },
   slot_landmark: { rows: gridToRows(slotLandmarkGrid()), palette: PALETTE },
@@ -1257,6 +1383,178 @@ function makeCanvas(w: number, h: number): HTMLCanvasElement | OffscreenCanvas {
   c.width = w;
   c.height = h;
   return c;
+}
+
+// ---------------------------------------------------------------------------
+// gen アセット（ChatGPT 生成のドット絵）へのマッピング。
+// SpriteName → src/assets/gen/ のファイル名（拡張子抜き）。
+// ここに無いもの（borderTree/borderRock は色調変更、f_woodPath/f_stonePath は
+// 地面テクスチャの切り出し）は bakeFromGen 内で個別に処理する。
+
+const SPRITE_TO_GEN: Partial<Record<SpriteName, string>> = {
+  tree: 'gen_oak',
+  bigTree: 'gen_pine',
+  palm: 'gen_palm',
+  rock: 'gen_rock',
+  hardRock: 'gen_hardRock',
+  stump: 'gen_stump',
+  rubble: 'gen_rubble',
+  decor_rubble: 'gen_rubble',
+  decor_brokenStone: 'gen_brokenStone',
+  decor_pillar: 'gen_pillar',
+  decor_ship: 'gen_ship',
+  decor_arch: 'gen_arch',
+  decor_campfire: 'gen_campfire',
+  station_ruins: 'gen_monolith',
+  station_workbench: 'gen_workbench',
+  station_dock: 'gen_mooring',
+  sign: 'gen_sign',
+  chest: 'gen_chest',
+  chestOpen: 'gen_chestOpen',
+
+  turnip0: 'gen_turnip0',
+  turnip1: 'gen_turnip1',
+  turnip2: 'gen_turnip2',
+  sunflower0: 'gen_sunflower0',
+  sunflower1: 'gen_sunflower1',
+  sunflower2: 'gen_sunflower2',
+  tomato0: 'gen_tomato0',
+  tomato1: 'gen_tomato1',
+  tomato2: 'gen_tomato2',
+
+  item_wood: 'gen_item_wood',
+  item_stone: 'gen_item_stone',
+  item_copper: 'gen_item_copper',
+  item_turnip: 'gen_item_turnip',
+  item_sunflower: 'gen_item_sunflower',
+  item_tomato: 'gen_item_tomato',
+
+  f_woodFence: 'gen_f_woodFence',
+  f_woodSign: 'gen_f_woodSign',
+  f_woodBench: 'gen_f_woodBench',
+  f_woodDesk: 'gen_f_woodDesk',
+  f_woodWorkbench: 'gen_f_woodWorkbench',
+  f_woodTower: 'gen_f_woodTower',
+  f_stoneFence: 'gen_f_stoneFence',
+  f_stoneBench: 'gen_f_stoneBench',
+  f_stoneOven: 'gen_f_stoneOven',
+  f_stoneLantern: 'gen_f_stoneLantern',
+  f_copperLamp: 'gen_f_copperLamp',
+  f_ruinPillar: 'gen_f_ruinPillar',
+  f_flowerBed: 'gen_f_flowerBed',
+  f_flowerPot: 'gen_f_flowerPot',
+  f_fruitTable: 'gen_f_fruitTable',
+  f_veggieStand: 'gen_f_veggieStand',
+  f_flowerArch: 'gen_f_flowerArch',
+  f_stoneStatue: 'gen_f_stoneStatue',
+
+  player_down0: 'gen_player_down0',
+  player_down1: 'gen_player_down1',
+  player_down2: 'gen_player_down2',
+  player_up0: 'gen_player_up0',
+  player_up1: 'gen_player_up1',
+  player_up2: 'gen_player_up2',
+  player_left0: 'gen_player_left0',
+  player_left1: 'gen_player_left1',
+  player_left2: 'gen_player_left2',
+  player_right0: 'gen_player_right0',
+  player_right1: 'gen_player_right1',
+  player_right2: 'gen_player_right2',
+
+  fx_sparkle: 'gen_fx_sparkle',
+  fx_leaf: 'gen_fx_leaf',
+  fx_dust: 'gen_fx_dust',
+};
+
+/** 「古代の見えない力に塞がれた木・岩」感を出すための、境界ノード用の色調（乗算）。
+ *  素の gen_oak / gen_brokenStone を暗い紫がかった色で乗算し、輪郭（アルファ）は保つ。 */
+const BORDER_TINT = '#5f5878';
+
+function bakeTintedGen(genName: string, tint: string): BakedSprite | null {
+  const img = genImages.get(genName);
+  if (!img) return null;
+  const w = img.naturalWidth * SCALE;
+  const h = img.naturalHeight * SCALE;
+  const canvas = makeCanvas(w, h);
+  const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+  if (ctx) {
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(img, 0, 0, w, h);
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillStyle = tint;
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalCompositeOperation = 'destination-in';
+    ctx.drawImage(img, 0, 0, w, h);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  return { canvas, w, h };
+}
+
+/** 地面テクスチャ（tex_dock / tex_paving）を 16×16 切り出して家具として焼く
+ *  （f_woodPath / f_stonePath 専用。道はワールド座標に応じて切り出し位置をずらし、
+ *  隣の地面のテクスチャと自然につながって見えるようにする）。 */
+const groundCropCache = new Map<string, BakedSprite>();
+
+function bakeGroundTextureCrop(tex: TextureName, srcX: number, srcY: number): BakedSprite {
+  const key = `${tex}:${srcX},${srcY}`;
+  const cached = groundCropCache.get(key);
+  if (cached) return cached;
+  const img = getTextureImage(tex);
+  const w = TERRAIN_TILE_PX * SCALE;
+  const h = TERRAIN_TILE_PX * SCALE;
+  const canvas = makeCanvas(w, h);
+  const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+  if (ctx) {
+    ctx.imageSmoothingEnabled = false;
+    if (img) {
+      ctx.drawImage(img, srcX, srcY, TERRAIN_TILE_PX, TERRAIN_TILE_PX, 0, 0, w, h);
+    } else {
+      ctx.fillStyle = tex === 'dock' ? '#a8744f' : '#a7a9ac';
+      ctx.fillRect(0, 0, w, h);
+    }
+  }
+  const baked = { canvas, w, h };
+  groundCropCache.set(key, baked);
+  return baked;
+}
+
+/** src/assets/gen 側の 1 タイル = 16 art px（terrain.ts の TERRAIN_PX と同じ）。
+ *  ここで再 import すると terrain.ts → sprites.ts の循環になるので定数だけ複製する。 */
+const TERRAIN_TILE_PX = 16;
+
+/** 道の家具（f_woodPath / f_stonePath）をワールド座標に応じて焼く。
+ *  地面テクスチャは 64×64 で 4×4 タイル分敷き詰められているので、
+ *  タイル座標を 4 で割った余りぶんだけずらして切り出せば、周りの地面と自然につながる。 */
+export function getGroundFurnitureSprite(id: 'woodPath' | 'stonePath', worldTx: number, worldTy: number): BakedSprite {
+  const tex: TextureName = id === 'woodPath' ? 'dock' : 'paving';
+  const ox = (((worldTx % 4) + 4) % 4) * TERRAIN_TILE_PX;
+  const oy = (((worldTy % 4) + 4) % 4) * TERRAIN_TILE_PX;
+  return bakeGroundTextureCrop(tex, ox, oy);
+}
+
+/** gen アセットから焼く。対応が無い／画像未読み込みなら null（呼び出し側がフォールバックする）。 */
+function bakeFromGen(name: SpriteName): BakedSprite | null {
+  if (name === 'borderTree') return bakeTintedGen('gen_oak', BORDER_TINT);
+  if (name === 'borderRock') return bakeTintedGen('gen_brokenStone', BORDER_TINT);
+  // f_woodPath / f_stonePath は一般的な「代表アイコン」として原点 (0,0) 切り出しを返す
+  // （クラフト画面・もちもの欄など、ワールド座標が無い場面での表示用）。
+  // 実際にワールドへ敷くときは renderer.ts が getGroundFurnitureSprite を直接呼ぶ。
+  if (name === 'f_woodPath') return bakeGroundTextureCrop('dock', 0, 0);
+  if (name === 'f_stonePath') return bakeGroundTextureCrop('paving', 0, 0);
+
+  const genName = SPRITE_TO_GEN[name];
+  if (!genName) return null;
+  const img = genImages.get(genName);
+  if (!img) return null;
+  const w = img.naturalWidth * SCALE;
+  const h = img.naturalHeight * SCALE;
+  const canvas = makeCanvas(w, h);
+  const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+  if (ctx) {
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(img, 0, 0, w, h);
+  }
+  return { canvas, w, h };
 }
 
 /** アトラスから焼く（Kenney 素材モード）。対応する名前が無ければ null。 */
@@ -1305,6 +1603,8 @@ function bakeFromCode(name: SpriteName): BakedSprite {
 
 function bake(name: SpriteName): BakedSprite {
   if (getArtMode() === 'kenney') {
+    const fromGen = bakeFromGen(name);
+    if (fromGen) return fromGen;
     const fromAtlas = bakeFromAtlas(name);
     if (fromAtlas) return fromAtlas;
   }

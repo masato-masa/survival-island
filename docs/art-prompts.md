@@ -58,3 +58,50 @@
 > facing left (side view) - standing, step A, step B. Row 4: facing right (side view) - standing,
 > step A, step B. Keep the character identical across all 12 frames except the pose. Small dark oval
 > shadow under the feet.
+
+## 地面のテクスチャ — `refs/gen/textures.png`（`swatch: 64` で 64×64 に取り直す）
+
+> Wonderful. Now ground textures for the same game, same pixel scale and palette (Stardew Valley look).
+> Make a sheet of 8 SQUARE seamless tileable texture swatches arranged 4 columns x 2 rows, each swatch
+> exactly 64x64 art pixels, fully filled edge to edge (no outline, no border, no frame, no rounded
+> corners, no drop shadow, no objects), separated by thin flat magenta #FF00FF gaps, no text. The
+> texture must repeat seamlessly when tiled. Row 1: (1) lush green grass - mostly calm even green with
+> subtle darker and lighter pixel clusters and a few tiny grass blade tufts, low contrast so it does not
+> look busy, (2) the same grass with a few tiny white and yellow wildflowers, (3) packed brown dirt path
+> with a few small pebbles, (4) warm light beach sand with subtle grain. Row 2: (5) darker wet sand near
+> the sea, (6) old weathered stone paving - irregular flagstones of varied sizes with thin dark gaps, a
+> little moss and grass in the cracks, (7) weathered wooden dock planks running horizontally with nail
+> dots, (8) calm shallow turquoise sea water with small light ripple highlights.
+
+## 家具 20 点 — `refs/gen/furniture.png`（block 7）
+
+> Perfect. Now a furniture and decoration sheet for the island, same style, same pixel scale (1 tile =
+> 16 art pixels), same palette, flat magenta #FF00FF background, no text, every object well separated
+> with small oval shadow under it. Grid 5 columns x 4 rows, 1 object per cell, each about 1 tile unless
+> noted. Row 1 (wooden series, warm brown wood): wooden fence segment, wooden plank path tile (flat on
+> the ground), decorative log stump sign, wooden bench (2 tiles wide), wooden table. Row 2 (wooden &
+> stone): wooden workbench table with tools, tall wooden lookout tower (1.5 tiles wide, 3 tiles tall),
+> stone path tile (flat flagstones on the ground), low stone wall fence segment, stone bench (2 tiles
+> wide). Row 3 (stone series): stone oven / cooking hearth with a small fire, stone lantern
+> (Japanese-style toro, 1.5 tiles tall), copper lamp post with a warm light (1.5 tiles tall), ancient
+> stone pillar decoration with moss (2 tiles tall), stone statue of a guardian (2 tiles tall). Row 4
+> (garden series, flowers and fruit): flower bed border with red and yellow flowers, clay flower pot
+> with blooming flowers, wooden table with a basket of fruit, small vegetable market stand with a cloth
+> awning (2 tiles wide), wooden flower arch covered in roses (2 tiles wide 2.5 tiles tall).
+
+生成された家具は指定より大きめ（1 マスの物が 1.5〜2 マス）。縮小するとドット絵が崩れるので
+そのままの密度で使い、道の家具だけ地面テクスチャから 1 マスを切り取って使う。
+
+## 作物・アイコン・演出 — `refs/gen/crops.png`（block 9）
+
+> Great. Next sheet, same style, same pixel scale (1 tile = 16 art pixels), same palette, flat magenta
+> #FF00FF background, no text, objects well separated. Grid 6 columns x 3 rows, each object at most 1
+> tile (16x16 art pixels), drawn as it would sit in a tilled soil farm tile but WITHOUT the soil (plant
+> only, no ground, no shadow). Row 1: turnip growth stages - (1) tiny seedling sprout, (2) young leafy
+> plant, (3) ripe turnip with white-purple root visible and big leaves; then sunflower stages (4)
+> sprout, (5) tall green stem with bud, (6) full bloom yellow sunflower (may be 1 tile wide, 2 tiles
+> tall). Row 2: tomato stages (1) sprout, (2) bushy plant with small green tomatoes, (3) plant with ripe
+> red tomatoes; then (4) a sparkle / glint effect star, (5) a small puff of dust cloud, (6) a small
+> leaf particle. Row 3: inventory item icons, each 16x16 with dark outline, no shadow: (1) a chopped
+> wood log, (2) a grey stone chunk, (3) a copper ore nugget, (4) a harvested turnip, (5) a sunflower
+> head, (6) a red tomato.

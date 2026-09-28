@@ -21,8 +21,9 @@ import { nodeAlive } from '@/game/rules';
 import { store } from '@/game/store';
 
 import { TILE, type CameraState, type Viewport, worldToScreen } from './camera';
-import { getSprite, type SpriteName } from './sprites';
+import { getGroundFurnitureSprite, getSprite, type SpriteName } from './sprites';
 import { TERRAIN_PX, type PaintedTerrain } from './terrain';
+import type { TreeInstance } from './forestTrees';
 
 // ---------------------------------------------------------------------------
 // 描画に渡す状態
@@ -45,6 +46,8 @@ export interface RenderState {
   stick: { anchor: Vec2; finger: Vec2 } | null;
   /** 事前描画した地面レイヤー（WorldView がロード時に焼いて渡す）。まだ無ければ null。 */
   terrain: PaintedTerrain | null;
+  /** 森タイルに撒いた木のインスタンス（WorldView が一度だけ生成して渡す）。 */
+  forestTrees: TreeInstance[];
 }
 
 // ---------------------------------------------------------------------------
@@ -55,7 +58,7 @@ interface Particle {
   y: number;
   vx: number;
   vy: number;
-  color: string;
+  sprite: SpriteName; // fx_leaf（木）/ fx_dust（岩）
   startedAt: number;
   lifeMs: number;
 }
@@ -71,15 +74,11 @@ interface Toast {
 const PARTICLE_LIFE_MS = 500;
 const TOAST_LIFE_MS = 900;
 
-const WOOD_BROWN = '#8a5a34';
-const STONE_GREY = '#8b8b8f';
-const LEAF_GREEN = '#5a9a4a';
-
 class Effects {
   particles: Particle[] = [];
   toasts: Toast[] = [];
 
-  private spawnParticles(x: number, y: number, color: string, now: number, count = 5): void {
+  private spawnParticles(x: number, y: number, sprite: SpriteName, now: number, count = 5): void {
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 20 + Math.random() * 40;
@@ -88,7 +87,7 @@ class Effects {
         y,
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed - 30,
-        color,
+        sprite,
         startedAt: now,
         lifeMs: PARTICLE_LIFE_MS,
       });
@@ -103,13 +102,13 @@ class Effects {
     for (const ev of events) {
       switch (ev.type) {
         case 'hit': {
-          const color = ev.kind === 'rock' || ev.kind === 'hardRock' || ev.kind === 'borderRock' ? STONE_GREY : LEAF_GREEN;
-          this.spawnParticles((ev.x + 0.5) * TILE, (ev.y + 0.5) * TILE, color, now, 4);
+          const isStone = ev.kind === 'rock' || ev.kind === 'hardRock' || ev.kind === 'borderRock';
+          this.spawnParticles((ev.x + 0.5) * TILE, (ev.y + 0.5) * TILE, (isStone ? 'fx_dust' : 'fx_leaf') as SpriteName, now, 4);
           break;
         }
         case 'broke': {
-          const color = ev.kind === 'rock' || ev.kind === 'hardRock' || ev.kind === 'borderRock' ? STONE_GREY : WOOD_BROWN;
-          this.spawnParticles((ev.x + 0.5) * TILE, (ev.y + 0.5) * TILE, color, now, 6);
+          const isStone = ev.kind === 'rock' || ev.kind === 'hardRock' || ev.kind === 'borderRock';
+          this.spawnParticles((ev.x + 0.5) * TILE, (ev.y + 0.5) * TILE, (isStone ? 'fx_dust' : 'fx_leaf') as SpriteName, now, 6);
           const parts = Object.entries(ev.drops)
             .filter(([, n]) => (n ?? 0) > 0)
             .map(([id, n]) => `${ITEMS[id as ItemId]?.name ?? id} +${n}`);
@@ -233,6 +232,12 @@ function drawWaterAnimated(
   }
 }
 
+// 見た目だけの置物（ゲームロジック上は存在しない）。座標はタイル単位、スプライトの
+// 下辺中央がここに来る。遺跡入口のアーチは西の通路をまたぐ位置、かがり火は広場の
+// 作業台のそばに置く。
+const RUINS_ARCH = { x: 15.5, y: 28.4 };
+const PLAZA_CAMPFIRE = { x: 30.5, y: 34.7 };
+
 const SLOT_COLORS: Record<SlotAttr, string> = {
   bench: '#c97b4a',
   landmark: '#d64550',
@@ -342,13 +347,15 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
       const name = `${tile.crop}${stage}` as SpriteName;
       drawSpriteAtTile(name, t.x, t.y);
       if (stage === 2) {
-        // 収穫可能：控えめなスパークル
+        // 収穫可能：控えめなスパークル（gen_fx_sparkle。無ければコード版の星形にフォールバック）
         const s = worldToScreen((t.x + 0.5) * TILE, t.y * TILE, camera, viewport);
         const twinkle = 0.4 + 0.4 * Math.sin(now / 180 + hash2(t.x, t.y) * 10);
-        ctx.fillStyle = `rgba(255,255,200,${twinkle.toFixed(2)})`;
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, 2 * scale, 0, Math.PI * 2);
-        ctx.fill();
+        const spr = getSprite('fx_sparkle' as SpriteName);
+        const w = spr.w * scale * 0.6;
+        const h = spr.h * scale * 0.6;
+        ctx.globalAlpha = twinkle;
+        ctx.drawImage(spr.canvas, round(s.x - w / 2), round(s.y - h / 2), round(w), round(h));
+        ctx.globalAlpha = 1;
       }
     }
   }
@@ -444,6 +451,21 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
       if (!slot) continue;
       const sw = slot.w ?? 1;
       const sh = slot.h ?? 1;
+      if (furnitureId === 'woodPath' || furnitureId === 'stonePath') {
+        // 道系の家具だけは地面にぴったり敷く 1 マスのテクスチャ（隣の道・石畳とつながって
+        // 見えるよう、ワールド座標に応じてテクスチャの切り出し位置をずらす）。
+        drawables.push({
+          y: slot.y - 0.5, // 地面とほぼ同じ高さ。他の資源・プレイヤーの下に来てよい
+          draw: () => {
+            const spr = getGroundFurnitureSprite(furnitureId, slot.x, slot.y);
+            const topLeft = worldToScreen(slot.x * TILE, slot.y * TILE, camera, viewport);
+            const w = TILE * scale;
+            const h = TILE * scale;
+            ctx.drawImage(spr.canvas, round(topLeft.x), round(topLeft.y), round(w), round(h));
+          },
+        });
+        continue;
+      }
       drawables.push({
         y: slot.y + sh - 1,
         draw: () => drawSpriteAtWorld(`f_${furnitureId}` as SpriteName, (slot.x + sw / 2) * TILE, (slot.y + sh) * TILE),
@@ -451,9 +473,38 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     }
   }
 
-  // プレイヤー
+  // --- 森の木（本物のスプライト。地面レイヤーには焼かず、プレイヤーと同じ y ソートに乗せる
+  //     ことで「北側を歩くと梢に隠れ、南側を歩くと手前に出る」を成立させる）。
+  //     可視範囲 ±2 マスの余裕を持たせて、画面端で木が急に消えないようにする。 ---
+  {
+    const treeMinX = minTx - 2;
+    const treeMaxX = maxTx + 2;
+    const treeMinY = minTy - 3;
+    const treeMaxY = maxTy + 1;
+    for (const t of state.forestTrees) {
+      if (t.x < treeMinX || t.x > treeMaxX || t.y < treeMinY || t.y > treeMaxY) continue;
+      drawables.push({
+        y: t.y,
+        draw: () => drawSpriteAtWorld(t.sprite, t.x * TILE, t.y * TILE),
+      });
+    }
+  }
+
+  // --- 遺跡入口のアーチ・広場のかがり火（見た目だけの置物。ゲームロジックには存在しない）。 ---
+  drawables.push({
+    y: RUINS_ARCH.y,
+    draw: () => drawSpriteAtWorld('decor_arch' as SpriteName, RUINS_ARCH.x * TILE, RUINS_ARCH.y * TILE),
+  });
+  drawables.push({
+    y: PLAZA_CAMPFIRE.y,
+    draw: () => drawSpriteAtWorld('decor_campfire' as SpriteName, PLAZA_CAMPFIRE.x * TILE, PLAZA_CAMPFIRE.y * TILE),
+  });
+
+  // プレイヤー：歩行中は 1→0→2→0 を ~130ms ごとに回す（0 が「両足そろい」の中間ポーズ、
+  // 1/2 が左右の踏み出し）。止まっているときは 0 固定。
   const moving = state.moving;
-  const frame = moving ? Math.floor(now / 150) % 2 : 0;
+  const WALK_CYCLE = [1, 0, 2, 0] as const;
+  const frame = moving ? WALK_CYCLE[Math.floor(now / 130) % 4]! : 0;
   const playerSprite = `player_${save.player.dir}${frame}` as SpriteName;
   drawables.push({
     y: save.player.y,
@@ -497,17 +548,19 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     }
   }
 
-  // --- パーティクル ---
+  // --- パーティクル（木くず・土ぼこり。小さく数個、フェードしながら飛ぶ） ---
   for (const p of effects.particles) {
     const t = (now - p.startedAt) / p.lifeMs;
     if (t > 1) continue;
     const px = p.x + p.vx * (t * p.lifeMs) / 1000;
     const py = p.y + p.vy * (t * p.lifeMs) / 1000 + 60 * t * t; // 簡易重力
     const s = worldToScreen(px, py, camera, viewport);
-    const size = Math.max(1, 3 * scale * (1 - t * 0.5));
+    const spr = getSprite(p.sprite);
+    const shrink = 1 - t * 0.4;
+    const w = Math.max(1, spr.w * scale * 0.5 * shrink);
+    const h = Math.max(1, spr.h * scale * 0.5 * shrink);
     ctx.globalAlpha = 1 - t;
-    ctx.fillStyle = p.color;
-    ctx.fillRect(round(s.x - size / 2), round(s.y - size / 2), round(size), round(size));
+    ctx.drawImage(spr.canvas, round(s.x - w / 2), round(s.y - h / 2), round(w), round(h));
     ctx.globalAlpha = 1;
   }
 

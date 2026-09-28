@@ -196,12 +196,13 @@ function components(small) {
       }
       if (count >= 12) boxes.push({ x0, y0, x1, y1, count });
     }
-  // 行ごとに並べる：中心の y が近いもの同士を同じ行とみなす
-  boxes.sort((a, b) => (a.y0 + a.y1) / 2 - (b.y0 + b.y1) / 2);
+  // 行ごとに並べる：下端（接地している高さ）が近いもの同士を同じ行とみなす。
+  // 中心で比べると、同じ行でも背の高い物（ヒマワリ）と低い物（芽）で中心がずれて行が割れる。
+  boxes.sort((a, b) => a.y1 - b.y1);
   const rowsOut = [];
   for (const b of boxes) {
-    const cy = (b.y0 + b.y1) / 2;
-    const row = rowsOut.find((r) => Math.abs(r.cy - cy) < Math.max(8, (b.y1 - b.y0) / 2));
+    const cy = b.y1;
+    const row = rowsOut.find((r) => Math.abs(r.cy - cy) < 12);
     if (row) row.items.push(b);
     else rowsOut.push({ cy, items: [b] });
   }
@@ -289,8 +290,70 @@ async function sliceGrid(sheet, small) {
   return manifest;
 }
 
+/**
+ * 地面のテクスチャ見本（正方形がマゼンタの隙間で並んでいる）。見本ごとに外接矩形を取り、
+ * sheet.swatch × sheet.swatch ドットに、各セルの中央付近の平均色で取り直す。
+ * 見本は 1 枚ごとに大きさがわずかに違うので、共通の block ではなく見本ごとの幅から割る。
+ */
+async function sliceSwatches(sheet, img) {
+  const { data, w, h } = img;
+  const N = sheet.swatch;
+  // 背景でない画素の塊を、粗い格子（8px）で探す
+  const G = 8;
+  const gw = Math.floor(w / G);
+  const gh = Math.floor(h / G);
+  const solid = new Uint8Array(gw * gh);
+  for (let y = 0; y < gh; y++)
+    for (let x = 0; x < gw; x++) {
+      const i = ((y * G + G / 2) * w + (x * G + G / 2)) * 4;
+      solid[y * gw + x] = isBg(data[i], data[i + 1], data[i + 2]) ? 0 : 1;
+    }
+  const small = { data: new Uint8ClampedArray(gw * gh * 4), w: gw, h: gh };
+  for (let k = 0; k < gw * gh; k++) small.data[k * 4 + 3] = solid[k] ? 255 : 0;
+  const boxes = components(small);
+  const manifest = {};
+  for (let k = 0; k < sheet.names.length && k < boxes.length; k++) {
+    const b = boxes[k];
+    // 粗い格子の外接矩形を、元画像で 1px 単位に詰め直す（縁の半端なブロックを落とす）
+    const x0 = b.x0 * G + G;
+    const y0 = b.y0 * G + G;
+    const x1 = (b.x1 + 1) * G - G;
+    const y1 = (b.y1 + 1) * G - G;
+    const cell = Math.min(x1 - x0, y1 - y0) / N;
+    const buf = Buffer.alloc(N * N * 4);
+    for (let cy = 0; cy < N; cy++)
+      for (let cx = 0; cx < N; cx++) {
+        let r = 0,
+          g = 0,
+          bl = 0,
+          n = 0;
+        for (let sy = 0.3; sy <= 0.7; sy += 0.2)
+          for (let sx = 0.3; sx <= 0.7; sx += 0.2) {
+            const px = Math.floor(x0 + (cx + sx) * cell);
+            const py = Math.floor(y0 + (cy + sy) * cell);
+            const i = (py * w + px) * 4;
+            r += data[i];
+            g += data[i + 1];
+            bl += data[i + 2];
+            n++;
+          }
+        const d = (cy * N + cx) * 4;
+        buf[d] = Math.round(r / n);
+        buf[d + 1] = Math.round(g / n);
+        buf[d + 2] = Math.round(bl / n);
+        buf[d + 3] = 255;
+      }
+    const name = sheet.names[k];
+    await sharp(buf, { raw: { width: N, height: N, channels: 4 } }).png().toFile(join(OUT, `${name}.png`));
+    manifest[name] = { w: N, h: N };
+  }
+  console.log(`${sheet.file}: 見本 ${boxes.length} 枚 → ${N}×${N}`);
+  return manifest;
+}
+
 async function sliceSheet(sheet) {
   const img = await load(join(root, 'refs', 'gen', sheet.file));
+  if (sheet.swatch) return sliceSwatches(sheet, img);
   const block = sheet.block ?? estimateBlock(img);
   const { ox, oy } = estimateOffset(img, block);
   const small = downsample(img, block, ox, oy);

@@ -39,4 +39,35 @@ export const SHEETS = [
       'gen_player_right0', 'gen_player_right1', 'gen_player_right2',
     ],
   },
+  {
+    // 地面のテクスチャ見本（64×64 ドット、繰り返して敷く）。
+    id: 'textures',
+    file: 'textures.png',
+    swatch: 64,
+    names: ['tex_grass', 'tex_grassFlowers', 'tex_dirt', 'tex_sand', 'tex_wetSand', 'tex_paving', 'tex_dock', 'tex_water'],
+  },
+  {
+    // 家具。f_<家具 id> の絵として使う（名前は gen_f_<家具 id>）。
+    id: 'furniture',
+    file: 'furniture.png',
+    block: 7,
+    names: [
+      'gen_f_woodFence', 'gen_f_woodPath', 'gen_f_woodSign', 'gen_f_woodBench', 'gen_f_woodDesk',
+      'gen_f_woodWorkbench', 'gen_f_woodTower', 'gen_f_stonePath', 'gen_f_stoneFence', 'gen_f_stoneBench',
+      'gen_f_stoneOven', 'gen_f_stoneLantern', 'gen_f_copperLamp', 'gen_f_ruinPillar', 'gen_f_stoneStatue',
+      'gen_f_flowerBed', 'gen_f_flowerPot', 'gen_f_fruitTable', 'gen_f_veggieStand', 'gen_f_flowerArch',
+    ],
+  },
+  {
+    // 作物の成長段階・演出・アイテムのアイコン。上から左→右の順。
+    // きらめきは星が 2 つに分かれて塊が 1 つ多くなる（小さい方は大きい順で落ちる）。
+    id: 'crops',
+    file: 'crops.png',
+    block: 9,
+    names: [
+      'gen_turnip0', 'gen_turnip1', 'gen_turnip2', 'gen_sunflower0', 'gen_sunflower1', 'gen_sunflower2',
+      'gen_tomato0', 'gen_tomato1', 'gen_tomato2', 'gen_fx_sparkle', 'gen_fx_dust', 'gen_fx_leaf',
+      'gen_item_wood', 'gen_item_stone', 'gen_item_copper', 'gen_item_turnip', 'gen_item_sunflower', 'gen_item_tomato',
+    ],
+  },
 ];

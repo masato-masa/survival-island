@@ -72,51 +72,235 @@
     "h": 27
   },
   "gen_player_down0": {
-    "w": 38,
-    "h": 45
+    "w": 22,
+    "h": 37
   },
   "gen_player_down1": {
-    "w": 38,
-    "h": 45
+    "w": 22,
+    "h": 37
   },
   "gen_player_down2": {
-    "w": 38,
-    "h": 45
+    "w": 22,
+    "h": 37
   },
   "gen_player_up0": {
-    "w": 38,
-    "h": 45
+    "w": 22,
+    "h": 37
   },
   "gen_player_up1": {
-    "w": 38,
-    "h": 45
+    "w": 22,
+    "h": 37
   },
   "gen_player_up2": {
-    "w": 38,
-    "h": 45
+    "w": 22,
+    "h": 37
   },
   "gen_player_left0": {
-    "w": 38,
-    "h": 45
+    "w": 22,
+    "h": 37
   },
   "gen_player_left1": {
-    "w": 38,
-    "h": 45
+    "w": 22,
+    "h": 37
   },
   "gen_player_left2": {
-    "w": 38,
-    "h": 45
+    "w": 22,
+    "h": 37
   },
   "gen_player_right0": {
-    "w": 38,
-    "h": 45
+    "w": 22,
+    "h": 37
   },
   "gen_player_right1": {
-    "w": 38,
-    "h": 45
+    "w": 22,
+    "h": 37
   },
   "gen_player_right2": {
-    "w": 38,
-    "h": 45
+    "w": 22,
+    "h": 37
+  },
+  "tex_grass": {
+    "w": 64,
+    "h": 64
+  },
+  "tex_grassFlowers": {
+    "w": 64,
+    "h": 64
+  },
+  "tex_dirt": {
+    "w": 64,
+    "h": 64
+  },
+  "tex_sand": {
+    "w": 64,
+    "h": 64
+  },
+  "tex_wetSand": {
+    "w": 64,
+    "h": 64
+  },
+  "tex_paving": {
+    "w": 64,
+    "h": 64
+  },
+  "tex_dock": {
+    "w": 64,
+    "h": 64
+  },
+  "tex_water": {
+    "w": 64,
+    "h": 64
+  },
+  "gen_f_woodFence": {
+    "w": 27,
+    "h": 25
+  },
+  "gen_f_woodPath": {
+    "w": 26,
+    "h": 21
+  },
+  "gen_f_woodSign": {
+    "w": 16,
+    "h": 27
+  },
+  "gen_f_woodBench": {
+    "w": 29,
+    "h": 28
+  },
+  "gen_f_woodDesk": {
+    "w": 27,
+    "h": 27
+  },
+  "gen_f_woodWorkbench": {
+    "w": 29,
+    "h": 26
+  },
+  "gen_f_woodTower": {
+    "w": 20,
+    "h": 39
+  },
+  "gen_f_stonePath": {
+    "w": 26,
+    "h": 25
+  },
+  "gen_f_stoneFence": {
+    "w": 31,
+    "h": 23
+  },
+  "gen_f_stoneBench": {
+    "w": 30,
+    "h": 22
+  },
+  "gen_f_stoneOven": {
+    "w": 28,
+    "h": 34
+  },
+  "gen_f_stoneLantern": {
+    "w": 17,
+    "h": 32
+  },
+  "gen_f_copperLamp": {
+    "w": 15,
+    "h": 35
+  },
+  "gen_f_ruinPillar": {
+    "w": 16,
+    "h": 37
+  },
+  "gen_f_stoneStatue": {
+    "w": 22,
+    "h": 34
+  },
+  "gen_f_flowerBed": {
+    "w": 29,
+    "h": 22
+  },
+  "gen_f_flowerPot": {
+    "w": 16,
+    "h": 22
+  },
+  "gen_f_fruitTable": {
+    "w": 22,
+    "h": 24
+  },
+  "gen_f_veggieStand": {
+    "w": 29,
+    "h": 31
+  },
+  "gen_f_flowerArch": {
+    "w": 32,
+    "h": 38
+  },
+  "gen_turnip0": {
+    "w": 11,
+    "h": 9
+  },
+  "gen_turnip1": {
+    "w": 17,
+    "h": 16
+  },
+  "gen_turnip2": {
+    "w": 20,
+    "h": 24
+  },
+  "gen_sunflower0": {
+    "w": 13,
+    "h": 15
+  },
+  "gen_sunflower1": {
+    "w": 14,
+    "h": 23
+  },
+  "gen_sunflower2": {
+    "w": 16,
+    "h": 29
+  },
+  "gen_tomato0": {
+    "w": 11,
+    "h": 10
+  },
+  "gen_tomato1": {
+    "w": 19,
+    "h": 23
+  },
+  "gen_tomato2": {
+    "w": 19,
+    "h": 24
+  },
+  "gen_fx_sparkle": {
+    "w": 10,
+    "h": 11
+  },
+  "gen_fx_dust": {
+    "w": 14,
+    "h": 14
+  },
+  "gen_fx_leaf": {
+    "w": 7,
+    "h": 9
+  },
+  "gen_item_wood": {
+    "w": 14,
+    "h": 15
+  },
+  "gen_item_stone": {
+    "w": 14,
+    "h": 14
+  },
+  "gen_item_copper": {
+    "w": 13,
+    "h": 14
+  },
+  "gen_item_turnip": {
+    "w": 14,
+    "h": 19
+  },
+  "gen_item_sunflower": {
+    "w": 15,
+    "h": 15
+  },
+  "gen_item_tomato": {
+    "w": 13,
+    "h": 15
   }
 }

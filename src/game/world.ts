@@ -48,6 +48,7 @@ const DIRECT_GROUND: Record<string, Ground> = {
   L: 'paving',
   Q: 'dock',
   S: 'water', // 商船（Decor）の下は海
+  p: 'dirt', // 道の配置スペースは道の上にある（周りの多数決だと草になって道が途切れる）
 };
 
 const WALKABLE_GROUND: Ground[] = ['grass', 'sand', 'dirt', 'paving', 'dock', 'foundation'];
@@ -132,7 +133,8 @@ function buildFrom(map: string[], areaMap: string[]): World {
       let best: Ground = 'grass';
       let bestCount = 0;
       for (const [g, c] of counts) {
-        if (c > bestCount) {
+        // 同数なら草より道・石畳・砂などを選ぶ（道の途中に置いた物の下が草にならないように）
+        if (c > bestCount || (c === bestCount && best === 'grass')) {
           bestCount = c;
           best = g;
         }
