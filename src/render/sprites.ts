@@ -756,6 +756,85 @@ function slotFenceGrid(): Grid {
 }
 
 // ---------------------------------------------------------------------------
+// 素材モード（Kenney / 仮素材）
+//
+// 既定は 'kenney'。localStorage に保存し、次に開いたときも保たれる
+// （settings.ts の sound/haptics と同じ形）。モジュール読み込み時ではなく、
+// 値が最初に要求されたタイミングで localStorage を読むのは、テスト環境や
+// サーバーサイドでも安全に import できるようにするため。
+
+export type ArtMode = 'kenney' | 'code';
+
+const ART_KEY = 'survival-island:art';
+
+let artMode: ArtMode | null = null;
+
+function readArtMode(): ArtMode {
+  try {
+    const raw = localStorage.getItem(ART_KEY);
+    return raw === 'code' ? 'code' : 'kenney';
+  } catch {
+    return 'kenney';
+  }
+}
+
+function writeArtMode(mode: ArtMode): void {
+  try {
+    localStorage.setItem(ART_KEY, mode);
+  } catch {
+    // 保存できなくても遊べる
+  }
+}
+
+export function getArtMode(): ArtMode {
+  if (artMode === null) artMode = readArtMode();
+  return artMode;
+}
+
+export function setArtMode(mode: ArtMode): void {
+  artMode = mode;
+  writeArtMode(mode);
+  bakedCache.clear();
+  dataUrlCache.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Kenney アトラス（scripts/build-atlas.mjs が生成する PNG + JSON）
+//
+// JSON は素の座標データなので DOM に触らず import できる。PNG は Vite の
+// `?url` でファイル URL だけを取り、実際に読み込むのは loadArt() が呼ばれた
+// ときだけ（= このファイル自体はモジュール読み込み時に Image を作らない）。
+
+import atlasMeta from '../assets/kenney-atlas.json';
+import atlasUrl from '../assets/kenney-atlas.png?url';
+
+type AtlasRect = { x: number; y: number; w: number; h: number };
+const ATLAS: Record<string, AtlasRect> = atlasMeta;
+
+let atlasImage: HTMLImageElement | null = null;
+
+/** Kenney アトラス画像を読み込む。main.tsx から最初の描画前に await される。
+ *  失敗しても解決する（getSprite はコード版にフォールバックする）ので、
+ *  ここで例外を投げて画面を止めることはない。 */
+export function loadArt(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof Image === 'undefined') {
+      resolve();
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      atlasImage = img;
+      bakedCache.clear();
+      dataUrlCache.clear();
+      resolve();
+    };
+    img.onerror = () => resolve();
+    img.src = atlasUrl as unknown as string;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // スプライト名とその定義
 
 export type SpriteName =
@@ -959,22 +1038,40 @@ function hasOffscreenCanvas(): boolean {
   return typeof OffscreenCanvas !== 'undefined';
 }
 
-function bake(name: SpriteName): BakedSprite {
+function makeCanvas(w: number, h: number): HTMLCanvasElement | OffscreenCanvas {
+  if (hasOffscreenCanvas()) return new OffscreenCanvas(w, h);
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  return c;
+}
+
+/** アトラスから焼く（Kenney 素材モード）。対応する名前が無ければ null。 */
+function bakeFromAtlas(name: SpriteName): BakedSprite | null {
+  if (!atlasImage) return null;
+  const rect = ATLAS[name];
+  if (!rect) return null;
+
+  const w = rect.w * SCALE;
+  const h = rect.h * SCALE;
+  const canvas = makeCanvas(w, h);
+  const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+  if (ctx) {
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(atlasImage, rect.x, rect.y, rect.w, rect.h, 0, 0, w, h);
+  }
+  return { canvas, w, h };
+}
+
+/** コード定義のドット絵から焼く（仮素材モード・フォールバック）。 */
+function bakeFromCode(name: SpriteName): BakedSprite {
   const def = SPRITE_DEFS[name];
   const srcH = def.rows.length;
   const srcW = def.rows[0]?.length ?? 0;
   const w = srcW * SCALE;
   const h = srcH * SCALE;
 
-  const canvas: HTMLCanvasElement | OffscreenCanvas = hasOffscreenCanvas()
-    ? new OffscreenCanvas(w, h)
-    : (() => {
-        const c = document.createElement('canvas');
-        c.width = w;
-        c.height = h;
-        return c;
-      })();
-
+  const canvas = makeCanvas(w, h);
   const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
   if (ctx) {
     ctx.imageSmoothingEnabled = false;
@@ -991,6 +1088,14 @@ function bake(name: SpriteName): BakedSprite {
     }
   }
   return { canvas, w, h };
+}
+
+function bake(name: SpriteName): BakedSprite {
+  if (getArtMode() === 'kenney') {
+    const fromAtlas = bakeFromAtlas(name);
+    if (fromAtlas) return fromAtlas;
+  }
+  return bakeFromCode(name);
 }
 
 /** 名前でスプライトを引く。初回だけ焼いてキャッシュする。 */

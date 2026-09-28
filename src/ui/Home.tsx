@@ -11,6 +11,7 @@ import { Sheet } from './Sheets';
 import { SettingsSheet } from './SettingsSheet';
 import { primeAudio, playUiTap } from './sound';
 import { isHapticsEnabled, isSoundEnabled, setHapticsEnabled, setSoundEnabled } from './settings';
+import { getArtMode, setArtMode } from '@/render/sprites';
 
 const SPRING = { type: 'spring', stiffness: 320, damping: 28, mass: 0.9 } as const;
 const ENTER = [
@@ -34,6 +35,7 @@ export function Home({ onStart }: { onStart: () => void }) {
   const [confirmReset, setConfirmReset] = useState(false);
   const [soundOn, setSoundOn] = useState(isSoundEnabled);
   const [hapticsOn, setHapticsOn] = useState(isHapticsEnabled);
+  const [artMode, setArtModeState] = useState(getArtMode);
   // dev メニューの操作をすぐ画面に反映させるための再描画トリガー。
   const [, setTick] = useState(0);
   const bump = () => setTick((n) => n + 1);
@@ -122,6 +124,21 @@ export function Home({ onStart }: { onStart: () => void }) {
               setConfirmReset(false);
             }}
           >
+            <div className="sheet-row static">
+              <span>素材: Kenney / 仮素材</span>
+              <button
+                className="switch"
+                role="switch"
+                aria-checked={artMode === 'kenney'}
+                aria-label="素材: Kenney / 仮素材"
+                onClick={() => {
+                  const next = artMode === 'kenney' ? 'code' : 'kenney';
+                  setArtMode(next);
+                  setArtModeState(next);
+                  bump();
+                }}
+              />
+            </div>
             <button
               className="sheet-row"
               onClick={() => {

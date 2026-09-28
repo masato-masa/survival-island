@@ -1,8 +1,8 @@
 // MAP（ASCII）から World を組み立てる。エリア判定・畑の区画・配置スペースなど。
 // マップの記号の意味は data.ts の MAP コメントを見る。
 
-import { AREAS, CHEST_RECIPES, MAP, SLOT_CHARS } from './data';
-import type { AreaId, Chest, Ground, MapNode, NodeKind, Plot, Slot, World } from './types';
+import { AREAS, CHEST_RECIPES, MAP, SLOT_CHARS, STATION_CHARS } from './data';
+import type { AreaId, Chest, Ground, MapNode, NodeKind, Plot, Slot, Station, World } from './types';
 
 /** "x,y" 形式のキーを作る。 */
 export const key = (x: number, y: number): string => `${x},${y}`;
@@ -180,6 +180,18 @@ function buildFrom(map: string[]): World {
     }
   }
 
+  // --- 設備（遺跡・作業台） ---
+  const stations: Station[] = [];
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const kind = STATION_CHARS[at(x, y)];
+      if (!kind) continue;
+      const a = getArea(x, y);
+      if (!a) continue;
+      stations.push({ id: key(x, y), x, y, kind, area: a });
+    }
+  }
+
   // --- 配置スペース ---
   const slots: Slot[] = [];
   for (let y = 0; y < height; y++) {
@@ -193,7 +205,7 @@ function buildFrom(map: string[]): World {
     }
   }
 
-  return { width, height, ground, area, nodes, slots, plots, chests, start };
+  return { width, height, ground, area, nodes, slots, plots, chests, stations, start };
 }
 
 export function buildWorld(map: string[] = MAP): World {

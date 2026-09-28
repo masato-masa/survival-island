@@ -187,7 +187,8 @@ export function createStore(opts: CreateStoreOptions = {}): GameStore {
       if (!tgt) return fail('notReady');
       if (tgt.blocked) return fail(tgt.blocked);
 
-      if (tgt.kind === 'sign') return { ok: true, events: [] };
+      // 看板・設備は画面を開くだけ。開くのは UI 側（target().kind を見て判断する）。
+      if (tgt.kind === 'sign' || tgt.kind === 'station') return { ok: true, events: [] };
 
       if (tgt.kind === 'chest') {
         const result = Actions.openChest(world, save, tgt.chest);

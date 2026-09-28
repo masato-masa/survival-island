@@ -89,3 +89,17 @@ describe('findTarget', () => {
     expect(target).toBeNull();
   });
 });
+
+describe('設備の対象', () => {
+  it('遺跡の隣に立つと遺跡が対象になり、通り抜けられない', async () => {
+    const { buildWorld } = await import('../src/game/world');
+    const { newSave } = await import('../src/game/save');
+    const { findTarget, isSolidTile } = await import('../src/game/target');
+    const w = buildWorld();
+    const ruins = w.stations.find((s) => s.kind === 'ruins')!;
+    const save = newSave(w, 0);
+    const t = findTarget(w, save, ruins.x + 0.5, ruins.y + 1.6, 'up', 0);
+    expect(t?.kind).toBe('station');
+    expect(isSolidTile(w, save, ruins.x, ruins.y, 0)).toBe(true);
+  });
+});

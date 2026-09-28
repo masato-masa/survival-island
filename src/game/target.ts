@@ -94,6 +94,13 @@ export function findTarget(
     }
   }
 
+  for (const station of world.stations) {
+    const d = dist(px, py, station.x, station.y);
+    if (d <= TARGET_RADIUS) {
+      candidates.push({ dist: d, x: station.x, y: station.y, target: { kind: 'station', x: station.x, y: station.y, station } });
+    }
+  }
+
   if (candidates.length === 0) return null;
 
   let minDist = Infinity;
@@ -134,6 +141,9 @@ export function isSolidTile(world: World, save: SaveState, x: number, y: number,
   }
   for (const chest of world.chests) {
     if (chest.x === x && chest.y === y) return true;
+  }
+  for (const station of world.stations) {
+    if (station.x === x && station.y === y) return true;
   }
   for (const slot of world.slots) {
     if (slot.x !== x || slot.y !== y) continue;

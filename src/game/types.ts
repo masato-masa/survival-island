@@ -144,6 +144,17 @@ export interface Chest {
   recipe: FurnitureId;
 }
 
+/** 島に据え付けの設備。触れると画面が開く（遺跡 = スキル、作業台 = クラフト）。 */
+export type StationKind = 'ruins' | 'workbench';
+
+export interface Station {
+  id: string; // "x,y"
+  x: number;
+  y: number;
+  kind: StationKind;
+  area: AreaId;
+}
+
 export interface World {
   width: number;
   height: number;
@@ -153,6 +164,7 @@ export interface World {
   slots: Slot[];
   plots: Plot[];
   chests: Chest[];
+  stations: Station[];
   start: { x: number; y: number };
 }
 
@@ -237,4 +249,5 @@ export type Target =
   | { kind: 'node'; x: number; y: number; node: MapNode }
   | { kind: 'farm'; x: number; y: number; plot: Plot; action: 'plant' | 'harvest' }
   | { kind: 'sign'; x: number; y: number; plot: Plot }
-  | { kind: 'chest'; x: number; y: number; chest: Chest };
+  | { kind: 'chest'; x: number; y: number; chest: Chest }
+  | { kind: 'station'; x: number; y: number; station: Station };

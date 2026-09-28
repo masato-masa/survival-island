@@ -11,6 +11,7 @@ export function HelpSheet({ onClose }: { onClose: () => void }) {
         <li>ピンチで拡大縮小します。</li>
         <li>模様替えモードでは、置き場所をタップして家具を置いたりしまったりできます。</li>
       </ul>
+      <p className="help-credit">素材の一部: Kenney (kenney.nl) CC0</p>
     </Sheet>
   );
 }

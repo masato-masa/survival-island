@@ -4,3 +4,5 @@ dist
 .superpowers/
 *.tmp.mjs
 *.tmp.ts
+refs/
+.playwright-cli/

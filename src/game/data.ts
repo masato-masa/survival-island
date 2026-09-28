@@ -14,6 +14,7 @@ import type {
   SkillDef,
   SkillId,
   SlotAttr,
+  StationKind,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -242,10 +243,18 @@ export const CHEST_RECIPES: Partial<Record<AreaId, string>> = {
 //   T 木   t 太い木   R 岩   H 硬い岩
 //   1 2 3 境界（数字 = AREAS の borderChar）。1 と 2 と 3 の向こうが各エリア
 //   f 畑   s 看板（上下左右に接する畑の区画の看板になる）   c 宝箱
+//   X 謎の遺跡（スキル）   W 作業台（クラフト）
 //   配置スペース: b ベンチ  l ランドマーク  p 道  w 作業台  k キッチン  d 机  o 飾り  e 柵
 //
 // エリアの判定: '@' から水・境界を越えずに塗った範囲が beach。境界の数字 N のマスと、
 // その先を（既に塗った範囲を除いて）塗った範囲が N のエリア。
+
+export const STATION_CHARS: Record<string, StationKind> = { X: 'ruins', W: 'workbench' };
+
+export const STATIONS: Record<StationKind, { name: string; hint: string }> = {
+  ruins: { name: '謎の遺跡', hint: 'スキルを授かる' },
+  workbench: { name: '作業台', hint: '家具を作る' },
+};
 
 export const SLOT_CHARS: Record<string, SlotAttr> = {
   b: 'bench',
@@ -282,7 +291,7 @@ export const MAP: string[] = [
   '~~.....o....b....ppp....b.......o....T~~',
   '~~..sff.......w.....l.....k.........R.~~',
   '~~...ff.......d...........d........T..~~',
-  '~~........eee.......@...........R.....~~',
+  '~~........eee...W...@...X.......R.....~~',
   '~~..T.........R............sfff.......~~',
   '~~........o...........ee....fff.......~~',
   '~~.....T........b...........fff.......~~',

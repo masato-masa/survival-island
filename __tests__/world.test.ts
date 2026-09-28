@@ -65,3 +65,10 @@ describe('buildWorld', () => {
     }
   });
 });
+
+describe('設備', () => {
+  it('はじまりの浜に遺跡と作業台が 1 つずつある', () => {
+    const kinds = world.stations.filter((s) => s.area === 'beach').map((s) => s.kind).sort();
+    expect(kinds).toEqual(['ruins', 'workbench']);
+  });
+});
