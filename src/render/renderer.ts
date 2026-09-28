@@ -20,7 +20,7 @@ import { cropProgress } from '@/game/time';
 import { nodeAlive } from '@/game/rules';
 import { store } from '@/game/store';
 
-import { TILE, type CameraState, type Viewport, worldToScreen } from './camera';
+import { followFactor, TILE, type CameraState, type Viewport, worldToScreen } from './camera';
 import { getGroundFurnitureSprite, getSprite, type SpriteName } from './sprites';
 import { TERRAIN_PX, type PaintedTerrain } from './terrain';
 import type { TreeInstance } from './forestTrees';
@@ -152,6 +152,48 @@ class Effects {
 export const effects = new Effects();
 
 // ---------------------------------------------------------------------------
+// Stardew 風の「見え隠れ」：プレイヤーが木の梢の後ろ（北側）に重なったら半透明にする。
+// 木・柱・モノリスのような背の高いオブジェクトは、プレイヤーが幹より奥（北）にいて
+// かつスプライト同士の矩形が重なるときだけ対象。個体ごとに現在の透明度を持ち、
+// 目標値へ 150ms のイージングで近づける（対象を跨いでも key で状態を引き継ぐ）。
+
+const OCCLUSION_ALPHA = 0.45;
+const OCCLUSION_HALF_LIFE_SEC = 0.15;
+const occlusionAlpha = new Map<string, number>();
+let lastFrameNow: number | null = null;
+
+interface Rect {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+function rectsOverlap(a: Rect, b: Rect): boolean {
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+}
+
+/** key ごとの現在の透明度を更新して返す。anchorX/anchorY はスプライトの下辺中央（ワールド px）。 */
+function updateOcclusionAlpha(
+  key: string,
+  sprite: SpriteName,
+  anchorX: number,
+  anchorY: number,
+  playerRect: Rect,
+  playerBaseY: number,
+  easeFactor: number,
+): number {
+  const spr = getSprite(sprite);
+  const rect: Rect = { left: anchorX - spr.w / 2, right: anchorX + spr.w / 2, top: anchorY - spr.h, bottom: anchorY };
+  const behind = playerBaseY < anchorY; // プレイヤーの足元が対象の根元より奥（北）
+  const target = behind && rectsOverlap(playerRect, rect) ? OCCLUSION_ALPHA : 1;
+  const prev = occlusionAlpha.get(key) ?? 1;
+  const next = prev + (target - prev) * easeFactor;
+  occlusionAlpha.set(key, next);
+  return next;
+}
+
+// ---------------------------------------------------------------------------
 // 小さなユーティリティ
 
 function hash2(x: number, y: number): number {
@@ -271,6 +313,21 @@ const NODE_TOOL: Record<NodeKind, 'axe' | 'pick'> = {
 export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
   const { world, save, now, camera, viewport, dpr } = state;
   currentCtx = ctx;
+
+  // 見え隠れイージング用の dt（フレーム間の壁時計時間）。
+  const occlusionDtSec = lastFrameNow == null ? 0 : Math.max(0, Math.min(0.2, (now - lastFrameNow) / 1000));
+  lastFrameNow = now;
+  const occlusionEase = followFactor(occlusionDtSec, OCCLUSION_HALF_LIFE_SEC);
+
+  // プレイヤーのスプライト矩形（見え隠れ判定用）。歩行フレームで縦横は大きく変わらないので
+  // frame=0 の絵で近似してよい。
+  const playerSpr0 = getSprite(`player_${save.player.dir}0` as SpriteName);
+  const playerRect: Rect = {
+    left: save.player.x * TILE - playerSpr0.w / 2,
+    right: save.player.x * TILE + playerSpr0.w / 2,
+    top: save.player.y * TILE - playerSpr0.h,
+    bottom: save.player.y * TILE,
+  };
 
   ctx.save();
   ctx.imageSmoothingEnabled = false;
@@ -427,19 +484,57 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
   //     下辺中央に据える。 ---
   for (const d of world.decor ?? []) {
     const name = DECOR_SPRITE[d.kind];
+    const anchorX = (d.x + d.w / 2) * TILE;
+    const anchorY = (d.y + d.h) * TILE;
+    if (d.kind === 'pillar') {
+      // 柱は背が高いので木と同じく見え隠れの対象にする。
+      const key = `decor:${d.x},${d.y}`;
+      drawables.push({
+        y: d.y + d.h - 1,
+        draw: () => {
+          const alpha = updateOcclusionAlpha(key, name, anchorX, anchorY, playerRect, save.player.y * TILE, occlusionEase);
+          if (alpha < 0.999) {
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            drawSpriteAtWorld(name, anchorX, anchorY);
+            ctx.restore();
+          } else {
+            drawSpriteAtWorld(name, anchorX, anchorY);
+          }
+        },
+      });
+      continue;
+    }
     drawables.push({
       y: d.y + d.h - 1,
-      draw: () => drawSpriteAtWorld(name, (d.x + d.w / 2) * TILE, (d.y + d.h) * TILE),
+      draw: () => drawSpriteAtWorld(name, anchorX, anchorY),
     });
   }
 
   // --- 設備（遺跡・作業台・船着き場・家の跡地）。遺跡は紋様が常にゆっくり明滅する（発見しやすさのため）。 ---
   for (const station of world.stations) {
     const spriteName = STATION_SPRITE[station.kind];
+    const anchorX = (station.x + 0.5) * TILE;
+    const anchorY = (station.y + 1) * TILE;
+    const isTall = station.kind === 'ruins'; // モノリスは背が高いので見え隠れの対象にする
+    const key = `station:${station.x},${station.y}`;
     drawables.push({
       y: station.y,
       draw: () => {
-        if (spriteName) drawSpriteAtTile(spriteName, station.x, station.y);
+        const alpha =
+          isTall && spriteName
+            ? updateOcclusionAlpha(key, spriteName, anchorX, anchorY, playerRect, save.player.y * TILE, occlusionEase)
+            : 1;
+        if (spriteName) {
+          if (alpha < 0.999) {
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            drawSpriteAtTile(spriteName, station.x, station.y);
+            ctx.restore();
+          } else {
+            drawSpriteAtTile(spriteName, station.x, station.y);
+          }
+        }
         if (station.kind === 'ruins') drawRuinsGlow(station.x, station.y, now, camera, viewport, scale);
       },
     });
@@ -481,11 +576,26 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     const treeMaxX = maxTx + 2;
     const treeMinY = minTy - 3;
     const treeMaxY = maxTy + 1;
+    let treeIdx = 0;
     for (const t of state.forestTrees) {
+      const idx = treeIdx++;
       if (t.x < treeMinX || t.x > treeMaxX || t.y < treeMinY || t.y > treeMaxY) continue;
+      const anchorX = t.x * TILE;
+      const anchorY = t.y * TILE;
+      const key = `tree:${idx}`;
       drawables.push({
         y: t.y,
-        draw: () => drawSpriteAtWorld(t.sprite, t.x * TILE, t.y * TILE),
+        draw: () => {
+          const alpha = updateOcclusionAlpha(key, t.sprite, anchorX, anchorY, playerRect, save.player.y * TILE, occlusionEase);
+          if (alpha < 0.999) {
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            drawSpriteAtWorld(t.sprite, anchorX, anchorY);
+            ctx.restore();
+          } else {
+            drawSpriteAtWorld(t.sprite, anchorX, anchorY);
+          }
+        },
       });
     }
   }

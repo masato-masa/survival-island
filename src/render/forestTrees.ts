@@ -70,6 +70,13 @@ function isSouthEdge(world: World, tx: number, ty: number): boolean {
   return isForest(world, tx, ty) && !isForest(world, tx, ty + 1);
 }
 
+/** 森の北の縁（北隣が森でない＝開けた地面のすぐ南）かどうか。
+ *  木の見上げ高さは ~4.4 マスあるので、ここに幹を置くと梢が開けた地面（広場・遺跡など）
+ *  に大きくかぶってしまう。1 列奥（南）の木の梢がここを覆うので、この列には幹を置かない。 */
+function isNorthEdge(world: World, tx: number, ty: number): boolean {
+  return isForest(world, tx, ty) && !isForest(world, tx, ty - 1);
+}
+
 function pickSpecies(tx: number, ty: number): SpriteName {
   const n = valueNoise2D(tx, ty, 501, PINE_CLUSTER_WAVELEN);
   return (n < PINE_CLUSTER_THRESHOLD ? 'bigTree' : 'tree') as SpriteName;
@@ -102,6 +109,7 @@ export function buildForestTrees(world: World): TreeInstance[] {
       const tx = Math.floor(fx);
       const ty = Math.floor(fy);
       if (!isForest(world, tx, ty)) continue;
+      if (isNorthEdge(world, tx, ty)) continue; // 開けた地面のすぐ南＝ここには幹を置かない
       // 南の縁に近いインスタンスは、幹が開けた地面側から見えるよう少し南へ寄せる。
       const southBias = isSouthEdge(world, tx, ty) ? 0.28 : 0;
       push(fx, Math.min(ty + 0.92, fy + southBias), tx, ty);
@@ -112,6 +120,7 @@ export function buildForestTrees(world: World): TreeInstance[] {
   for (let ty = 0; ty < world.height; ty++) {
     for (let tx = 0; tx < world.width; tx++) {
       if (!isForestEdge(world, tx, ty)) continue;
+      if (isNorthEdge(world, tx, ty)) continue; // 開けた地面のすぐ南＝ここには幹を置かない
       const jx = (hash2i(tx, ty, 611) - 0.5) * 0.5;
       const southEdge = isSouthEdge(world, tx, ty);
       const fy = southEdge ? ty + 0.85 : ty + 0.5 + (hash2i(tx, ty, 612) - 0.5) * 0.4;

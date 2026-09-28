@@ -89,7 +89,6 @@ export function Game() {
   const bannerTimer = useRef<number | undefined>(undefined);
   const areaBannerTimer = useRef<number | undefined>(undefined);
   const lastAreaRef = useRef<string | null>(null);
-  const areaBannerShownRef = useRef(false);
 
   // スタミナ回復・作物の成長を反映するため、1 秒ごとに時計を進めて再描画する。
   useEffect(() => {
@@ -182,21 +181,28 @@ export function Game() {
   const nextThreshold = ISLAND_LEVEL_POINTS[islandLevel];
   const levelProgress = nextThreshold ? Math.max(0, Math.min(1, points.total / nextThreshold)) : 1;
 
-  const px = Math.floor(save.player.x);
-  const py = Math.floor(save.player.y);
-  const areaId = world.area[py * world.width + px] ?? null;
-  const areaName = areaId ? AREAS[areaId].name : '';
-
-  // エリアが変わった（起動直後を含む）ら、名前を数秒だけ中央上部に出す。
+  // エリアが変わった（起動直後・テレポート・セーブ読み込み含む）ら、名前を数秒だけ
+  // 中央上部に出す。プレイヤーの移動は store.move() が毎フレーム座標を書き換えるだけで
+  // 再描画（store.notify）を伴わないため、このコンポーネントの再レンダーには乗らない。
+  // なので専用のポーリングで store.get() を直接見に行く（100ms ごとで十分反応が良い）。
   useEffect(() => {
-    if (!areaName) return;
-    if (lastAreaRef.current === areaName && areaBannerShownRef.current) return;
-    lastAreaRef.current = areaName;
-    areaBannerShownRef.current = true;
-    window.clearTimeout(areaBannerTimer.current);
-    setAreaBanner(areaName);
-    areaBannerTimer.current = window.setTimeout(() => setAreaBanner(null), 2000);
-  }, [areaName]);
+    const checkArea = () => {
+      const s = store.get();
+      const w = store.world;
+      const tx = Math.floor(s.player.x);
+      const ty = Math.floor(s.player.y);
+      const aId = w.area[ty * w.width + tx] ?? null;
+      const name = aId ? AREAS[aId].name : '';
+      if (!name || name === lastAreaRef.current) return;
+      lastAreaRef.current = name;
+      window.clearTimeout(areaBannerTimer.current);
+      setAreaBanner(name);
+      areaBannerTimer.current = window.setTimeout(() => setAreaBanner(null), 2000);
+    };
+    checkArea();
+    const id = window.setInterval(checkArea, 100);
+    return () => window.clearInterval(id);
+  }, []);
 
   const closeSheet = () => setSheet(null);
 

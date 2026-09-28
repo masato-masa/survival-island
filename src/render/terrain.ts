@@ -169,14 +169,62 @@ function computeWaterDepth(world: World): Int16Array {
   return bfsDistanceFrom(world, (i) => world.ground[i] === 'water', 8);
 }
 
-/** 非水タイルの「水からの距離」（0 = 水に接するマス）。砂浜の濡れ具合に使う。 */
-function computeLandDistToWater(world: World): Int16Array {
-  return bfsDistanceFrom(world, (i) => world.ground[i] !== 'water', 3);
-}
-
 /** 森でないタイルの「森からの距離」。草の日陰に使う。 */
 function computeDistToForest(world: World): Int16Array {
   return bfsDistanceFrom(world, (i) => world.ground[i] !== 'forest', 3);
+}
+
+// ---------------------------------------------------------------------------
+// 水際をなめらかにするための「水量フィールド」。
+//
+// タイル中心ではなく「タイルの角（コーナー）」に、そこへ接する 4 タイルのうち
+// 水の割合（0〜1）を持たせる。これをバイリニア補間で連続的にサンプリングすると、
+// タイル境界をまたいでも値がカクつかず滑らかに変化するので、最近傍タイル判定に
+// ありがちな階段状（ブロック状）の渚を避けられる。ドメインワープと組み合わせる
+// ことで「有機的だが滑らか」な水際になる。
+
+function buildWaterCornerField(world: World): Float32Array {
+  const { width, height, ground } = world;
+  const field = new Float32Array((width + 1) * (height + 1));
+  const isWater = (x: number, y: number): boolean => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return false;
+    return ground[y * width + x] === 'water';
+  };
+  for (let cy = 0; cy <= height; cy++) {
+    for (let cx = 0; cx <= width; cx++) {
+      let sum = 0;
+      if (isWater(cx - 1, cy - 1)) sum++;
+      if (isWater(cx, cy - 1)) sum++;
+      if (isWater(cx - 1, cy)) sum++;
+      if (isWater(cx, cy)) sum++;
+      field[cy * (width + 1) + cx] = sum / 4;
+    }
+  }
+  return field;
+}
+
+/** tx,ty はタイル単位の連続座標（0 = マップ左上のコーナー）。0〜1 の「水っぽさ」を返す。 */
+function sampleWaterField(field: Float32Array, width: number, height: number, tx: number, ty: number): number {
+  const cx = clampFloat(tx, 0, width);
+  const cy = clampFloat(ty, 0, height);
+  const ix = Math.floor(cx);
+  const iy = Math.floor(cy);
+  const ix1 = Math.min(width, ix + 1);
+  const iy1 = Math.min(height, iy + 1);
+  const fx = cx - ix;
+  const fy = cy - iy;
+  const w = width + 1;
+  const v00 = field[iy * w + ix]!;
+  const v10 = field[iy * w + ix1]!;
+  const v01 = field[iy1 * w + ix]!;
+  const v11 = field[iy1 * w + ix1]!;
+  const a = v00 + (v10 - v00) * fx;
+  const b = v01 + (v11 - v01) * fx;
+  return a + (b - a) * fy;
+}
+
+function clampFloat(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v;
 }
 
 // ---------------------------------------------------------------------------
@@ -236,13 +284,19 @@ function darken(rgb: [number, number, number], amount: number): void {
   rgb[2] *= 1 - amount;
 }
 
+function lighten(rgb: [number, number, number], amount: number): void {
+  rgb[0] += (255 - rgb[0]) * amount;
+  rgb[1] += (255 - rgb[1]) * amount;
+  rgb[2] += (255 - rgb[2]) * amount;
+}
+
 // ---------------------------------------------------------------------------
 // 状態
 
 interface PaintState {
   world: World;
   waterDepth: Int16Array;
-  landDistToWater: Int16Array;
+  waterField: Float32Array;
   distToForest: Int16Array;
   foundationEdge: Uint8Array;
 }
@@ -251,31 +305,52 @@ function buildState(world: World): PaintState {
   return {
     world,
     waterDepth: computeWaterDepth(world),
-    landDistToWater: computeLandDistToWater(world),
+    waterField: buildWaterCornerField(world),
     distToForest: computeDistToForest(world),
     foundationEdge: computeFoundationEdge(world),
   };
 }
 
 const tmpA: [number, number, number] = [0, 0, 0];
+const tmpB: [number, number, number] = [0, 0, 0];
+
+// 水際の見た目調整用の定数
+const WET_SAND_TILES = 0.6; // 渚から濡れ砂として塗る範囲（タイル単位、0.5〜0.7 の目安の中央）
+const WET_SAND_THRESHOLD = 0.5 * (1 - WET_SAND_TILES); // wAmt がこれを超えたら濡れ砂
+const FOAM_BAND = 0.07; // 水側の泡の帯（wAmt 単位。1 タイル=0.5 相当なので ≈ 2px 程度）
 
 /** 1 ピクセル分の色とカテゴリを解決する。px,py はソース Canvas 全体のピクセル座標。 */
 function resolvePixel(state: PaintState, px: number, py: number, outRGB: [number, number, number]): Cat {
   const { world } = state;
   const warpX = (valueNoise2D(px, py, 11, WARP_WAVELEN) * 2 - 1) * WARP_AMP;
   const warpY = (valueNoise2D(px, py, 29, WARP_WAVELEN) * 2 - 1) * WARP_AMP;
-  const twx = clampInt(Math.floor((px + warpX) / TERRAIN_PX), 0, world.width - 1);
-  const twy = clampInt(Math.floor((py + warpY) / TERRAIN_PX), 0, world.height - 1);
+  const wpx = px + warpX;
+  const wpy = py + warpY;
+  const twx = clampInt(Math.floor(wpx / TERRAIN_PX), 0, world.width - 1);
+  const twy = clampInt(Math.floor(wpy / TERRAIN_PX), 0, world.height - 1);
   const tIdx = twy * world.width + twx;
   const g = world.ground[tIdx];
 
+  // 水際は最近傍タイルではなく、タイル角の水量フィールドをバイリニア補間した連続値
+  // （wAmt）で決める。ドメインワープしたピクセル座標をそのままタイル単位に落として
+  // サンプリングするので、階段状にならず滑らかな渚になる。
+  const wAmt = sampleWaterField(state.waterField, world.width, world.height, wpx / TERRAIN_PX, wpy / TERRAIN_PX);
+  if (wAmt >= 0.5) {
+    sampleTexture('water', px, py, outRGB);
+    const depth = state.waterDepth[tIdx] ?? 8;
+    const t = clamp01(depth / 4);
+    mixRGB(outRGB, WATER_DEEP_RGB, t * 0.7, outRGB);
+    // 渚の泡：水際からごく狭い帯だけ明るくする（1〜2px 相当）。
+    const foamT = clamp01((wAmt - 0.5) / FOAM_BAND);
+    if (foamT < 1) mixRGB(outRGB, FOAM_RGB, (1 - foamT) * 0.9, outRGB);
+    return Cat.Water;
+  }
+
   switch (g) {
     case 'water': {
-      sampleTexture('water', px, py, outRGB);
-      const depth = state.waterDepth[tIdx] ?? 8;
-      const t = clamp01(depth / 4);
-      mixRGB(outRGB, WATER_DEEP_RGB, t * 0.7, outRGB);
-      return Cat.Water;
+      // 水量フィールド側は陸判定だが最近傍タイルは水（渚のすぐ境目）。砂として塗る。
+      sampleTexture('sand', px, py, outRGB);
+      return Cat.Sand;
     }
     case 'forest': {
       sampleTexture('grass', px, py, outRGB);
@@ -291,9 +366,13 @@ function resolvePixel(state: PaintState, px: number, py: number, outRGB: [number
       return Cat.Grass;
     }
     case 'sand': {
-      const wd = state.landDistToWater[tIdx] ?? -1;
-      const wet = wd >= 0 && wd <= 1;
-      sampleTexture(wet ? 'wetSand' : 'sand', px, py, outRGB);
+      // 濡れ砂は渚からごく狭い帯（~0.6 マス）だけ。tex_wetSand を素の砂と半々に混ぜて
+      // 泥っぽく見えすぎないよう明るめに留める。
+      sampleTexture('sand', px, py, outRGB);
+      if (wAmt > WET_SAND_THRESHOLD) {
+        sampleTexture('wetSand', px, py, tmpB);
+        mixRGB(outRGB, tmpB, 0.5, outRGB);
+      }
       return Cat.Sand;
     }
     case 'dirt':
@@ -301,6 +380,7 @@ function resolvePixel(state: PaintState, px: number, py: number, outRGB: [number
       return Cat.Dirt;
     case 'paving':
       sampleTexture('paving', px, py, outRGB);
+      lighten(outRGB, 0.08); // 壁っぽく見えないよう少しトーンアップ
       return Cat.Paving;
     case 'dock':
       sampleTexture('dock', px, py, outRGB);
@@ -314,6 +394,7 @@ function resolvePixel(state: PaintState, px: number, py: number, outRGB: [number
     case 'foundation': {
       const edge = state.foundationEdge[tIdx] === 1;
       sampleTexture(edge ? 'paving' : 'dirt', px, py, outRGB);
+      if (edge) lighten(outRGB, 0.08);
       return edge ? Cat.Paving : Cat.Dirt;
     }
     default:
@@ -397,25 +478,21 @@ export function paintTerrainAsync(
               const i3 = idx * 3;
 
               let touchesSoft = false;
-              let touchesLand = false;
               for (const [ddx, ddy] of NEIGHBOURS4) {
                 const nx = px + ddx;
                 const ny = py + ddy;
                 if (nx < 0 || ny < 0 || nx >= canvasW || ny >= canvasH) continue;
                 const nc = cat[ny * canvasW + nx] as Cat;
                 if (SOFT_LIKE.has(nc)) touchesSoft = true;
-                if (nc !== Cat.Water) touchesLand = true;
               }
 
+              // 水際の泡は resolvePixel 側で水量フィールドから直接（滑らかに）塗っているので
+              // ここでは道の縁取りだけ。石畳は土より壁っぽく見えやすいので少し控えめに縁取る。
               if (PATH_LIKE.has(c) && touchesSoft) {
-                rgb[i3] = rgb[i3]! * 0.84;
-                rgb[i3 + 1] = rgb[i3 + 1]! * 0.84;
-                rgb[i3 + 2] = rgb[i3 + 2]! * 0.84;
-              } else if (c === Cat.Water && touchesLand) {
-                const t = 0.35;
-                rgb[i3] = rgb[i3]! + (FOAM_RGB[0] - rgb[i3]!) * t;
-                rgb[i3 + 1] = rgb[i3 + 1]! + (FOAM_RGB[1] - rgb[i3 + 1]!) * t;
-                rgb[i3 + 2] = rgb[i3 + 2]! + (FOAM_RGB[2] - rgb[i3 + 2]!) * t;
+                const edgeDarken = c === Cat.Paving ? 0.9 : 0.84;
+                rgb[i3] = rgb[i3]! * edgeDarken;
+                rgb[i3 + 1] = rgb[i3 + 1]! * edgeDarken;
+                rgb[i3 + 2] = rgb[i3 + 2]! * edgeDarken;
               }
             }
             doneRows++;
