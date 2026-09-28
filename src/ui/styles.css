@@ -603,6 +603,9 @@ body {
 .icon-cell img {
   width: 32px;
   height: 32px;
+  /* 家具の素材は種類ごとに生ピクセルサイズがバラバラなので、正方形の枠に収めて
+     アスペクト比を保つ（伸び縮みさせない）。renderer.ts の contain-fit と同じ考え方。 */
+  object-fit: contain;
   image-rendering: pixelated;
 }
 
@@ -692,6 +695,7 @@ body {
   width: 40px;
   height: 40px;
   flex: none;
+  object-fit: contain;
   image-rendering: pixelated;
 }
 

@@ -15,7 +15,8 @@ import type { SpriteName } from './sprites';
 export interface TreeInstance {
   x: number; // タイル単位（幹の位置＝スプライトの下辺中央を置く場所）
   y: number;
-  sprite: SpriteName; // 'tree'（オーク）| 'bigTree'（松）。ground が砂なら renderer 側で palm に差し替わる。
+  sprite: SpriteName; // 'wallOak' | 'wallPine'。森の壁＝進入不可・非対話であることが分かるよう、
+  // 資源ノードの tree/bigTree とは別の（暗く冷たい色調の）スプライト名を使う。
 }
 
 function hash2i(x: number, y: number, seed: number): number {
@@ -79,7 +80,7 @@ function isNorthEdge(world: World, tx: number, ty: number): boolean {
 
 function pickSpecies(tx: number, ty: number): SpriteName {
   const n = valueNoise2D(tx, ty, 501, PINE_CLUSTER_WAVELEN);
-  return (n < PINE_CLUSTER_THRESHOLD ? 'bigTree' : 'tree') as SpriteName;
+  return (n < PINE_CLUSTER_THRESHOLD ? 'wallPine' : 'wallOak') as SpriteName;
 }
 
 /**

@@ -69,6 +69,9 @@ export const TERRAIN_PX = 16; // タイル 1 枚あたりのソース解像度�
 
 const WARP_AMP = 5; // ドメインワープの振幅（px）
 const WARP_WAVELEN = 20; // ドメインワープの波長（px）
+// 道（dirt/paving/dock）の境界だけは、ワープ量を抑えて「歩ける場所の輪郭」を
+// はっきり読めるようにする（草・砂・水の渚は今まで通り有機的にワープさせたい）。
+const PATH_WARP_AMP = 2.5;
 
 // 地面フォールバック色（テクスチャ未読み込み時のみ使う）
 const FALLBACK_RGB: Record<string, [number, number, number]> = {
@@ -98,7 +101,13 @@ const enum Cat {
 }
 
 const PATH_LIKE = new Set<Cat>([Cat.Dirt, Cat.Paving]);
-const SOFT_LIKE = new Set<Cat>([Cat.Grass, Cat.Sand]);
+// 道の縁取りを入れる相手側カテゴリ。森の下草（Forest）は草よりずっと暗いので、
+// ここに含めないと「森の中の道」だけ縁が付かず読みにくくなる（草→道の縁は付くのに）。
+const SOFT_LIKE = new Set<Cat>([Cat.Grass, Cat.Sand, Cat.Forest]);
+
+function isPathLikeGround(g: string): boolean {
+  return g === 'dirt' || g === 'paving' || g === 'dock';
+}
 
 // ---------------------------------------------------------------------------
 // Canvas ヘルパー
@@ -322,8 +331,25 @@ const FOAM_BAND = 0.07; // 水側の泡の帯（wAmt 単位。1 タイル=0.5 �
 /** 1 ピクセル分の色とカテゴリを解決する。px,py はソース Canvas 全体のピクセル座標。 */
 function resolvePixel(state: PaintState, px: number, py: number, outRGB: [number, number, number]): Cat {
   const { world } = state;
-  const warpX = (valueNoise2D(px, py, 11, WARP_WAVELEN) * 2 - 1) * WARP_AMP;
-  const warpY = (valueNoise2D(px, py, 29, WARP_WAVELEN) * 2 - 1) * WARP_AMP;
+  // 道（dirt/paving/dock）のすぐ近くのピクセルだけワープ量を落とし、境界をくっきりさせる。
+  // 「近く」は素の（ワープ前の）タイル座標で判定するので、循環にならない軽い先読み。
+  const twx0 = clampInt(Math.floor(px / TERRAIN_PX), 0, world.width - 1);
+  const twy0 = clampInt(Math.floor(py / TERRAIN_PX), 0, world.height - 1);
+  let nearPath = isPathLikeGround(world.ground[twy0 * world.width + twx0] ?? '');
+  if (!nearPath) {
+    for (const [ddx, ddy] of NEIGHBOURS4) {
+      const nx = twx0 + ddx;
+      const ny = twy0 + ddy;
+      if (nx < 0 || ny < 0 || nx >= world.width || ny >= world.height) continue;
+      if (isPathLikeGround(world.ground[ny * world.width + nx] ?? '')) {
+        nearPath = true;
+        break;
+      }
+    }
+  }
+  const warpAmp = nearPath ? PATH_WARP_AMP : WARP_AMP;
+  const warpX = (valueNoise2D(px, py, 11, WARP_WAVELEN) * 2 - 1) * warpAmp;
+  const warpY = (valueNoise2D(px, py, 29, WARP_WAVELEN) * 2 - 1) * warpAmp;
   const wpx = px + warpX;
   const wpy = py + warpY;
   const twx = clampInt(Math.floor(wpx / TERRAIN_PX), 0, world.width - 1);
@@ -376,7 +402,10 @@ function resolvePixel(state: PaintState, px: number, py: number, outRGB: [number
       return Cat.Sand;
     }
     case 'dirt':
+      // 草・特に森の下草に対して埋もれて見えないよう、はっきり明るく・少し暖色寄りにする。
       sampleTexture('dirt', px, py, outRGB);
+      lighten(outRGB, 0.16);
+      outRGB[0] = Math.min(255, outRGB[0] * 1.06);
       return Cat.Dirt;
     case 'paving':
       sampleTexture('paving', px, py, outRGB);

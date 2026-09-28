@@ -56,6 +56,17 @@ const PALETTE: Record<string, string> = {
   a: '#2fae95', // 遺跡の光る紋様（濃い側）
 };
 
+/** 森の「壁」役の木（進入不可・非対話）用パレット。葉・幹だけ暗く冷たい緑寄りに
+ *  差し替え、資源ノードとして拾える標準の tree/bigTree（PALETTE のまま＝鮮やか）
+ *  とひと目で見分けがつくようにする。境界ノード用の BORDER_TINT（紫）とは別系統。 */
+const WALL_PALETTE: Record<string, string> = {
+  ...PALETTE,
+  l: '#4a6b52', // 葉（暗く冷たい緑）
+  L: '#33503c', // 葉（濃い・さらに暗く）
+  B: '#5c5245', // 幹（暗い）
+  O: '#463d33', // 幹（濃い・さらに暗く）
+};
+
 // ---------------------------------------------------------------------------
 // グリッド作成のヘルパー
 
@@ -1151,6 +1162,8 @@ export type SpriteName =
   | 'shoreW'
   | 'tree'
   | 'bigTree'
+  | 'wallOak'
+  | 'wallPine'
   | 'rock'
   | 'hardRock'
   | 'borderTree'
@@ -1268,6 +1281,11 @@ export const SPRITE_DEFS: Record<SpriteName, SpriteDef> = {
 
   tree: { rows: gridToRows(treeGrid()), palette: PALETTE },
   bigTree: { rows: gridToRows(bigTreeGrid()), palette: PALETTE },
+  // 森の「壁」役の木（forestTrees.ts が生成する、進入不可・非対話の背景木）。
+  // 形は資源ノードの tree/bigTree と同じグリッドを使い回し、パレットだけ
+  // 暗く冷たい緑に差し替えることで「奥にある通れない森」だと一目でわかるようにする。
+  wallOak: { rows: gridToRows(treeGrid()), palette: WALL_PALETTE },
+  wallPine: { rows: gridToRows(bigTreeGrid()), palette: WALL_PALETTE },
   rock: { rows: gridToRows(rockGrid()), palette: PALETTE },
   hardRock: { rows: gridToRows(hardRockGrid()), palette: PALETTE },
   borderTree: { rows: gridToRows(borderTreeGrid()), palette: PALETTE },
@@ -1470,6 +1488,12 @@ const SPRITE_TO_GEN: Partial<Record<SpriteName, string>> = {
  *  素の gen_oak / gen_brokenStone を暗い紫がかった色で乗算し、輪郭（アルファ）は保つ。 */
 const BORDER_TINT = '#5f5878';
 
+/** 森の「壁」役の木（forestTrees.ts の非対話インスタンス）用の色調（乗算）。
+ *  BORDER_TINT の紫とは別系統で、信じられる「日陰の濃い森」寄りの暗く冷たい緑にする。
+ *  資源ノードの tree/bigTree は無加工（鮮やか）のまま描くので、この乗算があるかどうかで
+ *  「奥の壁」と「拾える手前の木」が一目で見分けられる。 */
+const WALL_TINT = '#3c4f3a';
+
 function bakeTintedGen(genName: string, tint: string): BakedSprite | null {
   const img = genImages.get(genName);
   if (!img) return null;
@@ -1495,6 +1519,31 @@ function bakeTintedGen(genName: string, tint: string): BakedSprite | null {
  *  隣の地面のテクスチャと自然につながって見えるようにする）。 */
 const groundCropCache = new Map<string, BakedSprite>();
 
+/** アルファに端から `featherPx` ぶんのなだらかな減衰をかける（正方形の角も含めて全辺）。
+ *  1 回焼いたときだけ呼ぶ軽い後処理（毎フレームではない）ので、getImageData を使っても重くない。 */
+function featherEdgeAlpha(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, w: number, h: number, featherPx: number): void {
+  const imgData = ctx.getImageData(0, 0, w, h);
+  const data = imgData.data;
+  for (let y = 0; y < h; y++) {
+    const dy = Math.min(y, h - 1 - y);
+    for (let x = 0; x < w; x++) {
+      const dx = Math.min(x, w - 1 - x);
+      const d = Math.min(dx, dy);
+      if (d >= featherPx) continue;
+      const f = Math.max(0, Math.min(1, (d + 0.5) / featherPx));
+      const idx = (y * w + x) * 4 + 3;
+      data[idx] = Math.round((data[idx] ?? 0) * f);
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+}
+
+/** 道の家具（f_woodPath / f_stonePath）専用：四辺を ~2〜3 art px（=SCALE 後で ~5 world px）
+ *  だけフェザーして、切り出した四角いテクスチャが下の有機的な地面の上でくっきりした
+ *  「パッチ」に見えないようにする。ワールド座標（4x4 の余りで決まるオフセット）ごとに
+ *  1 回だけ焼いてキャッシュするので、毎フレームのコストにはならない。 */
+const GROUND_FURNITURE_FEATHER_PX = 5;
+
 function bakeGroundTextureCrop(tex: TextureName, srcX: number, srcY: number): BakedSprite {
   const key = `${tex}:${srcX},${srcY}`;
   const cached = groundCropCache.get(key);
@@ -1512,6 +1561,7 @@ function bakeGroundTextureCrop(tex: TextureName, srcX: number, srcY: number): Ba
       ctx.fillStyle = tex === 'dock' ? '#a8744f' : '#a7a9ac';
       ctx.fillRect(0, 0, w, h);
     }
+    featherEdgeAlpha(ctx, w, h, GROUND_FURNITURE_FEATHER_PX);
   }
   const baked = { canvas, w, h };
   groundCropCache.set(key, baked);
@@ -1536,6 +1586,8 @@ export function getGroundFurnitureSprite(id: 'woodPath' | 'stonePath', worldTx: 
 function bakeFromGen(name: SpriteName): BakedSprite | null {
   if (name === 'borderTree') return bakeTintedGen('gen_oak', BORDER_TINT);
   if (name === 'borderRock') return bakeTintedGen('gen_brokenStone', BORDER_TINT);
+  if (name === 'wallOak') return bakeTintedGen('gen_oak', WALL_TINT);
+  if (name === 'wallPine') return bakeTintedGen('gen_pine', WALL_TINT);
   // f_woodPath / f_stonePath は一般的な「代表アイコン」として原点 (0,0) 切り出しを返す
   // （クラフト画面・もちもの欄など、ワールド座標が無い場面での表示用）。
   // 実際にワールドへ敷くときは renderer.ts が getGroundFurnitureSprite を直接呼ぶ。

@@ -6,6 +6,7 @@ import type {
   CropDef,
   CropId,
   FurnitureDef,
+  FurnitureId,
   ItemDef,
   ItemId,
   NodeDef,
@@ -35,7 +36,7 @@ export const TARGET_RADIUS = 1.5;
  *  足元で測ると「見た目は木に触れているのに届かない」になる。 */
 export const TARGET_ORIGIN_UP = 0.5;
 
-export const WALK_SPEED = 4; // マス / 秒
+export const WALK_SPEED = 6; // マス / 秒（4 だと反応が鈍く感じたので引き上げた）
 
 // ---------------------------------------------------------------------------
 // 島レベル
@@ -222,6 +223,41 @@ export const FURNITURE: FurnitureDef[] = [
 ];
 
 export const FURNITURE_BY_ID: Record<string, FurnitureDef> = Object.fromEntries(FURNITURE.map((f) => [f.id, f]));
+
+// ---------------------------------------------------------------------------
+// 家具の「表示サイズ」（タイル単位、デザインで決め打ち・art px 数から逆算しない）。
+//
+// ChatGPT 生成の家具シートは 1 枚ごとにドットの密度がバラバラなので、素材の
+// 生ピクセルサイズのまま描くと「柵・見張り台・像」が無関係な大きさになってしまう
+// （特にランドマークの 4×4 枠の中で、標準サイズのままだと小さく浮いて見える）。
+// ここで種類ごとに「盤面でどう見えてほしいか」を直接指定し、renderer.ts 側は
+// これに contain-fit（アスペクト比を保ったまま収める）で描く。
+export const FURNITURE_DISPLAY_SIZE: Record<FurnitureId, { w: number; h: number }> = {
+  // 地面に貼りつくフラットなもの（1 マス）
+  woodFence: { w: 1, h: 1 },
+  woodPath: { w: 1, h: 1 },
+  stonePath: { w: 1, h: 1 },
+  stoneFence: { w: 1, h: 1 },
+  flowerBed: { w: 1, h: 1 },
+  // 机・ベンチ・台・作業台など、横に少し広い什器
+  woodSign: { w: 1.2, h: 1.3 },
+  woodBench: { w: 1.6, h: 1.1 },
+  woodDesk: { w: 1.6, h: 1.2 },
+  woodWorkbench: { w: 1.6, h: 1.3 },
+  stoneBench: { w: 1.6, h: 1.1 },
+  stoneOven: { w: 1.5, h: 1.5 },
+  fruitTable: { w: 1.6, h: 1.2 },
+  veggieStand: { w: 1.7, h: 1.4 },
+  // 背の高い単体の置物
+  stoneLantern: { w: 1, h: 1.8 },
+  copperLamp: { w: 1, h: 1.6 },
+  ruinPillar: { w: 1.1, h: 1.9 },
+  flowerPot: { w: 1, h: 1.4 },
+  // ランドマーク（4×4 用地。小さな余白を残して枠いっぱいに見せる）
+  woodTower: { w: 3.2, h: 3.2 },
+  flowerArch: { w: 3.2, h: 3.2 },
+  stoneStatue: { w: 3.2, h: 3.2 },
+};
 
 export const AREAS: Record<AreaId, AreaDef> = {
   beach: { id: 'beach', name: 'はじまりの砂浜', border: null, borderChar: null },

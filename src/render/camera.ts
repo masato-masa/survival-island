@@ -103,7 +103,9 @@ export function stepCamera(
   mapHeightPx: number,
   viewWidthPx: number,
   viewHeightPx: number,
-  halfLifeSec = 0.12,
+  // WALK_SPEED を上げた分、追従を少し締めないとプレイヤーが画面中心から
+  // 目に見えて遅れる（0.12 → 0.09）。
+  halfLifeSec = 0.09,
 ): CameraState {
   const f = followFactor(dtSec, halfLifeSec);
   const nx = cam.x + (targetWorldPxX - cam.x) * f;

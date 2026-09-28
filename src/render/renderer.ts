@@ -15,7 +15,7 @@ import type {
   Target,
   World,
 } from '@/game/types';
-import { CROPS, FURNITURE_BY_ID, ITEMS, NODES, STATIONS } from '@/game/data';
+import { CROPS, FURNITURE_BY_ID, FURNITURE_DISPLAY_SIZE, ITEMS, NODES, STATIONS } from '@/game/data';
 import { cropProgress } from '@/game/time';
 import { nodeAlive } from '@/game/rules';
 import { store } from '@/game/store';
@@ -363,6 +363,31 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     ctx.drawImage(spr.canvas, round(s.x - w / 2), round(top), round(w), round(h));
   };
 
+  // 家具を「デザインで決めた表示サイズ」に contain-fit（アスペクト比を保って矩形へ収める）
+  // して描く。ChatGPT 生成素材は品目ごとにドット密度がバラバラで、素の art px のまま
+  // 貼ると柵・見張り台・像が無関係な大きさになってしまうため（CLAUDE.md 参照の必要なし、
+  // FURNITURE_DISPLAY_SIZE がそのままデザイン値）。footprint の下辺中央を worldX,worldY に
+  // 合わせる（drawSpriteAtWorld の anchorBottom と同じ流儀）。
+  const drawFurnitureAtWorld = (furnitureId: string, worldX: number, worldY: number) => {
+    const spr = getSprite(`f_${furnitureId}` as SpriteName);
+    const size = FURNITURE_DISPLAY_SIZE[furnitureId] ?? { w: 1, h: 1 };
+    const boxW = size.w * TILE * scale;
+    const boxH = size.h * TILE * scale;
+    const artAspect = spr.w / spr.h || 1;
+    const boxAspect = boxW / boxH;
+    let drawW: number;
+    let drawH: number;
+    if (artAspect > boxAspect) {
+      drawW = boxW;
+      drawH = boxW / artAspect;
+    } else {
+      drawH = boxH;
+      drawW = boxH * artAspect;
+    }
+    const s = worldToScreen(worldX, worldY, camera, viewport);
+    ctx.drawImage(spr.canvas, round(s.x - drawW / 2), round(s.y - drawH), round(drawW), round(drawH));
+  };
+
   // --- 地面（事前描画したレイヤーを可視範囲だけ貼る。無ければ焼き上がるまで簡易フォールバック） ---
   const isLand = (x: number, y: number) => {
     const g = world.ground[y * world.width + x];
@@ -437,7 +462,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
       const sh = slot.h ?? 1;
       const placed = save.placements[slot.id];
       if (placed) {
-        drawSpriteAtWorld(`f_${placed}` as SpriteName, (slot.x + sw / 2) * TILE, (slot.y + sh) * TILE);
+        drawFurnitureAtWorld(placed, (slot.x + sw / 2) * TILE, (slot.y + sh) * TILE);
       }
       const s = worldToScreen(slot.x * TILE, slot.y * TILE, camera, viewport);
       const boxW = TILE * scale * sw;
@@ -563,7 +588,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
       }
       drawables.push({
         y: slot.y + sh - 1,
-        draw: () => drawSpriteAtWorld(`f_${furnitureId}` as SpriteName, (slot.x + sw / 2) * TILE, (slot.y + sh) * TILE),
+        draw: () => drawFurnitureAtWorld(furnitureId, (slot.x + sw / 2) * TILE, (slot.y + sh) * TILE),
       });
     }
   }
