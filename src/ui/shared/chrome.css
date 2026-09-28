@@ -1,0 +1,591 @@
+/* 生成物。直接編集しない。出どころは C:\claude\shared-ui。 */
+/* 全ゲーム共通の「クローム」＝ ゲーム性に関わらない部分。
+ * ヘッダー・丸ボタン・ツール行・シート・ホーム・開発者メニュー。
+ *
+ * 出どころはこのファイル 1 つ。直したら `node shared-ui/sync.mjs` で配る。
+ * 盤面の CSS はここに入れない（各ゲームが自分で持つ）。
+ *
+ * 前提とする組み方:
+ *
+ *   <div class="app">
+ *     <header class="header">
+ *       <div class="header-row">
+ *         <div class="header-left"> 戻る </div>
+ *         <h1 class="title"> タイトル </h1>
+ *         <div class="header-actions"> ? 設定 </div>
+ *       </div>
+ *       <div class="status-bar"> カウント・難易度・手数など </div>
+ *     </header>
+ *     <main class="play"> 盤面 <footer class="footer"> ツール </footer> </main>
+ *   </div>
+ *
+ * 「タイトルより下の行にしか他の要素を置かない」のがこの契約の肝。
+ * .status-bar は中身が空でも --status-h の高さを取るので、盤面の縦位置が
+ * ゲームによってずれない。
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--title);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.app {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
+}
+
+/* 盤面とツール行を、ヘッダーの下に残った高さの中央に置く。
+   .app が min-height なので、内容が画面より高いときは中央寄せのまま
+   全体が伸びてページごとスクロールする（上が切れない）。 */
+.play {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+/* ---- ヘッダー ---- */
+.header {
+  width: 100%;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.header-row {
+  display: grid;
+  /* 左右の列を同じ幅にして、中央のタイトルが本当に中央に来るようにする。
+     auto にすると右のボタンが 2 個ある側に引っぱられてタイトルがずれる。 */
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--hit);
+}
+
+.header-left {
+  justify-self: start;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.header-actions {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--title);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* ヘッダー 2 段目。カウント・難易度・手数など、タイトル以外のすべて。
+   中身が無くても高さを取る（盤面の縦位置を固定するため）。 */
+.status-bar {
+  min-height: var(--status-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+/* 2 段目に並べる小さな情報のかたまり。 */
+.stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 11px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--pill-fg);
+  white-space: nowrap;
+}
+
+.stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.stat-num {
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--title);
+}
+
+.stat-now {
+  color: var(--good);
+}
+
+.stat-slash {
+  color: var(--count-slash);
+}
+
+.stat-total {
+  color: var(--count-total);
+}
+
+/* 右上の並びは **? が左、設定が右**。4 つのゲームで同じにしてある。 */
+
+/* ---- 丸アイコンボタン ---- */
+/* 見た目は --icon-btn、当たり判定だけ --hit まで広げる。
+   指で押せる大きさを確保しつつ、画面上の丸は小さいままにする。 */
+.icon-btn {
+  position: relative;
+  width: var(--icon-btn);
+  height: var(--icon-btn);
+  flex: none;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+  color: var(--title);
+  cursor: pointer;
+  transition: transform 0.15s var(--ease), opacity 0.15s var(--ease);
+}
+
+.icon-btn::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--hit);
+  height: var(--hit);
+  transform: translate(-50%, -50%);
+}
+
+.icon-btn svg {
+  width: 22px;
+  height: 22px;
+  display: block;
+}
+
+.icon-btn:active {
+  transform: scale(0.9);
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ---- フッターのツール行 ---- */
+.footer {
+  display: flex;
+  gap: 24px;
+}
+
+.tool {
+  width: var(--tool-btn);
+  height: var(--tool-btn);
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+  color: var(--accent);
+  cursor: pointer;
+  transition: transform 0.15s var(--ease), opacity 0.15s var(--ease);
+}
+
+/* ツールアイコンは 24 の枠いっぱいに描いてあるので、丸ボタン 60px に対して
+   32px で置く（丸の約 53%）。40px にすると絵が枠を埋めすぎて窮屈に見える。 */
+.tool svg {
+  width: 32px;
+  height: 32px;
+  display: block;
+}
+
+.tool:active:not(:disabled) {
+  transform: scale(0.9);
+}
+
+.tool:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* ---- ホーム ---- */
+.app-home {
+  position: relative;
+  justify-content: center;
+  gap: 0;
+}
+
+/* ホーム右上。設定だけを置く（遊びかたはプレイ画面の ? に集約する）。 */
+.home-top {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  gap: 6px;
+}
+
+.home {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  width: min(100%, 320px);
+}
+
+.home-art {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  display: grid;
+  place-items: center;
+}
+
+.home-title {
+  margin: 6px 0 0;
+  font-size: 36px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--title);
+}
+
+.home-sub {
+  margin: 6px 0 28px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.home-buttons {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+}
+
+.home-btn {
+  border: 0;
+  border-radius: 999px;
+  padding: 15px 24px;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--title);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+  cursor: pointer;
+  transition: transform 0.15s var(--ease), background-color 0.15s var(--ease);
+}
+
+.home-btn:active {
+  transform: scale(0.96);
+}
+
+.home-btn.primary {
+  color: var(--accent-ink);
+  background: var(--accent);
+  padding: 14px 24px;
+}
+
+.home-btn.primary:hover {
+  background: var(--accent-hover);
+}
+
+/* 「つづきから」の行き先を見せる。ボタンの高さは 1 行のときと揃える。 */
+.home-btn-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.home-progress {
+  margin: 20px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* ---- 開発者メニュー ---- */
+/* 本番の操作導線には出さない。ホーム右下の小さなピルからだけ開く。 */
+.dev-pill {
+  position: absolute;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  border: 0;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  background: rgb(115 80 86 / 0.08);
+  cursor: pointer;
+  opacity: 0.8;
+}
+
+.dev-pill:active {
+  opacity: 0.5;
+}
+
+.dev-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+  text-align: center;
+}
+
+.dev-status {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--good);
+  text-align: center;
+  min-height: 16px;
+}
+
+/* ---- シート（遊びかた・設定・一覧・開発者） ---- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(246 245 239 / 0.66);
+  backdrop-filter: blur(3px);
+  z-index: 10;
+}
+
+.sheet {
+  background: var(--surface);
+  border-radius: var(--sheet-radius);
+  padding: 26px 26px 22px;
+  box-shadow: var(--shadow-lg);
+  width: min(92vw, 420px);
+  max-height: min(80dvh, 620px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sheet-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--title);
+  text-align: center;
+}
+
+.sheet-subtitle {
+  margin: 6px 0 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--pill-fg);
+}
+
+.help-list {
+  margin: 0;
+  padding-left: 1.15em;
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--pill-fg);
+}
+
+.help-list li::marker {
+  color: #c9b0a8;
+}
+
+/* シートの中に積む行。設定のトグルも開発者メニューのボタンもこの形。 */
+.sheet-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--pill-fg);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.14s var(--ease), background-color 0.14s var(--ease);
+}
+
+.sheet-row:hover {
+  background: #f6e6dd;
+}
+
+.sheet-row:active {
+  transform: scale(0.98);
+}
+
+/* 押せない見出し行（設定のトグルを載せる行など）。 */
+.sheet-row.static {
+  cursor: default;
+}
+
+.sheet-row.static:active {
+  transform: none;
+}
+
+.sheet-row.danger {
+  color: var(--warn);
+}
+
+/* 入切スイッチ。チェックボックスを隠して、地と丸で状態を出す。 */
+.switch {
+  position: relative;
+  width: 46px;
+  height: 27px;
+  flex: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  background: #ded2cb;
+  cursor: pointer;
+  transition: background-color 0.18s var(--ease);
+}
+
+.switch[aria-checked='true'] {
+  background: var(--accent);
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 21px;
+  height: 21px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: var(--shadow-xs);
+  transition: transform 0.18s var(--ease);
+}
+
+.switch[aria-checked='true']::after {
+  transform: translateX(19px);
+}
+
+.sheet-list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px;
+  margin: 0 -2px;
+  overscroll-behavior: contain;
+}
+
+/* シートを閉じる主ボタン。 */
+.sheet-btn {
+  border: 0;
+  border-radius: 999px;
+  padding: 11px 30px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent-ink);
+  background: var(--accent);
+  cursor: pointer;
+  transition: transform 0.15s var(--ease), background-color 0.15s var(--ease);
+}
+
+.sheet-btn:hover {
+  background: var(--accent-hover);
+}
+
+.sheet-btn:active {
+  transform: scale(0.94);
+}
+
+/* 同じ大きさのまま主張だけ下げた変種。「もういちど」「一覧へ」など、
+   主ボタンと並べる 2 番手に使う。 */
+.sheet-btn.quiet {
+  color: var(--pill-fg);
+  background: var(--surface-2);
+}
+
+.sheet-btn.quiet:hover {
+  background: #f6e6dd;
+}
+
+/* 主ボタンの下に置く控えめな出口。 */
+.sheet-link {
+  margin-top: 2px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px 12px;
+}
+
+@media (max-width: 640px) {
+  .sheet {
+    padding: 22px 20px 18px;
+  }
+  .tool {
+    width: 54px;
+    height: 54px;
+  }
+  .tool svg {
+    width: 28px;
+    height: 28px;
+  }
+  .footer {
+    gap: 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+  }
+}

@@ -1,0 +1,55 @@
+/* 生成物。直接編集しない。出どころは C:\claude\shared-ui。 */
+/* 全ゲーム共通のデザイントークン。出どころはこのファイル 1 つ。
+ *
+ * ここを直したら `node shared-ui/sync.mjs` で各リポジトリへ配る。
+ * 各リポジトリ側の `src/ui/tokens.css` は生成物なので直接編集しない。
+ *
+ * 値はにゃんどく（C:\claude\test）の実測値。目分量の数字は入れていない。
+ * 盤面の色は各ゲームが自分の CSS で足す（識別のための情報なので共通化しない）。
+ */
+:root {
+  /* ---- 地と面 ---- */
+  --bg: #f6f5ef;
+  --surface: #ffffff;
+  --surface-2: #fbf1eb; /* ピル・一覧の行など、面の一段下 */
+  --line: #e7ded6;
+
+  /* ---- 文字 ---- */
+  --title: #735056; /* 見出し・本文の主 */
+  --muted: #a99089; /* 補足・説明文 */
+  --pill-fg: #8a5a5a; /* ピルや一覧の行に乗る文字 */
+
+  /* ---- アクセント ---- */
+  --accent: #9179d1;
+  --accent-hover: #8168c8;
+  --accent-ink: #ffffff;
+
+  /* ---- 状態 ---- */
+  --good: #22c55e;
+  --warn: #d9453c;
+  --count-total: #71717a;
+  --count-slash: #a1a1aa;
+
+  /* ---- 形 ---- */
+  --cell-radius: 8px;
+  --card-radius: 16px;
+  --sheet-radius: 22px;
+  --gap: 6px;
+  --pad: 16px;
+
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-lg: 0 18px 50px rgb(115 80 86 / 0.16);
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ---- 寸法 ----
+     --hit は指のタップに必要な最小の当たり判定。見た目の丸は --icon-btn で、
+     足りないぶんは ::after を広げて稼ぐ（見た目を大きくしない）。 */
+  --hit: 44px;
+  --icon-btn: 36px;
+  --tool-btn: 60px;
+  /* ヘッダー 2 段目の固定高。中身が無いゲームでも同じ高さを確保して、
+     盤面の縦位置がゲームごとにずれないようにする。 */
+  --status-h: 30px;
+
+  --font: 'Open Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}

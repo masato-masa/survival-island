@@ -1,0 +1,370 @@
+/* むじんとうスローライフ固有の見た目。ヘッダー・シート・ホームなど
+   ゲーム性に関わらない部分は shared-ui（tokens.css / chrome.css）に従う。
+   ここに書くのは、マップ・スタミナゲージ・アイコン一覧・トーストなど、
+   このゲームだけの見た目。 */
+
+/* プレイ画面は画面の高さちょうどに固定し、ページ全体のスクロールを起こさない
+   （CLAUDE.md: 「プレイ画面はビューポートいっぱいに」）。
+   shared-ui の .app は min-height: 100dvh で上限が無いため、ここで height を
+   固定してはみ出しを overflow: hidden で止める。 */
+.app.app-play {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* シートやトーストをこの中で絶対配置するための基準にする。
+   shared-ui 側の .play は position を持たないので、ここで足す
+   （city-builders の .board-area と同じ考え方）。 */
+.play {
+  position: relative;
+}
+
+/* マップ領域。残りの高さをすべて使い、横幅いっぱい・角丸で見せる。
+   サイズは常にここで固定され、シートの開閉や数値の変化では 1px も動かない
+   （CLAUDE.md: レイアウトが操作で動かないことを最優先する）。 */
+.map-area {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border-radius: var(--card-radius);
+  overflow: hidden;
+  background: #cdbfa0; /* WorldView 読み込み前の一瞬だけ見える地の色 */
+}
+
+/* ---- ヘッダー 2 段目: スタミナ・島レベル・経験値 ---- */
+
+/* 行 2 は必ず 1 行・固定の高さ。折り返すとマップが押し下げられて、画面が揺れる。 */
+.app-play .status-bar {
+  flex-wrap: nowrap;
+  height: var(--status-h);
+  gap: 6px;
+}
+
+.app-play .stat {
+  padding: 3px 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stamina-stat {
+  gap: 5px;
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+.stamina-icon {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  color: var(--good);
+}
+
+.stamina-bar {
+  position: relative;
+  flex: 0 1 48px;
+  min-width: 24px;
+  width: 48px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+  flex: none;
+}
+
+.stamina-bar-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--good);
+  transition: width 0.25s var(--ease);
+}
+
+.stamina-next {
+  display: inline-block;
+  min-width: 26px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ---- 失敗トースト・レベルアップの案内 ---- */
+/* どちらも .map-area の上に浮かせる。位置を固定し、文字の長さで動かない
+   ようにするため left: 50% + translateX(-50%) で常に中央に寄せる。 */
+
+.fail-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 4;
+  max-width: calc(100% - 24px);
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgb(38 20 20 / 0.85);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.levelup-banner {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  padding: 10px 18px;
+  border-radius: 16px;
+  background: rgb(145 121 209 / 0.94);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+  box-shadow: var(--shadow-lg);
+  pointer-events: none;
+}
+
+/* ---- ツール行: 模様替えが押されている状態 ---- */
+
+.tool.is-active {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ---- もちもの: アイコン付きの数の一覧 ---- */
+
+.icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.icon-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 6px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pill-fg);
+}
+
+.icon-cell img {
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
+}
+
+.icon-cell-count {
+  font-weight: 700;
+  color: var(--title);
+}
+
+/* ---- スキル: 系統ごとの行・段階の丸（pip） ---- */
+
+.skill-branch {
+  margin-bottom: 6px;
+}
+
+.skill-row {
+  padding: 10px 4px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.skill-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.skill-name {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--title);
+}
+
+.pips {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+.pip {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.pip.is-filled {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.pip.is-locked {
+  opacity: 0.45;
+}
+
+.skill-desc {
+  margin: 4px 0 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.skill-buy {
+  width: 100%;
+}
+
+/* ---- クラフト: 一覧の行 ---- */
+
+.craft-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.craft-row.is-locked {
+  opacity: 0.55;
+}
+
+.craft-icon {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  image-rendering: pixelated;
+}
+
+.craft-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.craft-name {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--title);
+}
+
+.craft-meta {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.craft-locked-text {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.cost-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.cost-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pill-fg);
+}
+
+.cost-chip img {
+  width: 14px;
+  height: 14px;
+  image-rendering: pixelated;
+}
+
+.cost-chip.is-short {
+  color: var(--warn);
+}
+
+.cost-chip.is-ok {
+  color: var(--good);
+}
+
+.stamina-chip {
+  color: var(--muted);
+}
+
+.craft-btn {
+  flex: none;
+}
+
+/* ---- もくひょう: 進捗バーとエリア一覧 ---- */
+
+.goal-progress {
+  margin-bottom: 4px;
+}
+
+.goal-progress-bar {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.goal-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s var(--ease);
+}
+
+.goal-area-row {
+  gap: 12px;
+}
+
+.goal-open {
+  color: var(--good);
+  font-weight: 700;
+  font-size: 13px;
+  flex: none;
+}
+
+.goal-locked {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+/* ---- 配置（模様替え）シート ---- */
+
+.place-current {
+  margin-bottom: 4px;
+}
+
+.place-owned-count {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* ---- 看板シート: 選ばれている作物 ---- */
+
+.sign-grow-time {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sheet-row.is-selected {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
