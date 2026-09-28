@@ -32,7 +32,7 @@ export const SPEED_PER_LEVEL = 0.1;
 export const TARGET_RADIUS = 1.5;
 /** 体の中心 = 足元から上へこれだけ。スプライトは足元から上に伸びるので、
  *  足元で測ると「見た目は木に触れているのに届かない」になる。 */
-export const TARGET_ORIGIN_UP = 0.35;
+export const TARGET_ORIGIN_UP = 0.5;
 
 export const WALK_SPEED = 4; // マス / 秒
 
