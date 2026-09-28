@@ -1,0 +1,122 @@
+{
+  "gen_oak": {
+    "w": 46,
+    "h": 71
+  },
+  "gen_pine": {
+    "w": 37,
+    "h": 72
+  },
+  "gen_palm": {
+    "w": 45,
+    "h": 70
+  },
+  "gen_rock": {
+    "w": 26,
+    "h": 26
+  },
+  "gen_hardRock": {
+    "w": 28,
+    "h": 30
+  },
+  "gen_stump": {
+    "w": 33,
+    "h": 28
+  },
+  "gen_monolith": {
+    "w": 42,
+    "h": 59
+  },
+  "gen_pillar": {
+    "w": 24,
+    "h": 55
+  },
+  "gen_arch": {
+    "w": 51,
+    "h": 46
+  },
+  "gen_brokenStone": {
+    "w": 29,
+    "h": 29
+  },
+  "gen_rubble": {
+    "w": 26,
+    "h": 22
+  },
+  "gen_mooring": {
+    "w": 22,
+    "h": 35
+  },
+  "gen_ship": {
+    "w": 86,
+    "h": 97
+  },
+  "gen_workbench": {
+    "w": 35,
+    "h": 32
+  },
+  "gen_sign": {
+    "w": 21,
+    "h": 33
+  },
+  "gen_chest": {
+    "w": 25,
+    "h": 24
+  },
+  "gen_chestOpen": {
+    "w": 30,
+    "h": 33
+  },
+  "gen_campfire": {
+    "w": 27,
+    "h": 27
+  },
+  "gen_player_down0": {
+    "w": 38,
+    "h": 45
+  },
+  "gen_player_down1": {
+    "w": 38,
+    "h": 45
+  },
+  "gen_player_down2": {
+    "w": 38,
+    "h": 45
+  },
+  "gen_player_up0": {
+    "w": 38,
+    "h": 45
+  },
+  "gen_player_up1": {
+    "w": 38,
+    "h": 45
+  },
+  "gen_player_up2": {
+    "w": 38,
+    "h": 45
+  },
+  "gen_player_left0": {
+    "w": 38,
+    "h": 45
+  },
+  "gen_player_left1": {
+    "w": 38,
+    "h": 45
+  },
+  "gen_player_left2": {
+    "w": 38,
+    "h": 45
+  },
+  "gen_player_right0": {
+    "w": 38,
+    "h": 45
+  },
+  "gen_player_right1": {
+    "w": 38,
+    "h": 45
+  },
+  "gen_player_right2": {
+    "w": 38,
+    "h": 45
+  }
+}

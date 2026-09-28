@@ -127,11 +127,12 @@ export function findTarget(
   return { ...best.target, blocked: best.blocked };
 }
 
-/** そのマスが歩けないか（水・立っている資源・看板・宝箱・置いた家具（道以外）・範囲外）。 */
+/** そのマスが歩けないか（水・深い森・立っている資源・看板・宝箱・設備・通れない飾り・置いた家具（道以外）・範囲外）。 */
 export function isSolidTile(world: World, save: SaveState, x: number, y: number, now: number): boolean {
   if (x < 0 || y < 0 || x >= world.width || y >= world.height) return true;
   const idx = worldIndex(x, y, world.width);
-  if (world.ground[idx] === 'water') return true;
+  const ground = world.ground[idx];
+  if (ground === 'water' || ground === 'forest') return true;
 
   for (const node of world.nodes) {
     if (node.x === x && node.y === y && nodeAlive(save, node, now)) return true;
@@ -143,10 +144,15 @@ export function isSolidTile(world: World, save: SaveState, x: number, y: number,
     if (chest.x === x && chest.y === y) return true;
   }
   for (const station of world.stations) {
+    if (station.kind === 'housePlot') continue; // 家の跡地は上に立てる
     if (station.x === x && station.y === y) return true;
   }
+  for (const d of world.decor) {
+    if (!d.solid) continue;
+    if (x >= d.x && x < d.x + d.w && y >= d.y && y < d.y + d.h) return true;
+  }
   for (const slot of world.slots) {
-    if (slot.x !== x || slot.y !== y) continue;
+    if (x < slot.x || x >= slot.x + slot.w || y < slot.y || y >= slot.y + slot.h) continue;
     const furnitureId = save.placements[slot.id];
     if (!furnitureId) continue;
     const def = FURNITURE_BY_ID[furnitureId];

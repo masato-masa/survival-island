@@ -24,6 +24,7 @@ import { SettingsSheet } from './SettingsSheet';
 import { isHapticsEnabled, isSoundEnabled, setHapticsEnabled, setSoundEnabled } from './settings';
 import { SignSheet } from './SignSheet';
 import { SkillSheet } from './SkillSheet';
+import { StationInfoSheet } from './StationInfoSheet';
 import { playBreak, playChop, playCraft, playFail, playHarvest, playLevelUp, playMine, playPlace, playPlant } from './sound';
 
 type SheetState =
@@ -33,6 +34,7 @@ type SheetState =
   | { kind: 'goal' }
   | { kind: 'sign'; plotId: string }
   | { kind: 'place'; slotId: string }
+  | { kind: 'stationInfo'; station: StationKind }
   | { kind: 'help' }
   | { kind: 'settings' }
   | { kind: 'dev' }
@@ -211,7 +213,9 @@ export function Game() {
 
   const onStationTap = (kind: StationKind) => {
     if (sheet !== null) return; // シートが開いている間は二重に開かない
-    setSheet({ kind: kind === 'ruins' ? 'skill' : 'craft' });
+    if (kind === 'ruins') setSheet({ kind: 'skill' });
+    else if (kind === 'workbench') setSheet({ kind: 'craft' });
+    else setSheet({ kind: 'stationInfo', station: kind });
     hapticTap();
   };
 
@@ -369,6 +373,12 @@ export function Game() {
       </AnimatePresence>
 
       <AnimatePresence>{sheet?.kind === 'help' ? <HelpSheet key="help" onClose={closeSheet} /> : null}</AnimatePresence>
+
+      <AnimatePresence>
+        {sheet?.kind === 'stationInfo' ? (
+          <StationInfoSheet key="stationInfo" kind={sheet.station} onClose={closeSheet} />
+        ) : null}
+      </AnimatePresence>
 
       <AnimatePresence>
         {sheet?.kind === 'settings' ? (

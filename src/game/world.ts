@@ -1,8 +1,10 @@
 // MAP（ASCII）から World を組み立てる。エリア判定・畑の区画・配置スペースなど。
-// マップの記号の意味は data.ts の MAP コメントを見る。
+// マップの記号の意味は data.ts の MAP_LEGEND を見る。
+// マップと AREA_MAP そのものは map.ts（scripts/build-map.mjs の生成物）から来る。
 
-import { AREAS, CHEST_RECIPES, MAP, SLOT_CHARS, STATION_CHARS } from './data';
-import type { AreaId, Chest, Ground, MapNode, NodeKind, Plot, Slot, Station, World } from './types';
+import { AREAS, CHEST_RECIPES, SLOT_CHARS, STATION_CHARS } from './data';
+import { AREA_MAP, MAP } from './map';
+import type { AreaId, Chest, Decor, DecorKind, Ground, MapNode, NodeKind, Plot, Slot, Station, World } from './types';
 
 /** "x,y" 形式のキーを作る。 */
 export const key = (x: number, y: number): string => `${x},${y}`;
@@ -17,94 +19,144 @@ const NEIGHBOURS: [number, number][] = [
   [0, -1],
 ];
 
-/** 境界の記号 ('1' '2' '3' …) → その先に開くエリア。AREAS の borderChar から逆引きする。 */
-function areaByBorderChar(): Map<string, AreaId> {
-  const m = new Map<string, AreaId>();
-  for (const area of Object.values(AREAS)) {
-    if (area.borderChar != null) m.set(area.borderChar, area.id);
-  }
-  return m;
-}
-
 function isBorderChar(ch: string): boolean {
   return ch >= '1' && ch <= '9';
 }
 
-function groundOf(ch: string): Ground {
-  if (ch === '~') return 'water';
-  if (ch === ',') return 'sand';
-  if (ch === 'f') return 'soil';
-  return 'grass';
+/** AREA_MAP の文字 → AreaId。水は別途 null にする。 */
+const AREA_CHAR: Record<string, AreaId> = {
+  s: 'beach',
+  w: 'woods',
+  p: 'plaza',
+  u: 'ruins',
+  f: 'forest',
+  r: 'rocks',
+  h: 'hill',
+};
+
+/** MAP の文字から直接決まる地面。それ以外（物・配置スペースなど）は周りの地面から決める。 */
+const DIRECT_GROUND: Record<string, Ground> = {
+  '~': 'water',
+  ',': 'sand',
+  '.': 'grass',
+  ':': 'dirt',
+  '=': 'paving',
+  '#': 'forest',
+  D: 'dock',
+  F: 'foundation',
+  f: 'soil',
+  L: 'paving',
+  Q: 'dock',
+  S: 'water', // 商船（Decor）の下は海
+};
+
+const WALKABLE_GROUND: Ground[] = ['grass', 'sand', 'dirt', 'paving', 'dock', 'foundation'];
+
+/** 4 連結の連結成分を集める（'L' の 4x4 ランドマーク領域、'S' の商船、'F' の家の跡地に使う）。 */
+function connectedComponents(
+  width: number,
+  height: number,
+  at: (x: number, y: number) => string,
+  match: (ch: string) => boolean,
+): { x: number; y: number }[][] {
+  const visited = new Array<boolean>(width * height).fill(false);
+  const comps: { x: number; y: number }[][] = [];
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = worldIndex(x, y, width);
+      if (visited[idx] || !match(at(x, y))) continue;
+      const tiles: { x: number; y: number }[] = [];
+      const stack = [{ x, y }];
+      visited[idx] = true;
+      while (stack.length > 0) {
+        const cur = stack.pop();
+        if (!cur) continue;
+        tiles.push(cur);
+        for (const [dx, dy] of NEIGHBOURS) {
+          const nx = cur.x + dx;
+          const ny = cur.y + dy;
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+          const nIdx = worldIndex(nx, ny, width);
+          if (visited[nIdx] || !match(at(nx, ny))) continue;
+          visited[nIdx] = true;
+          stack.push({ x: nx, y: ny });
+        }
+      }
+      comps.push(tiles);
+    }
+  }
+  return comps;
 }
 
-function buildFrom(map: string[]): World {
+function bboxOf(tiles: { x: number; y: number }[]): { minX: number; minY: number; maxX: number; maxY: number } {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const t of tiles) {
+    if (t.x < minX) minX = t.x;
+    if (t.y < minY) minY = t.y;
+    if (t.x > maxX) maxX = t.x;
+    if (t.y > maxY) maxY = t.y;
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+function buildFrom(map: string[], areaMap: string[]): World {
   const height = map.length;
   const width = map[0]?.length ?? 0;
-  const grid = map;
-  const at = (x: number, y: number): string => grid[y]?.[x] ?? '~';
+  const at = (x: number, y: number): string => map[y]?.[x] ?? '~';
+  const areaCh = (x: number, y: number): string => areaMap[y]?.[x] ?? '';
 
-  const ground: Ground[] = new Array(width * height);
+  // --- 地面。直接決まるものはそのまま、それ以外は周りの歩ける地面の多数決（既定は草）。 ---
+  const ground: (Ground | null)[] = new Array(width * height).fill(null);
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      ground[worldIndex(x, y, width)] = groundOf(at(x, y));
+      const g = DIRECT_GROUND[at(x, y)];
+      if (g) ground[worldIndex(x, y, width)] = g;
     }
   }
-  // 物や配置スペースの下の地面は記号から分からないので、左右の地面に合わせる
-  // （砂浜の岩の下だけ草になるのを防ぐ）。
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      const i = worldIndex(x, y, width);
-      if (ground[i] !== 'grass' || at(x, y) === '.') continue;
-      if (at(x - 1, y) === ',' || at(x + 1, y) === ',') ground[i] = 'sand';
-    }
-  }
-
-  // --- エリア判定（4 近傍のフラッドフィル。境界文字は水と同じく越えられない） ---
-  const area: (AreaId | null)[] = new Array(width * height).fill(null);
-  const setArea = (x: number, y: number, a: AreaId) => {
-    area[worldIndex(x, y, width)] = a;
-  };
-  const getArea = (x: number, y: number): AreaId | null => area[worldIndex(x, y, width)] ?? null;
-
-  const floodFill = (seeds: { x: number; y: number }[], a: AreaId) => {
-    const stack = [...seeds];
-    for (const s of seeds) setArea(s.x, s.y, a);
-    while (stack.length > 0) {
-      const cur = stack.pop();
-      if (!cur) continue;
+      const idx = worldIndex(x, y, width);
+      if (ground[idx] != null) continue;
+      const counts = new Map<Ground, number>();
       for (const [dx, dy] of NEIGHBOURS) {
-        const nx = cur.x + dx;
-        const ny = cur.y + dy;
+        const nx = x + dx;
+        const ny = y + dy;
         if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-        const ch = at(nx, ny);
-        if (ch === '~') continue;
-        if (isBorderChar(ch)) continue; // 境界は越えない（自分自身は seed として先に塗ってある）
-        if (getArea(nx, ny) != null) continue;
-        setArea(nx, ny, a);
-        stack.push({ x: nx, y: ny });
+        const ng = ground[worldIndex(nx, ny, width)];
+        if (!ng || !WALKABLE_GROUND.includes(ng)) continue;
+        counts.set(ng, (counts.get(ng) ?? 0) + 1);
       }
+      let best: Ground = 'grass';
+      let bestCount = 0;
+      for (const [g, c] of counts) {
+        if (c > bestCount) {
+          bestCount = c;
+          best = g;
+        }
+      }
+      ground[idx] = best;
     }
-  };
+  }
+  const resolvedGround = ground as Ground[];
+
+  // --- エリア。AREA_MAP の文字からそのまま決まる（水だけ null）。 ---
+  const area: (AreaId | null)[] = new Array(width * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = worldIndex(x, y, width);
+      area[idx] = resolvedGround[idx] === 'water' ? null : AREA_CHAR[areaCh(x, y)] ?? null;
+    }
+  }
+  const getArea = (x: number, y: number): AreaId | null => area[worldIndex(x, y, width)] ?? null;
 
   let start = { x: 0, y: 0 };
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       if (at(x, y) === '@') start = { x, y };
     }
-  }
-  floodFill([start], 'beach');
-
-  const borderCharToArea = areaByBorderChar();
-  for (const ch of ['1', '2', '3']) {
-    const a = borderCharToArea.get(ch);
-    if (!a) continue;
-    const seeds: { x: number; y: number }[] = [];
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        if (at(x, y) === ch) seeds.push({ x, y });
-      }
-    }
-    floodFill(seeds, a);
   }
 
   // --- ノード（資源・境界） ---
@@ -122,9 +174,7 @@ function buildFrom(map: string[]): World {
       const ch = at(x, y);
       const a = getArea(x, y);
       const kind = nodeKindFor(ch, a);
-      if (kind && a) {
-        nodes.push({ id: key(x, y), x, y, kind, area: a });
-      }
+      if (kind && a) nodes.push({ id: key(x, y), x, y, kind, area: a });
     }
   }
 
@@ -180,7 +230,7 @@ function buildFrom(map: string[]): World {
     }
   }
 
-  // --- 設備（遺跡・作業台） ---
+  // --- 設備（遺跡・作業台・船着き場の係留柱） ---
   const stations: Station[] = [];
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
@@ -190,6 +240,16 @@ function buildFrom(map: string[]): World {
       if (!a) continue;
       stations.push({ id: key(x, y), x, y, kind, area: a });
     }
+  }
+  // 家の跡地（'F' の連結成分ごとに、一番下の行の中央に 1 つ置く）
+  const foundationComps = connectedComponents(width, height, at, (ch) => ch === 'F');
+  for (const comp of foundationComps) {
+    const { minX, maxX, maxY } = bboxOf(comp);
+    const x = Math.floor((minX + maxX) / 2);
+    const y = maxY;
+    const a = getArea(x, y);
+    if (!a) continue;
+    stations.push({ id: key(x, y), x, y, kind: 'housePlot', area: a });
   }
 
   // --- 配置スペース ---
@@ -201,15 +261,57 @@ function buildFrom(map: string[]): World {
       if (!attr) continue;
       const a = getArea(x, y);
       if (!a) continue;
-      slots.push({ id: key(x, y), x, y, attr, area: a });
+      slots.push({ id: key(x, y), x, y, attr, area: a, w: 1, h: 1 });
     }
   }
+  // ランドマーク（4x4）：'L' の連結成分ごとに 1 つ
+  const landmarkComps = connectedComponents(width, height, at, (ch) => ch === 'L');
+  for (const comp of landmarkComps) {
+    const { minX, minY, maxX, maxY } = bboxOf(comp);
+    const a = getArea(minX, minY);
+    if (!a) continue;
+    slots.push({
+      id: key(minX, minY),
+      x: minX,
+      y: minY,
+      attr: 'landmark',
+      area: a,
+      w: maxX - minX + 1,
+      h: maxY - minY + 1,
+    });
+  }
 
-  return { width, height, ground, area, nodes, slots, plots, chests, stations, start };
+  // --- 飾り（歩けない瓦礫・柱、歩ける瓦礫、商船） ---
+  const decor: Decor[] = [];
+  const pushDecor = (x: number, y: number, w: number, h: number, kind: DecorKind, solid: boolean): void => {
+    decor.push({ id: key(x, y), x, y, w, h, kind, solid });
+  };
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const ch = at(x, y);
+      if (ch === 'r') pushDecor(x, y, 1, 1, 'rubble', false);
+      else if (ch === 'B') pushDecor(x, y, 1, 1, 'brokenStone', true);
+      else if (ch === 'P') pushDecor(x, y, 1, 1, 'pillar', true);
+    }
+  }
+  // 商船（7x8）：'S' の連結成分ごとに 1 つ
+  const shipComps = connectedComponents(width, height, at, (ch) => ch === 'S');
+  for (const comp of shipComps) {
+    const { minX, minY, maxX, maxY } = bboxOf(comp);
+    pushDecor(minX, minY, maxX - minX + 1, maxY - minY + 1, 'ship', true);
+  }
+
+  return { width, height, ground: resolvedGround, area, nodes, slots, plots, chests, stations, decor, start };
 }
 
-export function buildWorld(map: string[] = MAP): World {
-  return buildFrom(map);
+/** テスト用に小さな独立マップを渡すとき、area は省略できる（全マス beach 扱いにする）。 */
+function defaultAreaMap(map: string[]): string[] {
+  return map.map((row) => 's'.repeat(row.length));
+}
+
+export function buildWorld(map: string[] = MAP, areaMap?: string[]): World {
+  const resolvedAreaMap = areaMap ?? (map === MAP ? AREA_MAP : defaultAreaMap(map));
+  return buildFrom(map, resolvedAreaMap);
 }
 
 let cached: World | null = null;
@@ -218,4 +320,9 @@ let cached: World | null = null;
 export function getWorld(): World {
   if (!cached) cached = buildWorld();
   return cached;
+}
+
+/** そのマス (x, y) を占める配置スペースを返す（w×h の多マス対応）。render/UI から使う。 */
+export function slotAt(world: World, x: number, y: number): Slot | undefined {
+  return world.slots.find((s) => x >= s.x && x < s.x + s.w && y >= s.y && y < s.y + s.h);
 }

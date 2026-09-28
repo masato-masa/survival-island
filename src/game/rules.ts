@@ -94,9 +94,9 @@ export function knownCrops(save: SaveState): CropId[] {
     .map((c) => c.id);
 }
 
-/** エリアが開いているか（浜は常に開いている。他は境界ノードが全て壊れている）。 */
+/** エリアが開いているか（境界が null のエリアは常に開いている。他は境界ノードが全て壊れている）。 */
 export function isAreaOpen(world: World, save: SaveState, area: AreaId): boolean {
-  if (area === 'beach') return true;
+  if (AREAS[area].border == null) return true;
   const borders = world.nodes.filter(
     (n) => n.area === area && (n.kind === 'borderTree' || n.kind === 'borderRock'),
   );

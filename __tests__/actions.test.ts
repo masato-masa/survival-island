@@ -190,7 +190,8 @@ describe('配置', () => {
 
   it('統一ボーナスと maxPoints は下がらない', () => {
     const save = freshSave(0);
-    const fenceSlots = world.slots.filter((s) => s.attr === 'fence' && s.area === 'beach');
+    const fenceArea = world.slots.find((s) => s.attr === 'fence')?.area;
+    const fenceSlots = world.slots.filter((s) => s.attr === 'fence' && s.area === fenceArea);
     expect(fenceSlots.length).toBeGreaterThanOrEqual(3);
     save.furniture.woodFence = 3;
 

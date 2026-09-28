@@ -217,43 +217,60 @@ export const FURNITURE: FurnitureDef[] = [
   F({ id: 'flowerArch', name: '花のアーチ', attr: 'landmark', series: 'garden', points: 7, cost: { wood: 8, sunflower: 4 }, stamina: 3, learn: { level: 3 } }),
   // 島レベル 4
   F({ id: 'stoneStatue', name: '石の像', attr: 'landmark', series: 'stone', points: 10, cost: { stone: 15, copper: 3 }, stamina: 3, learn: { level: 4 } }),
+  // 遺跡の宝箱で覚える
+  F({ id: 'ruinPillar', name: '古代の石柱', attr: 'decor', series: 'stone', points: 5, cost: { stone: 6, copper: 1 }, stamina: 2, learn: { chest: 'ruins' } }),
 ];
 
 export const FURNITURE_BY_ID: Record<string, FurnitureDef> = Object.fromEntries(FURNITURE.map((f) => [f.id, f]));
 
 export const AREAS: Record<AreaId, AreaDef> = {
-  beach: { id: 'beach', name: 'はじまりの浜', border: null, borderChar: null },
-  forest: { id: 'forest', name: 'しずかな森', border: { kind: 'borderTree', skill: 'axePower', level: 1 }, borderChar: '1' },
-  rocks: { id: 'rocks', name: 'ごつごつ岩場', border: { kind: 'borderRock', skill: 'pickHard', level: 1 }, borderChar: '2' },
-  hill: { id: 'hill', name: 'みはらしの丘', border: { kind: 'borderTree', skill: 'axePower', level: 2 }, borderChar: '3' },
+  beach: { id: 'beach', name: 'はじまりの砂浜', border: null, borderChar: null },
+  woods: { id: 'woods', name: '森の小道', border: null, borderChar: null },
+  plaza: { id: 'plaza', name: '開けた土地', border: null, borderChar: null },
+  ruins: { id: 'ruins', name: '謎の遺跡', border: null, borderChar: null },
+  forest: { id: 'forest', name: '北西の森', border: { kind: 'borderTree', skill: 'axePower', level: 1 }, borderChar: '1' },
+  rocks: { id: 'rocks', name: '北東の岩場', border: { kind: 'borderRock', skill: 'pickHard', level: 1 }, borderChar: '2' },
+  hill: { id: 'hill', name: '北の丘', border: { kind: 'borderTree', skill: 'axePower', level: 2 }, borderChar: '3' },
 };
 
-export const AREA_ORDER: AreaId[] = ['beach', 'forest', 'rocks', 'hill'];
+export const AREA_ORDER: AreaId[] = ['beach', 'woods', 'plaza', 'ruins', 'forest', 'rocks', 'hill'];
 
 /** 宝箱で覚えるレシピ。key は宝箱のあるエリア。 */
 export const CHEST_RECIPES: Partial<Record<AreaId, string>> = {
   forest: 'woodTower',
   rocks: 'copperLamp',
+  ruins: 'ruinPillar',
 };
 
 // ---------------------------------------------------------------------------
-// マップ
+// マップ（実体は scripts/build-map.mjs が生成する src/game/map.ts の MAP / AREA_MAP）
 //
-//   ~ 水   . 草   , 砂   @ 開始位置（草）
+// MAP_LEGEND
+//   ~ 水   , 砂   . 草   : 土の道   = 古い石畳   # 深い森（地面 forest。通れない・伐採できない）
+//   D 桟橋の板（地面 dock。歩ける）   F 家の跡台（地面 foundation。歩ける）
+//   S 商船（地面は水。S の矩形全体を覆う 1 つの Decor 'ship'。通れない）
+//   Q 桟橋の係留柱（地面 dock。Station 'dock'。通れない）
+//   L ランドマーク用地（4x4。地面 paving。1 つの Slot attr 'landmark'、w=4,h=4、id は左上）
+//   r 瓦礫の飾り（歩ける）   B 崩れた石の飾り（通れない）   P 柱の飾り（通れない）
 //   T 木   t 太い木   R 岩   H 硬い岩
-//   1 2 3 境界（数字 = AREAS の borderChar）。1 と 2 と 3 の向こうが各エリア
+//   1 2 3 境界（数字 = AREAS の borderChar）。ノードの種類は AREAS[area].border.kind
 //   f 畑   s 看板（上下左右に接する畑の区画の看板になる）   c 宝箱
-//   X 謎の遺跡（スキル）   W 作業台（クラフト）
-//   配置スペース: b ベンチ  l ランドマーク  p 道  w 作業台  k キッチン  d 机  o 飾り  e 柵
+//   X 謎の遺跡（スキル）   W 作業台（クラフト）   @ 開始位置
+//   配置スペース（1x1）: b ベンチ  l ランドマーク  p 道  w 作業台  k キッチン  d 机  o 飾り  e 柵
 //
-// エリアの判定: '@' から水・境界を越えずに塗った範囲が beach。境界の数字 N のマスと、
-// その先を（既に塗った範囲を除いて）塗った範囲が N のエリア。
+// 物・配置スペース・設備・境界・開始位置の下の地面は、記号からは分からないので
+// 周囲 4 マスの「歩ける地面」（grass/sand/dirt/paving/dock/foundation）の多数決で決める
+// （既定は grass）。エリアは AREA_MAP の文字からそのまま決まる（水だけ null）。
+//
+// エリア文字（AREA_MAP）: s 砂浜  w 森の小道  p 開けた土地  u 遺跡  f 北西の森  r 北東の岩場  h 北の丘
 
-export const STATION_CHARS: Record<string, StationKind> = { X: 'ruins', W: 'workbench' };
+export const STATION_CHARS: Record<string, StationKind> = { X: 'ruins', W: 'workbench', Q: 'dock' };
 
 export const STATIONS: Record<StationKind, { name: string; hint: string }> = {
   ruins: { name: '謎の遺跡', hint: 'スキルを授かる' },
   workbench: { name: '作業台', hint: '家具を作る' },
+  housePlot: { name: '家の跡地', hint: 'いつか ここに家を建てられそうだ' },
+  dock: { name: '船着き場', hint: 'ときどき商船が来るらしい（交易は準備中）' },
 };
 
 export const SLOT_CHARS: Record<string, SlotAttr> = {
@@ -266,37 +283,4 @@ export const SLOT_CHARS: Record<string, SlotAttr> = {
   o: 'decor',
   e: 'fence',
 };
-
-export const MAP: string[] = [
-  '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~',
-  '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~',
-  '~~~~~~~~~~.T..t....R....t..T..~~~~~~~~~~',
-  '~~~~~~~~~~...l......o.....H...~~~~~~~~~~',
-  '~~~~~~~~~~.t..fffs....b...t...~~~~~~~~~~',
-  '~~~~~~~~~~....fff.....b..R....~~~~~~~~~~',
-  '~~~~~~~~~~.R......o.....o...t.~~~~~~~~~~',
-  '~~~~~~~~~~..T...e.e.e.e.....T.~~~~~~~~~~',
-  '~~~~~~~~~~..........t.......R.~~~~~~~~~~',
-  '~~~~~~~~~~~~~33~~~~~~~~~~~~~~~~~~~~~~~~~',
-  '~~T..t.T.T.....t..T~~R..H...R...H..R..~~',
-  '~~.t....o....T..t..~~..R...l.....R..H.~~',
-  '~~T..ffs...b..c..T.~~.H...o...c...R...~~',
-  '~~...ff....b....t..~~R...k...w...H...R~~',
-  '~~...ff...d....T...~~..H.........R....~~',
-  '~~T.....T...o...t.T~~.R...d...b...H...~~',
-  '~~.R...t...T...R...~~...R.....R....R..~~',
-  '~~..T..........T...~~H.....R........H.~~',
-  '~~~~~~~~11~~~~~~~~~~~~~~~~~~~22~~~~~~~~~',
-  '~~T...R........T......T............R..~~',
-  '~~.....o....b....ppp....b.......o....T~~',
-  '~~..sff.......w.....l.....k.........R.~~',
-  '~~...ff.......d...........d........T..~~',
-  '~~........eee...W...@...X.......R.....~~',
-  '~~..T.........R............sfff.......~~',
-  '~~........o...........ee....fff.......~~',
-  '~~.....T........b...........fff.......~~',
-  '~~,,,,,,,,,,T,,,,,,,,,R,,,,,,,,,,,,,,,~~',
-  '~~,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,~~',
-  '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~',
-];
 

@@ -37,7 +37,8 @@ export type SlotAttr =
 
 export type SeriesId = 'wood' | 'stone' | 'garden';
 
-export type AreaId = 'beach' | 'forest' | 'rocks' | 'hill';
+/** エリア。beach・woods・plaza・ruins は最初から入れる。forest・rocks・hill は境界を壊すと開く。 */
+export type AreaId = 'beach' | 'woods' | 'plaza' | 'ruins' | 'forest' | 'rocks' | 'hill';
 
 /** マップ上の資源（叩いて壊すもの）。 */
 export type NodeKind =
@@ -111,7 +112,22 @@ export interface AreaDef {
 // ---------------------------------------------------------------------------
 // マップ（map.ts の ASCII から world.ts が組み立てる）
 
-export type Ground = 'water' | 'grass' | 'sand' | 'soil';
+/** 地面。forest は通れない深い森（描画は木々のかたまり）。dock は海の上の桟橋（歩ける）。
+ *  dirt は土の道、paving は古い石畳、foundation は家の跡地の土台。 */
+export type Ground = 'water' | 'grass' | 'sand' | 'soil' | 'dirt' | 'paving' | 'forest' | 'dock' | 'foundation';
+
+/** 飾りの置物。叩けない。rubble だけは上を歩ける。ship は w×h を占める 1 つの物。 */
+export type DecorKind = 'rubble' | 'brokenStone' | 'pillar' | 'ship';
+
+export interface Decor {
+  id: string; // 左上の "x,y"
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  kind: DecorKind;
+  solid: boolean;
+}
 
 export interface Slot {
   id: string; // "x,y"
@@ -119,6 +135,9 @@ export interface Slot {
   y: number;
   attr: SlotAttr;
   area: AreaId;
+  /** 占めるマス数。ふつうは 1×1、中央のランドマークは 4×4。id と x,y は左上。 */
+  w: number;
+  h: number;
 }
 
 export interface Plot {
@@ -145,7 +164,8 @@ export interface Chest {
 }
 
 /** 島に据え付けの設備。触れると画面が開く（遺跡 = スキル、作業台 = クラフト）。 */
-export type StationKind = 'ruins' | 'workbench';
+/** ruins = スキル、workbench = クラフト、housePlot = 家の跡地（今は説明だけ）、dock = 船着き場（今は説明だけ。交易は M2）。 */
+export type StationKind = 'ruins' | 'workbench' | 'housePlot' | 'dock';
 
 export interface Station {
   id: string; // "x,y"
@@ -165,6 +185,7 @@ export interface World {
   plots: Plot[];
   chests: Chest[];
   stations: Station[];
+  decor: Decor[];
   start: { x: number; y: number };
 }
 

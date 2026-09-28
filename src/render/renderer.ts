@@ -3,6 +3,7 @@
 // effects オブジェクトが state を持つ（store.onEvents から push してもらう）。
 
 import type {
+  DecorKind,
   Fail,
   GameEvent,
   ItemId,
@@ -10,6 +11,7 @@ import type {
   NodeKind,
   SaveState,
   SlotAttr,
+  StationKind,
   Target,
   World,
 } from '@/game/types';
@@ -20,6 +22,7 @@ import { store } from '@/game/store';
 
 import { TILE, type CameraState, type Viewport, worldToScreen } from './camera';
 import { getSprite, type SpriteName } from './sprites';
+import { TERRAIN_PX, type PaintedTerrain } from './terrain';
 
 // ---------------------------------------------------------------------------
 // 描画に渡す状態
@@ -40,6 +43,8 @@ export interface RenderState {
   moving: boolean;
   dpr: number;
   stick: { anchor: Vec2; finger: Vec2 } | null;
+  /** 事前描画した地面レイヤー（WorldView がロード時に焼いて渡す）。まだ無ければ null。 */
+  terrain: PaintedTerrain | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -160,6 +165,74 @@ function round(n: number): number {
   return Math.round(n);
 }
 
+const FALLBACK_COLOR: Record<string, string> = {
+  water: '#3fa9c4',
+  grass: '#8bc36a',
+  sand: '#ecd9a0',
+  soil: '#5a3d28',
+  dirt: '#a8744f',
+  paving: '#a7a9ac',
+  forest: '#3c6e3a',
+  dock: '#a8744f',
+  foundation: '#7a5a3f',
+};
+
+const DECOR_SPRITE: Record<DecorKind, SpriteName> = {
+  rubble: 'decor_rubble' as SpriteName,
+  brokenStone: 'decor_brokenStone' as SpriteName,
+  pillar: 'decor_pillar' as SpriteName,
+  ship: 'decor_ship' as SpriteName,
+};
+
+const STATION_SPRITE: Partial<Record<StationKind, SpriteName>> = {
+  ruins: 'station_ruins' as SpriteName,
+  workbench: 'station_workbench' as SpriteName,
+  dock: 'station_dock' as SpriteName,
+};
+
+/** 水面の動く演出（きらめき・波打ち際の泡）。可視範囲の水タイルだけを軽く処理する。 */
+function drawWaterAnimated(
+  ctx: CanvasRenderingContext2D,
+  world: World,
+  camera: CameraState,
+  viewport: Viewport,
+  scale: number,
+  now: number,
+  minTx: number,
+  minTy: number,
+  maxTx: number,
+  maxTy: number,
+  isLand: (x: number, y: number) => boolean
+): void {
+  for (let ty = minTy; ty <= maxTy; ty++) {
+    for (let tx = minTx; tx <= maxTx; tx++) {
+      if (world.ground[ty * world.width + tx] !== 'water') continue;
+      const s = worldToScreen(tx * TILE, ty * TILE, camera, viewport);
+      const size = TILE * scale;
+
+      // きらめき：1〜2 個の小さな光点がゆっくり移動する
+      const seed = hash2(tx, ty);
+      const t1 = (now / 2200 + seed) % 1;
+      const gx = s.x + (0.15 + 0.7 * ((seed * 7) % 1)) * size;
+      const gy = s.y + (0.15 + 0.7 * ((seed * 13) % 1)) * size;
+      const glow = Math.max(0, Math.sin(t1 * Math.PI * 2)) * 0.5;
+      if (glow > 0.05) {
+        ctx.fillStyle = `rgba(255,255,255,${glow.toFixed(2)})`;
+        ctx.fillRect(round(gx), round(gy), Math.max(1, round(1.5 * scale)), Math.max(1, round(1.5 * scale)));
+      }
+
+      // 波打ち際の泡：陸に接する辺だけ、じわっと明滅しながら細く動く
+      const foamAlpha = 0.55 + 0.25 * Math.sin(now / 700 + seed * 6.28);
+      ctx.fillStyle = `rgba(234,246,245,${foamAlpha.toFixed(2)})`;
+      const foamW = Math.max(1, round(2 * scale));
+      if (ty > 0 && isLand(tx, ty - 1)) ctx.fillRect(round(s.x), round(s.y), round(size), foamW);
+      if (ty < world.height - 1 && isLand(tx, ty + 1)) ctx.fillRect(round(s.x), round(s.y + size - foamW), round(size), foamW);
+      if (tx > 0 && isLand(tx - 1, ty)) ctx.fillRect(round(s.x), round(s.y), foamW, round(size));
+      if (tx < world.width - 1 && isLand(tx + 1, ty)) ctx.fillRect(round(s.x + size - foamW), round(s.y), foamW, round(size));
+    }
+  }
+}
+
 const SLOT_COLORS: Record<SlotAttr, string> = {
   bench: '#c97b4a',
   landmark: '#d64550',
@@ -228,46 +301,33 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     ctx.drawImage(spr.canvas, round(s.x - w / 2), round(top), round(w), round(h));
   };
 
-  // --- 地面 ---
+  // --- 地面（事前描画したレイヤーを可視範囲だけ貼る。無ければ焼き上がるまで簡易フォールバック） ---
   const isLand = (x: number, y: number) => {
     const g = world.ground[y * world.width + x];
     return g !== undefined && g !== 'water';
   };
 
-  for (let ty = minTy; ty <= maxTy; ty++) {
-    for (let tx = minTx; tx <= maxTx; tx++) {
-      const g = world.ground[ty * world.width + tx];
-      if (g === undefined) continue;
-      let name: SpriteName;
-      if (g === 'water') {
-        const phase = Math.floor(hash2(tx, ty) * 600);
-        const frame = Math.floor((now + phase) / 600) % 2;
-        name = (frame === 0 ? 'water' : 'water2') as SpriteName;
-      } else if (g === 'grass') {
-        name = (hash2(tx, ty) < 0.25 ? 'grass2' : 'grass') as SpriteName;
-      } else if (g === 'sand') {
-        name = 'sand' as SpriteName;
-      } else {
-        name = 'soil' as SpriteName;
-      }
-      const spr = getSprite(name);
-      const s = worldToScreen(tx * TILE, ty * TILE, camera, viewport);
-      ctx.drawImage(spr.canvas, round(s.x), round(s.y), round(TILE * scale), round(TILE * scale));
-
-      if (g === 'water') {
-        // 陸に接する側だけ shore を重ねる
-        if (ty > 0 && isLand(tx, ty - 1)) drawShore('shoreN' as SpriteName, tx, ty);
-        if (ty < world.height - 1 && isLand(tx, ty + 1)) drawShore('shoreS' as SpriteName, tx, ty);
-        if (tx > 0 && isLand(tx - 1, ty)) drawShore('shoreW' as SpriteName, tx, ty);
-        if (tx < world.width - 1 && isLand(tx + 1, ty)) drawShore('shoreE' as SpriteName, tx, ty);
+  if (state.terrain) {
+    const srcX = minTx * TERRAIN_PX;
+    const srcY = minTy * TERRAIN_PX;
+    const srcW = (maxTx - minTx + 1) * TERRAIN_PX;
+    const srcH = (maxTy - minTy + 1) * TERRAIN_PX;
+    const dst = worldToScreen(minTx * TILE, minTy * TILE, camera, viewport);
+    const destW = (maxTx - minTx + 1) * TILE * scale;
+    const destH = (maxTy - minTy + 1) * TILE * scale;
+    ctx.drawImage(state.terrain.canvas, srcX, srcY, srcW, srcH, round(dst.x), round(dst.y), round(destW), round(destH));
+    drawWaterAnimated(ctx, world, camera, viewport, scale, now, minTx, minTy, maxTx, maxTy, isLand);
+  } else {
+    // フォールバック（焼いている最中）：ベタ塗りだけで地面種別が分かるようにする
+    for (let ty = minTy; ty <= maxTy; ty++) {
+      for (let tx = minTx; tx <= maxTx; tx++) {
+        const g = world.ground[ty * world.width + tx];
+        if (g === undefined) continue;
+        const s = worldToScreen(tx * TILE, ty * TILE, camera, viewport);
+        ctx.fillStyle = FALLBACK_COLOR[g] ?? '#8bc36a';
+        ctx.fillRect(round(s.x), round(s.y), round(TILE * scale) + 1, round(TILE * scale) + 1);
       }
     }
-  }
-
-  function drawShore(name: SpriteName, tx: number, ty: number) {
-    const spr = getSprite(name);
-    const s = worldToScreen(tx * TILE, ty * TILE, camera, viewport);
-    ctx.drawImage(spr.canvas, round(s.x), round(s.y), round(TILE * scale), round(TILE * scale));
   }
 
   // --- 畑の作物 ---
@@ -306,24 +366,27 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     }
   }
 
-  // --- decorate: スロット枠 ---
+  // --- decorate: スロット枠（w×h に対応。ランドマークの 4×4 は 1 枚の大きな枠になる） ---
   if (state.decorate) {
     for (const slot of world.slots) {
+      const sw = slot.w ?? 1;
+      const sh = slot.h ?? 1;
       const placed = save.placements[slot.id];
       if (placed) {
-        drawSpriteAtTile(`f_${placed}` as SpriteName, slot.x, slot.y);
+        drawSpriteAtWorld(`f_${placed}` as SpriteName, (slot.x + sw / 2) * TILE, (slot.y + sh) * TILE);
       }
       const s = worldToScreen(slot.x * TILE, slot.y * TILE, camera, viewport);
-      const size = TILE * scale;
+      const boxW = TILE * scale * sw;
+      const boxH = TILE * scale * sh;
       ctx.strokeStyle = SLOT_COLORS[slot.attr];
       ctx.lineWidth = Math.max(1, 2 * scale * 0.5);
-      roundRect(ctx, s.x + 2, s.y + 2, size - 4, size - 4, 4 * scale);
+      roundRect(ctx, s.x + 2, s.y + 2, boxW - 4, boxH - 4, 4 * scale);
       ctx.stroke();
       if (!placed) {
         const spr = getSprite(`slot_${slot.attr}` as SpriteName);
-        const w = spr.w * scale * 0.6;
-        const h = spr.h * scale * 0.6;
-        ctx.drawImage(spr.canvas, round(s.x + size / 2 - w / 2), round(s.y + size / 2 - h / 2), round(w), round(h));
+        const w = spr.w * scale * (sw > 1 ? 1.4 : 0.6);
+        const h = spr.h * scale * (sh > 1 ? 1.4 : 0.6);
+        ctx.drawImage(spr.canvas, round(s.x + boxW / 2 - w / 2), round(s.y + boxH / 2 - h / 2), round(w), round(h));
       }
     }
   }
@@ -353,13 +416,23 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     });
   }
 
-  // --- 設備（遺跡・作業台）。遺跡は紋様が常にゆっくり明滅する（発見しやすさのため）。 ---
+  // --- 昔の暮らしの名残（瓦礫・崩れた石・柱・商船）。ship のような大物は w×h の矩形の
+  //     下辺中央に据える。 ---
+  for (const d of world.decor ?? []) {
+    const name = DECOR_SPRITE[d.kind];
+    drawables.push({
+      y: d.y + d.h - 1,
+      draw: () => drawSpriteAtWorld(name, (d.x + d.w / 2) * TILE, (d.y + d.h) * TILE),
+    });
+  }
+
+  // --- 設備（遺跡・作業台・船着き場・家の跡地）。遺跡は紋様が常にゆっくり明滅する（発見しやすさのため）。 ---
   for (const station of world.stations) {
-    const spriteName = (station.kind === 'ruins' ? 'station_ruins' : 'station_workbench') as SpriteName;
+    const spriteName = STATION_SPRITE[station.kind];
     drawables.push({
       y: station.y,
       draw: () => {
-        drawSpriteAtTile(spriteName, station.x, station.y);
+        if (spriteName) drawSpriteAtTile(spriteName, station.x, station.y);
         if (station.kind === 'ruins') drawRuinsGlow(station.x, station.y, now, camera, viewport, scale);
       },
     });
@@ -369,7 +442,12 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     for (const [slotId, furnitureId] of Object.entries(save.placements)) {
       const slot = world.slots.find((s) => s.id === slotId);
       if (!slot) continue;
-      drawables.push({ y: slot.y, draw: () => drawSpriteAtTile(`f_${furnitureId}` as SpriteName, slot.x, slot.y) });
+      const sw = slot.w ?? 1;
+      const sh = slot.h ?? 1;
+      drawables.push({
+        y: slot.y + sh - 1,
+        draw: () => drawSpriteAtWorld(`f_${furnitureId}` as SpriteName, (slot.x + sw / 2) * TILE, (slot.y + sh) * TILE),
+      });
     }
   }
 
@@ -524,6 +602,15 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 
 const SWING_MS = 220;
 
+/** 砂浜の木はヤシとして描く（見た目だけの差し替え。ゲームロジックは変わらない）。 */
+function spriteForNode(node: MapNode, world: World): SpriteName {
+  if (node.kind === 'tree') {
+    const g = world.ground[node.y * world.width + node.x];
+    if (g === 'sand') return 'palm' as SpriteName;
+  }
+  return node.kind as SpriteName;
+}
+
 function drawNodeWithSwing(
   node: MapNode,
   now: number,
@@ -536,15 +623,16 @@ function drawNodeWithSwing(
 
   const shakeT = isTarget ? 1 - (now - last!.at) / SWING_MS : 0;
   const shakeX = isTarget ? Math.sin(shakeT * Math.PI * 6) * 2 : 0;
+  const spriteName = spriteForNode(node, state.world);
 
   const ctx = getCurrentCtx();
   if (ctx && shakeX !== 0) {
     ctx.save();
     ctx.translate(shakeX, 0);
-    drawSpriteAtTile(node.kind as SpriteName, node.x, node.y);
+    drawSpriteAtTile(spriteName, node.x, node.y);
     ctx.restore();
   } else {
-    drawSpriteAtTile(node.kind as SpriteName, node.x, node.y);
+    drawSpriteAtTile(spriteName, node.x, node.y);
   }
 
   if (isTarget && ctx) {

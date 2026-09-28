@@ -6,10 +6,11 @@ export const TILE = 32; // 1 マス = 32 ワールドピクセル
 export const MIN_ZOOM = 0.6;
 export const MAX_ZOOM = 2.0;
 
-/** 基準スケール：横 11 マスが画面幅に収まる大きさ。ただし縦は最低 9 マス見える下限でクランプする。 */
+/** 基準スケール：横 8 マスが画面幅に収まる大きさ（スマホ幅 390px で 1 マス ≈ 48 CSS px）。
+ *  ただし縦は最低 6 マス見える下限でクランプする。 */
 export function baseScaleFor(viewportWidthCssPx: number, viewportHeightCssPx: number): number {
-  const byWidth = viewportWidthCssPx / (11 * TILE);
-  const maxByHeight = viewportHeightCssPx / (9 * TILE); // これ以上大きくすると縦 9 マスを割る
+  const byWidth = viewportWidthCssPx / (8 * TILE);
+  const maxByHeight = viewportHeightCssPx / (6 * TILE); // これ以上大きくすると縦 6 マスを割る
   return Math.min(byWidth, maxByHeight > 0 ? maxByHeight : byWidth);
 }
 

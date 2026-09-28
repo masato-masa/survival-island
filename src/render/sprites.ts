@@ -269,6 +269,34 @@ function borderRockGrid(): Grid {
   return g;
 }
 
+/** ヤシの木（砂浜の tree ノード用）。幹が緩くカーブし、房状の葉を扇状に広げる。 */
+function palmGrid(): Grid {
+  const g = newGrid(16, 40);
+  // 幹（下から上へ緩くカーブ）
+  for (let y = 39; y >= 14; y--) {
+    const t = (39 - y) / 25;
+    const cx = 7 + Math.round(Math.sin(t * 1.6) * 2.2);
+    px(g, cx, y, 'O');
+    px(g, cx + 1, y, 'B');
+  }
+  // 葉（扇状に 6 房）
+  const fronds: [number, number][] = [
+    [2, 8],
+    [4, 6],
+    [7, 5],
+    [10, 6],
+    [13, 8],
+    [8, 9],
+  ];
+  for (const [fx, fy] of fronds) {
+    circleFill(g, fx, fy, 3, 'L');
+    circleFill(g, fx, fy - 1, 2, 'l');
+  }
+  circleFill(g, 8, 8, 2, 'B');
+  outlineShape(g, 'K');
+  return g;
+}
+
 function stumpGrid(): Grid {
   const g = newGrid(16, 16);
   rect(g, 6, 10, 9, 15, 'B');
@@ -282,6 +310,106 @@ function rubbleGrid(): Grid {
   circleFill(g, 5, 13, 2, 'r');
   circleFill(g, 9, 14, 2, 'R');
   circleFill(g, 12, 12, 1, 'r');
+  outlineShape(g, 'K');
+  return g;
+}
+
+/** 昔の暮らしの名残：低い瓦礫の山（decor_rubble）。歩ける想定なので低め。 */
+function decorRubbleGrid(): Grid {
+  const g = newGrid(16, 16);
+  circleFill(g, 4, 12, 3, 'r');
+  circleFill(g, 9, 13, 3, 'R');
+  circleFill(g, 12, 10, 2, 'r');
+  circleFill(g, 6, 9, 1, 'p');
+  for (const [x, y] of [
+    [3, 10],
+    [10, 9],
+  ] as [number, number][]) {
+    circleFill(g, x, y, 1, 'x');
+  }
+  outlineShape(g, 'K');
+  return g;
+}
+
+/** 崩れた石ブロック（decor_brokenStone）。四角い切石が斜めに崩れている。 */
+function decorBrokenStoneGrid(): Grid {
+  const g = newGrid(16, 16);
+  rect(g, 2, 9, 9, 14, 'R');
+  rect(g, 2, 9, 9, 10, 'p');
+  rect(g, 8, 12, 14, 15, 'r');
+  circleFill(g, 5, 7, 1, 'x');
+  circleFill(g, 12, 13, 1, 'x');
+  outlineShape(g, 'K');
+  return g;
+}
+
+/** 折れた石柱（decor_pillar）。16×32。苔むした古代の柱、上半分が欠けている。 */
+function decorPillarGrid(): Grid {
+  const g = newGrid(16, 32);
+  // 台座
+  rect(g, 3, 28, 12, 31, 'R');
+  // 柱身（縦の溝を筋で表現）
+  rect(g, 5, 9, 10, 28, 'q');
+  rect(g, 5, 9, 6, 28, 'R');
+  for (let y = 10; y < 28; y += 4) px(g, 8, y, 'p');
+  // 折れた断面（斜めに欠けている）
+  rect(g, 5, 6, 12, 9, 'p');
+  px(g, 11, 5, 'p');
+  px(g, 12, 6, 'r');
+  // 苔
+  circleFill(g, 4, 20, 1, 'x');
+  circleFill(g, 11, 24, 1, 'x');
+  circleFill(g, 4, 30, 1, 'x');
+  outlineShape(g, 'K');
+  return g;
+}
+
+/** 商船（decor_ship）。7×8 マスの大きな置き物。船体・マスト・帆・小さな旗。 */
+function decorShipGrid(): Grid {
+  const TILE_PX = 16;
+  const w = TILE_PX * 7;
+  const h = TILE_PX * 8;
+  const g = newGrid(w, h);
+  const cx = Math.floor(w / 2);
+  // 船体（下 1/3、台形）
+  const hullTop = Math.floor(h * 0.62);
+  const hullBottom = h - 10;
+  for (let y = hullTop; y <= hullBottom; y++) {
+    const t = (y - hullTop) / (hullBottom - hullTop);
+    const halfW = Math.round((w / 2 - 6) * (1 - t * 0.55));
+    rect(g, cx - halfW, y, cx + halfW, y, 'O');
+  }
+  for (let y = hullTop; y <= hullTop + 4; y++) {
+    const t = (y - hullTop) / (hullBottom - hullTop);
+    const halfW = Math.round((w / 2 - 6) * (1 - t * 0.55));
+    rect(g, cx - halfW, y, cx + halfW, y, 'b');
+  }
+  // 波打ち際の影（船体の下）
+  for (let x = cx - Math.floor(w / 2) + 4; x < cx + Math.floor(w / 2) - 4; x++) {
+    px(g, x, hullBottom + 1, 'W');
+    px(g, x, hullBottom + 2, 'w');
+  }
+  // マスト
+  const mastX = cx - 4;
+  rect(g, mastX, Math.floor(h * 0.08), mastX + 1, hullTop, 'B');
+  // 帆（クリーム色・少したわむ台形）
+  const sailTop = Math.floor(h * 0.1);
+  const sailBottom = Math.floor(h * 0.5);
+  for (let y = sailTop; y <= sailBottom; y++) {
+    const t = (y - sailTop) / (sailBottom - sailTop);
+    const rightW = Math.round(18 * Math.sin(t * Math.PI));
+    rect(g, mastX + 2, y, mastX + 2 + Math.max(2, rightW), y, 'e');
+  }
+  // 帆のたわみの陰影
+  for (let y = sailTop; y <= sailBottom; y += 3) {
+    const t = (y - sailTop) / (sailBottom - sailTop);
+    const rightW = Math.round(18 * Math.sin(t * Math.PI));
+    px(g, mastX + 2 + Math.max(2, rightW) - 1, y, 'S');
+  }
+  // 旗
+  rect(g, mastX + 1, sailTop - 5, mastX + 6, sailTop - 2, 'd');
+  // 横帆桁
+  rect(g, mastX - 6, sailTop - 1, mastX + 20, sailTop, 'z');
   outlineShape(g, 'K');
   return g;
 }
@@ -317,6 +445,19 @@ function stationRuinsGrid(): Grid {
   rect(g, 7, 10, 8, 20, 'a');
   rect(g, 3, 14, 12, 15, 'a');
   px(g, 8, 15, 'A');
+  outlineShape(g, 'K');
+  return g;
+}
+
+/** 船着き場の係留柱：太い杭にロープが巻きついている。 */
+function stationDockGrid(): Grid {
+  const g = newGrid(16, 24);
+  rect(g, 6, 4, 9, 23, 'O');
+  rect(g, 6, 4, 7, 23, 'B');
+  for (const y of [8, 12, 16]) {
+    rect(g, 4, y, 11, y + 1, 'z');
+  }
+  circleFill(g, 7, 4, 3, 'R');
   outlineShape(g, 'K');
   return g;
 }
@@ -912,8 +1053,14 @@ export type SpriteName =
   | 'borderRock'
   | 'stump'
   | 'rubble'
+  | 'palm'
+  | 'decor_rubble'
+  | 'decor_brokenStone'
+  | 'decor_pillar'
+  | 'decor_ship'
   | 'station_ruins'
   | 'station_workbench'
+  | 'station_dock'
   | 'sign'
   | 'chest'
   | 'chestOpen'
@@ -1012,8 +1159,14 @@ export const SPRITE_DEFS: Record<SpriteName, SpriteDef> = {
   borderRock: { rows: gridToRows(borderRockGrid()), palette: PALETTE },
   stump: { rows: gridToRows(stumpGrid()), palette: PALETTE },
   rubble: { rows: gridToRows(rubbleGrid()), palette: PALETTE },
+  palm: { rows: gridToRows(palmGrid()), palette: PALETTE },
+  decor_rubble: { rows: gridToRows(decorRubbleGrid()), palette: PALETTE },
+  decor_brokenStone: { rows: gridToRows(decorBrokenStoneGrid()), palette: PALETTE },
+  decor_pillar: { rows: gridToRows(decorPillarGrid()), palette: PALETTE },
+  decor_ship: { rows: gridToRows(decorShipGrid()), palette: PALETTE },
   station_ruins: { rows: gridToRows(stationRuinsGrid()), palette: PALETTE },
   station_workbench: { rows: gridToRows(stationWorkbenchGrid()), palette: PALETTE },
+  station_dock: { rows: gridToRows(stationDockGrid()), palette: PALETTE },
 
   sign: { rows: gridToRows(signGrid()), palette: PALETTE },
   chest: { rows: gridToRows(chestGrid()), palette: PALETTE },

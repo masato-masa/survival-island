@@ -14,16 +14,16 @@ import {
 } from '../src/render/camera';
 
 describe('baseScaleFor', () => {
-  it('横 11 マスが画面幅に収まるスケールを返す', () => {
+  it('横 8 マスが画面幅に収まるスケールを返す（スマホ幅で 1 マス ≈ 48px）', () => {
     const s = baseScaleFor(1100, 2000);
-    expect(s).toBeCloseTo(1100 / (11 * TILE));
+    expect(s).toBeCloseTo(1100 / (8 * TILE));
   });
 
-  it('縦が 9 マス未満になりそうなら縮小してクランプする', () => {
-    // 幅基準だと縦が 9 マス未満になる、極端に横長でない・縦が短いケース
+  it('縦が 6 マス未満になりそうなら縮小してクランプする', () => {
+    // 幅基準だと縦が 6 マス未満になる、極端に横長でない・縦が短いケース
     const s = baseScaleFor(1100, 200);
     const tilesTall = 200 / s / TILE;
-    expect(tilesTall).toBeGreaterThanOrEqual(9 - 1e-6);
+    expect(tilesTall).toBeGreaterThanOrEqual(6 - 1e-6);
   });
 });
 

@@ -16,7 +16,8 @@ describe('islandPoints', () => {
 
   it('同じシリーズが 3 個そろうとボーナスが付く', () => {
     const save = freshSave(0);
-    const slots = world.slots.filter((s) => s.attr === 'fence' && s.area === 'beach').slice(0, 3);
+    const fenceArea = world.slots.find((s) => s.attr === 'fence')?.area;
+    const slots = world.slots.filter((s) => s.attr === 'fence' && s.area === fenceArea).slice(0, 3);
     expect(slots.length).toBe(3);
     for (const s of slots) save.placements[s.id] = 'woodFence';
     const points = islandPoints(world, save);
@@ -29,7 +30,8 @@ describe('islandPoints', () => {
 describe('updateMaxPoints', () => {
   it('島レベルが上がったら islandLevelUp イベントを返す', () => {
     const save = freshSave(0);
-    const slots = world.slots.filter((s) => s.attr === 'fence' && s.area === 'beach').slice(0, 3);
+    const fenceArea = world.slots.find((s) => s.attr === 'fence')?.area;
+    const slots = world.slots.filter((s) => s.attr === 'fence' && s.area === fenceArea).slice(0, 3);
     for (const s of slots) save.placements[s.id] = 'woodFence';
     const event = updateMaxPoints(world, save);
     // base3 + bonus2 = 5 < ISLAND_LEVEL_POINTS[1]=10 なのでまだ上がらない
@@ -39,10 +41,11 @@ describe('updateMaxPoints', () => {
 
   it('しきい値を超えたらレベルアップイベント', () => {
     const save = freshSave(0);
-    // 木製シリーズを 3 種類（bench, desk, workbench）beach に置く: 3+3+4=10 base + 3個でボーナス2 = 12
-    const benchSlot = world.slots.find((s) => s.attr === 'bench' && s.area === 'beach');
-    const deskSlot = world.slots.find((s) => s.attr === 'desk' && s.area === 'beach');
-    const workbenchSlot = world.slots.find((s) => s.attr === 'workbench' && s.area === 'beach');
+    // 木製シリーズを 3 種類（bench, desk, workbench）同じエリアに置く: 3+3+4=10 base + 3個でボーナス2 = 12
+    const workbenchSlot = world.slots.find((s) => s.attr === 'workbench');
+    const area = workbenchSlot?.area;
+    const benchSlot = world.slots.find((s) => s.attr === 'bench' && s.area === area);
+    const deskSlot = world.slots.find((s) => s.attr === 'desk' && s.area === area);
     if (!benchSlot || !deskSlot || !workbenchSlot) throw new Error('missing slots');
 
     save.placements[benchSlot.id] = 'woodBench';

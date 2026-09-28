@@ -2,11 +2,12 @@
 // 中身（カメラ追従・入力・描画）は 1 本の requestAnimationFrame ループが持つ。
 // ゲームロジックへは store 経由でのみアクセスする（ここに判定ロジックを書かない）。
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
 
 import { store } from '@/game/store';
-import type { Fail, GameEvent, Slot, StationKind, Target } from '@/game/types';
+import { slotAt } from '@/game/world';
+import type { Fail, GameEvent, StationKind, Target } from '@/game/types';
 
 import {
   baseScaleFor,
@@ -19,6 +20,7 @@ import {
   type Viewport,
 } from './camera';
 import { draw, effects, type RenderState, type Vec2 } from './renderer';
+import { paintTerrainAsync, type PaintedTerrain } from './terrain';
 import { PointerController } from '@/input/pointer';
 
 export interface WorldViewProps {
@@ -34,6 +36,7 @@ const MAX_DT_MS = 50;
 export function WorldView(props: WorldViewProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const [terrainReady, setTerrainReady] = useState(false);
 
   // 毎フレーム参照する最新の props（rAF ループを作り直したくないので ref に流す）。
   const propsRef = useRef(props);
@@ -51,6 +54,22 @@ export function WorldView(props: WorldViewProps): JSX.Element {
     const world = store.world;
     camera.x = (world.start.x + 0.5) * TILE;
     camera.y = (world.start.y + 0.5) * TILE;
+
+    // 地面レイヤーを一度だけ焼く。焼いている間は draw() 側が terrain=null を見て
+    // フォールバックのベタ塗りを出すので、画面が固まって見えることはない。
+    let terrain: PaintedTerrain | null = null;
+    let cancelled = false;
+    paintTerrainAsync(world).then((result) => {
+      if (cancelled) return;
+      terrain = result;
+      setTerrainReady(true);
+      // eslint-disable-next-line no-console
+      console.info(`[terrain] prerender ${result.width}x${result.height} tiles in ${result.paintMs.toFixed(1)}ms`);
+      (window as unknown as { __terrainStats?: unknown }).__terrainStats = {
+        tiles: result.width * result.height,
+        paintMs: result.paintMs,
+      };
+    });
 
     let viewport: Viewport = { widthCssPx: 0, heightCssPx: 0, baseScale: 1 };
     let dpr = window.devicePixelRatio || 1;
@@ -76,14 +95,13 @@ export function WorldView(props: WorldViewProps): JSX.Element {
     let zoom = 1;
     let queuedTap: { screenX: number; screenY: number } | null = null;
 
-    const findSlotAt = (tx: number, ty: number) =>
-      store.world.slots.find((s: Slot) => s.x === Math.floor(tx) && s.y === Math.floor(ty)) ?? null;
-
     const handleTapAt = (screenX: number, screenY: number) => {
       const decorate = propsRef.current.decorate;
       if (decorate) {
         const w = screenToWorld(screenX, screenY, camera, viewport);
-        const slot = findSlotAt(w.x / TILE, w.y / TILE);
+        // slotAt は複数マスにまたがるスロット（4×4 のランドマークなど）にも対応した
+        // マルチタイル検索（世界の再構築側が提供する）。
+        const slot = slotAt(store.world, Math.floor(w.x / TILE), Math.floor(w.y / TILE));
         if (slot) propsRef.current.onSlotTap(slot.id);
         return;
       }
@@ -193,12 +211,14 @@ export function WorldView(props: WorldViewProps): JSX.Element {
         moving,
         dpr,
         stick: stickVisual,
+        terrain,
       };
       draw(ctx, state);
     };
     raf = requestAnimationFrame(loop);
 
     return () => {
+      cancelled = true;
       cancelAnimationFrame(raf);
       ro.disconnect();
       pointerCtl.dispose();
@@ -210,6 +230,25 @@ export function WorldView(props: WorldViewProps): JSX.Element {
   return (
     <div ref={containerRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
       <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: '100%', touchAction: 'none' }} />
+      {!terrainReady ? (
+        // 地面を焼いている間の「無言で固まる」を避けるための最小限のローディング表示。
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            pointerEvents: 'none',
+            color: '#fffbe6',
+            fontSize: 14,
+            textShadow: '0 1px 3px rgba(0,0,0,0.6)',
+            background: 'rgba(20,30,26,0.25)',
+          }}
+        >
+          島をえがいています…
+        </div>
+      ) : null}
     </div>
   );
 }
