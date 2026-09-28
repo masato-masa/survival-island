@@ -22,6 +22,7 @@ export function GoalSheet({
   const points = islandPoints(world, save);
   const nextThreshold = ISLAND_LEVEL_POINTS[islandLevel];
   const progress = nextThreshold ? Math.min(1, points.total / nextThreshold) : 1;
+  const openAreas = AREA_ORDER.filter((area) => isAreaOpen(world, save, area)).length;
 
   return (
     <Sheet
@@ -29,6 +30,9 @@ export function GoalSheet({
       subtitle={`島ポイント ${points.total}${nextThreshold ? ` / ${nextThreshold}` : '（最大）'}`}
       onClose={onClose}
     >
+      <p className="sheet-text">
+        島レベル {islandLevel}・ひらいたエリア {openAreas}/{AREA_ORDER.length}
+      </p>
       <div className="goal-progress">
         <div className="goal-progress-bar">
           <div className="goal-progress-fill" style={{ width: `${progress * 100}%` }} />
@@ -40,6 +44,7 @@ export function GoalSheet({
         </p>
       </div>
       <p className="sheet-text">次の島レベルで増えるもの: スキルの上限・新しいレシピ・新しい種</p>
+      <p className="sheet-text">謎の遺跡でスキルを授かり、作業台で家具をクラフトできます。</p>
       <div className="sheet-list">
         {AREA_ORDER.map((areaId) => {
           const area = AREAS[areaId];

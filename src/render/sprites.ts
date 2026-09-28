@@ -52,6 +52,8 @@ const PALETTE: Record<string, string> = {
   x: '#7a9a5a', // 苔
   q: '#8a9aa8', // 青みがかった灰色（境界の大岩）
   v: '#d4af37', // 金
+  A: '#5fe3c9', // 遺跡の光る紋様（発光する青緑）
+  a: '#2fae95', // 遺跡の光る紋様（濃い側）
 };
 
 // ---------------------------------------------------------------------------
@@ -280,6 +282,60 @@ function rubbleGrid(): Grid {
   circleFill(g, 5, 13, 2, 'r');
   circleFill(g, 9, 14, 2, 'R');
   circleFill(g, 12, 12, 1, 'r');
+  outlineShape(g, 'K');
+  return g;
+}
+
+// ---------------------------------------------------------------------------
+// 設備（遺跡・作業台）
+//
+// 「ただの岩」に見えないよう、遺跡は縦長の石碑＋発光する紋様で「古代・魔法」を
+// 強く出す。作業台は f_woodWorkbench（家具）と見分けがつくよう、天板の上に
+// のこぎり・金づちを直接乗せた形にする。
+
+function stationRuinsGrid(): Grid {
+  const g = newGrid(16, 32);
+  // 台座
+  rect(g, 2, 27, 13, 31, 'R');
+  rect(g, 2, 27, 13, 28, 'r');
+  // 石碑本体（少し先細りの角柱）
+  rect(g, 4, 6, 11, 27, 'q');
+  rect(g, 4, 6, 6, 27, 'R');
+  rect(g, 5, 3, 10, 6, 'q');
+  // 苔
+  for (const [x, y] of [
+    [3, 24],
+    [12, 20],
+    [3, 15],
+    [11, 9],
+  ] as [number, number][]) {
+    circleFill(g, x, y, 1, 'x');
+  }
+  // 発光する紋様（同心の輪＋十字）
+  circleFill(g, 8, 15, 3, 'a');
+  circleFill(g, 8, 15, 2, 'A');
+  rect(g, 7, 10, 8, 20, 'a');
+  rect(g, 3, 14, 12, 15, 'a');
+  px(g, 8, 15, 'A');
+  outlineShape(g, 'K');
+  return g;
+}
+
+function stationWorkbenchGrid(): Grid {
+  const g = newGrid(16, 24);
+  // 脚
+  rect(g, 2, 18, 3, 23, 'B');
+  rect(g, 12, 18, 13, 23, 'B');
+  // 天板
+  rect(g, 1, 13, 14, 17, 'b');
+  rect(g, 1, 13, 14, 14, 'h');
+  // のこぎり（斜めの刃＋柄）
+  rect(g, 2, 9, 9, 10, 'r');
+  rect(g, 2, 9, 3, 12, 'z');
+  for (let x = 3; x <= 9; x += 2) px(g, x, 11, 'r');
+  // 金づち（頭＋柄）
+  rect(g, 10, 5, 13, 8, 'R');
+  rect(g, 11, 8, 12, 12, 'z');
   outlineShape(g, 'K');
   return g;
 }
@@ -856,6 +912,8 @@ export type SpriteName =
   | 'borderRock'
   | 'stump'
   | 'rubble'
+  | 'station_ruins'
+  | 'station_workbench'
   | 'sign'
   | 'chest'
   | 'chestOpen'
@@ -954,6 +1012,8 @@ export const SPRITE_DEFS: Record<SpriteName, SpriteDef> = {
   borderRock: { rows: gridToRows(borderRockGrid()), palette: PALETTE },
   stump: { rows: gridToRows(stumpGrid()), palette: PALETTE },
   rubble: { rows: gridToRows(rubbleGrid()), palette: PALETTE },
+  station_ruins: { rows: gridToRows(stationRuinsGrid()), palette: PALETTE },
+  station_workbench: { rows: gridToRows(stationWorkbenchGrid()), palette: PALETTE },
 
   sign: { rows: gridToRows(signGrid()), palette: PALETTE },
   chest: { rows: gridToRows(chestGrid()), palette: PALETTE },

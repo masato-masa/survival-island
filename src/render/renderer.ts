@@ -13,7 +13,7 @@ import type {
   Target,
   World,
 } from '@/game/types';
-import { CROPS, FURNITURE_BY_ID, ITEMS, NODES } from '@/game/data';
+import { CROPS, FURNITURE_BY_ID, ITEMS, NODES, STATIONS } from '@/game/data';
 import { cropProgress } from '@/game/time';
 import { nodeAlive } from '@/game/rules';
 import { store } from '@/game/store';
@@ -353,6 +353,18 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     });
   }
 
+  // --- 設備（遺跡・作業台）。遺跡は紋様が常にゆっくり明滅する（発見しやすさのため）。 ---
+  for (const station of world.stations) {
+    const spriteName = (station.kind === 'ruins' ? 'station_ruins' : 'station_workbench') as SpriteName;
+    drawables.push({
+      y: station.y,
+      draw: () => {
+        drawSpriteAtTile(spriteName, station.x, station.y);
+        if (station.kind === 'ruins') drawRuinsGlow(station.x, station.y, now, camera, viewport, scale);
+      },
+    });
+  }
+
   if (!state.decorate) {
     for (const [slotId, furnitureId] of Object.entries(save.placements)) {
       const slot = world.slots.find((s) => s.id === slotId);
@@ -393,6 +405,18 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     ctx.lineTo(s.x + 5, ay - 2);
     ctx.closePath();
     ctx.fill();
+
+    // --- 発見してほしい相手には、何をする場所かを名前で示す（遺跡・作業台・看板・宝箱）。 ---
+    const label = targetLabel(t);
+    if (label) {
+      ctx.font = `bold ${Math.round(13 * Math.max(1, scale))}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+      ctx.strokeText(label, s.x, ay - 12 * scale);
+      ctx.fillStyle = '#fffbe6';
+      ctx.fillText(label, s.x, ay - 12 * scale);
+    }
   }
 
   // --- パーティクル ---
@@ -455,6 +479,36 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
 
   ctx.restore();
   currentCtx = null;
+}
+
+/** ハイライト中の相手が何をする場所かを一言で示す。木・岩・畑は見れば分かるので出さない。 */
+function targetLabel(t: Target): string | null {
+  if (t.kind === 'station') return STATIONS[t.station.kind].name;
+  if (t.kind === 'sign') return '看板';
+  if (t.kind === 'chest') return '宝箱';
+  return null;
+}
+
+/** 遺跡の紋様をゆっくり明滅させる（「古代・魔法」を静止画より伝えるための最小限の演出）。 */
+function drawRuinsGlow(
+  tx: number,
+  ty: number,
+  now: number,
+  camera: CameraState,
+  viewport: Viewport,
+  scale: number,
+): void {
+  const ctx = getCurrentCtx();
+  if (!ctx) return;
+  const s = worldToScreen((tx + 0.5) * TILE, (ty + 0.47) * TILE, camera, viewport);
+  const pulse = 0.5 + 0.5 * Math.sin(now / 500);
+  ctx.save();
+  ctx.globalAlpha = 0.35 + 0.35 * pulse;
+  ctx.fillStyle = '#5fe3c9';
+  ctx.beginPath();
+  ctx.arc(s.x, s.y, (4 + 2 * pulse) * scale, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {

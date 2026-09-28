@@ -5,7 +5,8 @@
 
 - 設計: `docs/spec-m1.md`（M1 = 核のループ）。数値は `src/game/data.ts`、型は `src/game/types.ts`。
 - 公開: https://masato-masa.github.io/survival-island/ （`npm run deploy` で gh-pages へ）
-- 共通 UI: `src/ui/shared/` は `C:\claude\shared-ui` からの生成物。直接編集しない。
+- **共通 UI（shared-ui）は使わない。** 画面全体がフィールドで、HUD を上に浮かせる独自の構成（ユーザー指定）。
+  ホーム画面・戻るボタンは無い。スキルは島の「謎の遺跡」、クラフトは「作業台」に触れて開く。
 
 ## 守ること
 
@@ -17,5 +18,11 @@
 
 ## 素材
 
-M1 はコードで描いた仮のドット絵（16×16 を 2 倍で 32×32）。
-差し替え候補は Kenney の CC0 パック（16×16）と ChatGPT での生成。ダウンロードはユーザーに確認してから。
+Kenney の CC0 パック（16×16 を 2 倍で 32×32）。対応が無いものはコードで描いた仮素材にフォールバックする。
+
+```bash
+node scripts/fetch-kenney.mjs   # refs/kenney/ へ取得（refs/ は git 管理外）
+npm run atlas                   # scripts/kenney-map.mjs の対応表から src/assets/kenney-atlas.* を作る
+```
+
+対応表を変えたら `npm run atlas` を必ず走らせる。ChatGPT で作る素材も同じ流れ（スクリプトで切り出す）に乗せる。

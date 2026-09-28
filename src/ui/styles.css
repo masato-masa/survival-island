@@ -1,142 +1,583 @@
-/* むじんとうスローライフ固有の見た目。ヘッダー・シート・ホームなど
-   ゲーム性に関わらない部分は shared-ui（tokens.css / chrome.css）に従う。
-   ここに書くのは、マップ・スタミナゲージ・アイコン一覧・トーストなど、
-   このゲームだけの見た目。 */
+/* むじんとうスローライフ 専用スタイル。
+   このゲームは shared-ui を使わない（画面全体が盤面のアイドルゲーム UI のため、
+   4 ゲーム共通のヘッダー・フッター前提のレイアウトと相容れない）。
+   トークン・レイアウト・シートまで、すべてこのファイル 1 つが出どころ。
 
-/* プレイ画面は画面の高さちょうどに固定し、ページ全体のスクロールを起こさない
-   （CLAUDE.md: 「プレイ画面はビューポートいっぱいに」）。
-   shared-ui の .app は min-height: 100dvh で上限が無いため、ここで height を
-   固定してはみ出しを overflow: hidden で止める。 */
-.app.app-play {
+   見た目のねらい: Kenney のドット絵マップに乗せる「ゲームらしい」チャンキーな UI。
+   クリームのパネル + 焦げ茶の太い輪郭 + ぼかし無しの硬い影。角丸は少なめ。 */
+
+:root {
+  /* ---- 地と面 ---- */
+  --bg: #fbf4e2;
+  --panel: #fbf4e2;
+  --panel-2: #f3e6c8; /* パネルの中の一段下（行・チップ） */
+  --ink: #3d2b2e; /* 輪郭線・主文字 */
+  --muted: #8a746a;
+
+  /* ---- アクセント ---- */
+  --accent: #e8a23a;
+  --accent-ink: #3d2b2e;
+  --good: #4f9a52;
+  --warn: #c8483d;
+
+  /* ---- 形 ---- */
+  --border-w: 2px;
+  --radius-s: 8px;
+  --radius-m: 10px;
+  --radius-l: 16px;
+  /* ハードシャドウ：ぼかし無しのオフセットだけ。ゲームらしいチャンキーさの核。 */
+  --hard-shadow: 2px 2px 0 0 var(--ink);
+  --hard-shadow-sm: 1px 1px 0 0 var(--ink);
+
+  --font: 'Open Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --hit: 44px;
+  --icon-btn: 44px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #223a2e; /* キャンバス読み込み前に見える地の色（草原に近い暗緑） */
+  color: var(--ink);
+  font-family: var(--font);
+  font-weight: 700;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* ---------------------------------------------------------------------
+   画面全体 = 盤面。フルブリード。スクロールもフレームも余白も無い。 */
+
+.field-app {
+  position: fixed;
+  inset: 0;
   height: 100dvh;
+  width: 100vw;
   overflow: hidden;
+  touch-action: none;
 }
 
-/* シートやトーストをこの中で絶対配置するための基準にする。
-   shared-ui 側の .play は position を持たないので、ここで足す
-   （city-builders の .board-area と同じ考え方）。 */
-.play {
+.field-map {
+  position: absolute;
+  inset: 0;
+}
+
+/* HUD の入れ物はクリックを透過し、中のボタンだけ拾う（盤面のドラッグを阻害しない）。 */
+.hud-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.hud-layer > * {
+  pointer-events: none;
+}
+
+.hud-layer button,
+.hud-layer .hud-clickable {
+  pointer-events: auto;
+}
+
+/* ---------------------------------------------------------------------
+   共通パネル・ボタンの見た目 */
+
+.panel {
+  background: var(--panel);
+  border: var(--border-w) solid var(--ink);
+  border-radius: var(--radius-m);
+  box-shadow: var(--hard-shadow);
+}
+
+.icon-btn {
   position: relative;
+  width: var(--icon-btn);
+  height: var(--icon-btn);
+  flex: none;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: var(--border-w) solid var(--ink);
+  border-radius: var(--radius-s);
+  background: var(--panel);
+  box-shadow: var(--hard-shadow-sm);
+  color: var(--ink);
+  cursor: pointer;
+  transition: transform 0.12s var(--ease, ease);
 }
 
-/* マップ領域。残りの高さをすべて使い、横幅いっぱい・角丸で見せる。
-   サイズは常にここで固定され、シートの開閉や数値の変化では 1px も動かない
-   （CLAUDE.md: レイアウトが操作で動かないことを最優先する）。 */
-.map-area {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  border-radius: var(--card-radius);
-  overflow: hidden;
-  background: #cdbfa0; /* WorldView 読み込み前の一瞬だけ見える地の色 */
+.icon-btn::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--hit);
+  height: var(--hit);
+  transform: translate(-50%, -50%);
 }
 
-/* ---- ヘッダー 2 段目: スタミナ・島レベル・経験値 ---- */
+.icon-btn svg {
+  width: 22px;
+  height: 22px;
+  display: block;
+}
 
-/* 行 2 は必ず 1 行・固定の高さ。折り返すとマップが押し下げられて、画面が揺れる。 */
-.app-play .status-bar {
-  flex-wrap: nowrap;
-  height: var(--status-h);
+.icon-btn:active {
+  transform: translate(1px, 1px);
+  box-shadow: none;
+}
+
+.icon-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------------
+   左上: スタミナ・島レベル */
+
+.hud-topleft {
+  position: absolute;
+  top: calc(10px + env(safe-area-inset-top));
+  left: calc(10px + env(safe-area-inset-left));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  min-width: 148px;
+}
+
+.hud-row {
+  display: flex;
+  align-items: center;
   gap: 6px;
 }
 
-.app-play .stat {
-  padding: 3px 9px;
-  font-variant-numeric: tabular-nums;
-}
-
-.stamina-stat {
-  gap: 5px;
-  min-width: 0;
-  flex-shrink: 1;
-}
-
-.stamina-icon {
-  width: 12px;
-  height: 12px;
+.hud-icon {
+  width: 14px;
+  height: 14px;
   flex: none;
   color: var(--good);
 }
 
-.stamina-bar {
+.hud-bar-track {
   position: relative;
-  flex: 0 1 48px;
-  min-width: 24px;
-  width: 48px;
-  height: 8px;
+  flex: 1 1 auto;
+  height: 10px;
+  min-width: 60px;
+  border: 1px solid var(--ink);
   border-radius: 999px;
-  background: var(--surface-2);
+  background: var(--panel-2);
   overflow: hidden;
-  flex: none;
 }
 
-.stamina-bar-fill {
+.hud-bar-fill {
   position: absolute;
   inset: 0;
   border-radius: inherit;
   background: var(--good);
-  transition: width 0.25s var(--ease);
+  transition: width 0.25s ease;
 }
 
-.stamina-next {
+.hud-bar-fill.is-level {
+  background: var(--accent);
+}
+
+.hud-num {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* スタミナの次回回復までのカウントダウン。満タンでも幅を空けておく
+  （CLAUDE.md: レイアウトが 1px も動かないこと）。 */
+.hud-countdown {
   display: inline-block;
-  min-width: 26px;
+  min-width: 30px;
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+  text-align: right;
+}
+
+.hud-level-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.hud-level-label {
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.hud-xp {
+  font-size: 10px;
   color: var(--muted);
   white-space: nowrap;
 }
 
-/* ---- 失敗トースト・レベルアップの案内 ---- */
-/* どちらも .map-area の上に浮かせる。位置を固定し、文字の長さで動かない
-   ようにするため left: 50% + translateX(-50%) で常に中央に寄せる。 */
+/* ---------------------------------------------------------------------
+   右上: 設定・ヘルプ */
+
+.hud-topright {
+  position: absolute;
+  top: calc(10px + env(safe-area-inset-top));
+  right: calc(10px + env(safe-area-inset-right));
+  display: flex;
+  gap: 6px;
+}
+
+/* ---------------------------------------------------------------------
+   右辺中央: もちもの・もくひょう・模様替え */
+
+.hud-rightcol {
+  position: absolute;
+  top: 50%;
+  right: calc(10px + env(safe-area-inset-right));
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+}
+
+.hud-tool {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.hud-tool-btn {
+  width: 50px;
+  height: 50px;
+  display: grid;
+  place-items: center;
+  border: var(--border-w) solid var(--ink);
+  border-radius: var(--radius-m);
+  background: var(--panel);
+  box-shadow: var(--hard-shadow);
+  color: var(--ink);
+  transition: transform 0.12s ease, background-color 0.12s ease;
+}
+
+.hud-tool-btn svg {
+  width: 26px;
+  height: 26px;
+  display: block;
+}
+
+.hud-tool:active .hud-tool-btn {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+
+.hud-tool.is-active .hud-tool-btn {
+  background: var(--accent);
+}
+
+.hud-tool-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------
+   左下: テスト用ピル */
+
+.dev-pill {
+  position: absolute;
+  left: calc(10px + env(safe-area-inset-left));
+  bottom: calc(10px + env(safe-area-inset-bottom));
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  background: rgb(251 244 226 / 0.85);
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.dev-pill:active {
+  opacity: 0.5;
+}
+
+/* ---------------------------------------------------------------------
+   エリア名バナー（中央上部・出入りだけ一瞬） */
+
+.area-banner {
+  position: absolute;
+  top: calc(64px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 7px 18px;
+  border: var(--border-w) solid var(--ink);
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: var(--hard-shadow);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------
+   失敗トースト・レベルアップ案内 */
 
 .fail-toast {
   position: absolute;
   left: 50%;
-  bottom: 14px;
+  bottom: calc(28px + env(safe-area-inset-bottom));
   transform: translateX(-50%);
-  z-index: 4;
   max-width: calc(100% - 24px);
   padding: 8px 16px;
+  border: var(--border-w) solid var(--ink);
   border-radius: 999px;
-  background: rgb(38 20 20 / 0.85);
+  background: rgb(38 20 20 / 0.9);
   color: #fff;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  pointer-events: none;
 }
 
 .levelup-banner {
   position: absolute;
-  top: 12px;
+  top: calc(64px + env(safe-area-inset-top));
   left: 50%;
   transform: translateX(-50%);
-  z-index: 4;
   padding: 10px 18px;
-  border-radius: 16px;
-  background: rgb(145 121 209 / 0.94);
-  color: #fff;
+  border: var(--border-w) solid var(--ink);
+  border-radius: var(--radius-l);
+  background: var(--accent);
+  color: var(--ink);
   font-size: 13px;
   font-weight: 700;
   line-height: 1.5;
   text-align: center;
-  box-shadow: var(--shadow-lg);
-  pointer-events: none;
+  box-shadow: var(--hard-shadow);
 }
 
-/* ---- ツール行: 模様替えが押されている状態 ---- */
+/* ---------------------------------------------------------------------
+   シート（もちもの・スキル・クラフト・もくひょう・看板・配置・設定・ヘルプ・導入） */
 
-.tool.is-active {
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(34 24 20 / 0.45);
+  z-index: 20;
+}
+
+.sheet {
+  background: var(--panel);
+  border: var(--border-w) solid var(--ink);
+  border-radius: var(--radius-l);
+  padding: 22px 22px 20px;
+  box-shadow: 4px 4px 0 0 var(--ink);
+  width: min(92vw, 420px);
+  max-height: min(80dvh, 620px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sheet-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+  text-align: center;
+}
+
+.sheet-subtitle {
+  margin: 6px 0 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.sheet-text {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.help-list {
+  margin: 0;
+  padding-left: 1.15em;
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.65;
+  color: var(--ink);
+}
+
+.help-list li::marker {
+  color: var(--accent);
+}
+
+.sheet-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  border: var(--border-w) solid var(--ink);
+  border-radius: var(--radius-s);
+  background: var(--panel-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.sheet-row:active {
+  transform: translate(1px, 1px);
+}
+
+.sheet-row.static {
+  cursor: default;
+}
+
+.sheet-row.static:active {
+  transform: none;
+}
+
+.sheet-row.danger {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.sheet-row.is-selected {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.switch {
+  position: relative;
+  width: 46px;
+  height: 27px;
+  flex: none;
+  border: var(--border-w) solid var(--ink);
+  border-radius: 999px;
+  padding: 0;
+  background: var(--panel-2);
+  cursor: pointer;
+  transition: background-color 0.18s ease;
+}
+
+.switch[aria-checked='true'] {
   background: var(--accent);
-  color: #fff;
 }
 
-/* ---- もちもの: アイコン付きの数の一覧 ---- */
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 19px;
+  height: 19px;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  background: #fff;
+  transition: transform 0.18s ease;
+}
+
+.switch[aria-checked='true']::after {
+  transform: translateX(19px);
+}
+
+.sheet-list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px;
+  margin: 0 -2px;
+  overscroll-behavior: contain;
+}
+
+.sheet-btn {
+  border: var(--border-w) solid var(--ink);
+  border-radius: 999px;
+  padding: 11px 30px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent-ink);
+  background: var(--accent);
+  box-shadow: var(--hard-shadow-sm);
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+
+.sheet-btn:active {
+  transform: translate(1px, 1px);
+  box-shadow: none;
+}
+
+.sheet-btn.quiet {
+  color: var(--ink);
+  background: var(--panel-2);
+}
+
+.sheet-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.sheet-link {
+  margin-top: 2px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px 12px;
+}
+
+/* ---------------------------------------------------------------------
+   もちもの: アイコン付きの数の一覧 */
 
 .icon-grid {
   display: grid;
@@ -151,11 +592,12 @@
   align-items: center;
   gap: 3px;
   padding: 10px 6px;
-  border-radius: 12px;
-  background: var(--surface-2);
+  border: var(--border-w) solid var(--ink);
+  border-radius: var(--radius-s);
+  background: var(--panel-2);
   font-size: 12px;
-  font-weight: 600;
-  color: var(--pill-fg);
+  font-weight: 700;
+  color: var(--ink);
 }
 
 .icon-cell img {
@@ -166,10 +608,11 @@
 
 .icon-cell-count {
   font-weight: 700;
-  color: var(--title);
+  color: var(--ink);
 }
 
-/* ---- スキル: 系統ごとの行・段階の丸（pip） ---- */
+/* ---------------------------------------------------------------------
+   スキル: 系統ごとの行・段階の丸（pip） */
 
 .skill-branch {
   margin-bottom: 6px;
@@ -177,7 +620,7 @@
 
 .skill-row {
   padding: 10px 4px 12px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 2px solid var(--ink);
 }
 
 .skill-row-head {
@@ -190,7 +633,7 @@
 .skill-name {
   font-weight: 700;
   font-size: 14px;
-  color: var(--title);
+  color: var(--ink);
 }
 
 .pips {
@@ -203,13 +646,13 @@
   width: 12px;
   height: 12px;
   border-radius: 999px;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
+  background: var(--panel-2);
+  border: 1px solid var(--ink);
 }
 
 .pip.is-filled {
   background: var(--accent);
-  border-color: var(--accent);
+  border-color: var(--ink);
 }
 
 .pip.is-locked {
@@ -219,6 +662,7 @@
 .skill-desc {
   margin: 4px 0 8px;
   font-size: 12px;
+  font-weight: 600;
   line-height: 1.5;
   color: var(--muted);
 }
@@ -227,15 +671,17 @@
   width: 100%;
 }
 
-/* ---- クラフト: 一覧の行 ---- */
+/* ---------------------------------------------------------------------
+   クラフト: 一覧の行 */
 
 .craft-row {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 10px;
-  border-radius: 12px;
-  background: var(--surface-2);
+  border: var(--border-w) solid var(--ink);
+  border-radius: var(--radius-s);
+  background: var(--panel-2);
 }
 
 .craft-row.is-locked {
@@ -257,17 +703,19 @@
 .craft-name {
   font-weight: 700;
   font-size: 14px;
-  color: var(--title);
+  color: var(--ink);
 }
 
 .craft-meta {
   font-size: 11px;
+  font-weight: 600;
   color: var(--muted);
   margin-bottom: 4px;
 }
 
 .craft-locked-text {
   font-size: 11px;
+  font-weight: 600;
   color: var(--muted);
 }
 
@@ -282,11 +730,12 @@
   align-items: center;
   gap: 3px;
   padding: 2px 7px;
+  border: 1px solid var(--ink);
   border-radius: 999px;
-  background: var(--surface);
+  background: var(--panel);
   font-size: 11px;
-  font-weight: 600;
-  color: var(--pill-fg);
+  font-weight: 700;
+  color: var(--ink);
 }
 
 .cost-chip img {
@@ -311,7 +760,8 @@
   flex: none;
 }
 
-/* ---- もくひょう: 進捗バーとエリア一覧 ---- */
+/* ---------------------------------------------------------------------
+   もくひょう: 進捗バーとエリア一覧 */
 
 .goal-progress {
   margin-bottom: 4px;
@@ -319,15 +769,16 @@
 
 .goal-progress-bar {
   height: 10px;
+  border: 1px solid var(--ink);
   border-radius: 999px;
-  background: var(--surface-2);
+  background: var(--panel-2);
   overflow: hidden;
 }
 
 .goal-progress-fill {
   height: 100%;
   background: var(--accent);
-  transition: width 0.3s var(--ease);
+  transition: width 0.3s ease;
 }
 
 .goal-area-row {
@@ -347,7 +798,8 @@
   text-align: right;
 }
 
-/* ---- 配置（模様替え）シート ---- */
+/* ---------------------------------------------------------------------
+   配置（模様替え）シート */
 
 .place-current {
   margin-bottom: 4px;
@@ -358,22 +810,46 @@
   font-size: 12px;
 }
 
-/* ---- 看板シート: 選ばれている作物 ---- */
+/* ---------------------------------------------------------------------
+   看板シート */
 
 .sign-grow-time {
   color: var(--muted);
   font-size: 12px;
+  font-weight: 600;
 }
 
-.sheet-row.is-selected {
-  box-shadow: inset 0 0 0 2px var(--accent);
-}
-
-/* ---- あそびかたシート: 素材クレジット ---- */
+/* ---------------------------------------------------------------------
+   あそびかたシート: 素材クレジット */
 
 .help-credit {
   margin-top: 12px;
   color: var(--muted);
   font-size: 11px;
+  font-weight: 600;
   text-align: center;
+}
+
+@media (max-width: 380px) {
+  .sheet {
+    padding: 18px 16px 16px;
+  }
+  .hud-rightcol {
+    gap: 10px;
+  }
+  .hud-tool-btn {
+    width: 44px;
+    height: 44px;
+  }
+  .hud-tool-btn svg {
+    width: 22px;
+    height: 22px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+  }
 }

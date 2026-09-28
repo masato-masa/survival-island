@@ -1,10 +1,12 @@
 // このゲーム専用のアイコン。shared-ui のものではないので、ここに直接置く。
 // すべて 24x24 の枠に stroke="currentColor" で描く（塗りは使わない）。
 
-export function BackIcon() {
+/** 右上「?」。あそびかたを開く。 */
+export function HelpIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M15 5 L8 12 L15 19" />
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M9.5 9 a2.5 2.5 0 1 1 3.6 2.24 C12 12 12 12.6 12 13.6" />
+      <circle cx="12" cy="17.4" r="0.15" fill="currentColor" stroke="currentColor" strokeWidth="1.6" />
     </svg>
   );
 }
@@ -18,8 +20,8 @@ export function SettingsIcon() {
   );
 }
 
-/** ツール行「もちもの」。荷物袋。 */
-export function InventoryIcon() {
+/** 右辺「もちもの」。荷物袋。 */
+export function BagIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M6 8 h12 l1 12 a2 2 0 0 1 -2 2 H7 a2 2 0 0 1 -2 -2 Z" />
@@ -28,27 +30,7 @@ export function InventoryIcon() {
   );
 }
 
-/** ツール行「スキル」。上へ伸びる星。 */
-export function SkillIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 3 l2.4 5.3 5.8 0.6 -4.4 3.9 1.3 5.7 -5.1 -3 -5.1 3 1.3 -5.7 -4.4 -3.9 5.8 -0.6 Z" />
-    </svg>
-  );
-}
-
-/** ツール行「クラフト」。金づち。 */
-export function CraftIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M14.5 6.5 l3 3 -2.2 2.2 -3-3 Z" />
-      <path d="M13.2 9.8 L5 18 l-1 2 2 -1 8.2 -8.2" />
-      <path d="M15.5 4.5 l4 4" />
-    </svg>
-  );
-}
-
-/** ツール行「もくひょう」。旗。 */
+/** 右辺「もくひょう」。旗。 */
 export function GoalIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -58,8 +40,8 @@ export function GoalIcon() {
   );
 }
 
-/** ツール行「模様替え」。塗りローラー。 */
-export function DecorateIcon() {
+/** 右辺「模様替え」。塗りローラー。 */
+export function BrushIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <rect x="4" y="4" width="12" height="5" rx="1.2" />

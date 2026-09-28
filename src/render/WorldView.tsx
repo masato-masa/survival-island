@@ -6,7 +6,7 @@ import { useEffect, useRef } from 'react';
 import type { JSX } from 'react';
 
 import { store } from '@/game/store';
-import type { Fail, GameEvent, Slot, Target } from '@/game/types';
+import type { Fail, GameEvent, Slot, StationKind, Target } from '@/game/types';
 
 import {
   baseScaleFor,
@@ -25,6 +25,7 @@ export interface WorldViewProps {
   decorate: boolean;
   onSignTap: (plotId: string) => void;
   onSlotTap: (slotId: string) => void;
+  onStationTap: (kind: StationKind) => void;
   paused: boolean;
 }
 
@@ -92,6 +93,10 @@ export function WorldView(props: WorldViewProps): JSX.Element {
         propsRef.current.onSignTap(target.plot.id);
         return;
       }
+      if (target.kind === 'station') {
+        propsRef.current.onStationTap(target.station.kind);
+        return;
+      }
       if (store.cooldownUntil() > store.now()) {
         // クールダウン中：1 件だけキューに積んで、明けたら自動で撃つ（連打のリズムを崩さない）。
         queuedTap = { screenX, screenY };
@@ -136,7 +141,8 @@ export function WorldView(props: WorldViewProps): JSX.Element {
           const q = queuedTap;
           queuedTap = null;
           const target = store.target();
-          if (target && target.kind !== 'sign') store.actOnTarget();
+          if (target && target.kind === 'station') propsRef.current.onStationTap(target.station.kind);
+          else if (target && target.kind !== 'sign') store.actOnTarget();
           void q;
         }
 
@@ -149,6 +155,7 @@ export function WorldView(props: WorldViewProps): JSX.Element {
           const target = store.target();
           if (target) {
             if (target.kind === 'sign') propsRef.current.onSignTap(target.plot.id);
+            else if (target.kind === 'station') propsRef.current.onStationTap(target.station.kind);
             else if (store.cooldownUntil() <= now) store.actOnTarget();
           }
         }

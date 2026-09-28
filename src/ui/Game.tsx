@@ -1,17 +1,22 @@
-import { AnimatePresence } from 'motion/react';
+// プレイ画面そのもの。ホーム画面を持たないので、このコンポーネントがアプリの全部になる。
+// 画面全体が盤面（フルブリード）で、HUD はすべて盤面の上に固定位置で浮かせる
+// （CLAUDE.md: 操作でレイアウトが 1px も動かないこと）。
+
+import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
-import { AREAS, CROPS, FURNITURE, NODES } from '@/game/data';
+import { AREAS, CROPS, FURNITURE, ISLAND_LEVEL_POINTS, NODES } from '@/game/data';
 import { store } from '@/game/store';
-import type { CropId, Fail, FurnitureId, GameEvent, SkillId } from '@/game/types';
+import type { CropId, Fail, FurnitureId, GameEvent, SkillId, StationKind } from '@/game/types';
 import { WorldView } from '@/render/WorldView';
 
 import { CraftSheet } from './CraftSheet';
+import { DevSheet } from './DevSheet';
 import { GoalSheet } from './GoalSheet';
 import { formatCountdown } from './format';
 import { HelpSheet } from './HelpSheet';
 import { hapticCraft, hapticFail, hapticHarvest, hapticHit, hapticLevelUp, hapticPlace, hapticTap } from './haptics';
-import { BackIcon, CraftIcon, DecorateIcon, GoalIcon, InventoryIcon, SettingsIcon, SkillIcon } from './icons';
+import { BagIcon, BrushIcon, GoalIcon, HelpIcon, SettingsIcon } from './icons';
 import { IntroSheet } from './IntroSheet';
 import { InventorySheet } from './InventorySheet';
 import { PlaceSheet } from './PlaceSheet';
@@ -30,6 +35,7 @@ type SheetState =
   | { kind: 'place'; slotId: string }
   | { kind: 'help' }
   | { kind: 'settings' }
+  | { kind: 'dev' }
   | { kind: 'intro' }
   | null;
 
@@ -64,7 +70,9 @@ function collectUnlocks(level: number): string[] {
   return unlocks;
 }
 
-export function Game({ onExit }: { onExit: () => void }) {
+const BANNER_SPRING = { type: 'spring', stiffness: 380, damping: 26 } as const;
+
+export function Game() {
   // store の版数を購読し、行動のたびに再描画する。
   useSyncExternalStore(store.subscribe, store.version, store.version);
 
@@ -72,10 +80,14 @@ export function Game({ onExit }: { onExit: () => void }) {
   const [decorate, setDecorate] = useState(false);
   const [failMsg, setFailMsg] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
+  const [areaBanner, setAreaBanner] = useState<string | null>(null);
   const [soundOn, setSoundOn] = useState(isSoundEnabled);
   const [hapticsOn, setHapticsOn] = useState(isHapticsEnabled);
   const failTimer = useRef<number | undefined>(undefined);
   const bannerTimer = useRef<number | undefined>(undefined);
+  const areaBannerTimer = useRef<number | undefined>(undefined);
+  const lastAreaRef = useRef<string | null>(null);
+  const areaBannerShownRef = useRef(false);
 
   // スタミナ回復・作物の成長を反映するため、1 秒ごとに時計を進めて再描画する。
   useEffect(() => {
@@ -156,6 +168,7 @@ export function Game({ onExit }: { onExit: () => void }) {
       offFail();
       window.clearTimeout(failTimer.current);
       window.clearTimeout(bannerTimer.current);
+      window.clearTimeout(areaBannerTimer.current);
     };
   }, []);
 
@@ -163,11 +176,25 @@ export function Game({ onExit }: { onExit: () => void }) {
   const world = store.world;
   const stamina = store.stamina();
   const islandLevel = store.islandLevel();
+  const points = store.points();
+  const nextThreshold = ISLAND_LEVEL_POINTS[islandLevel];
+  const levelProgress = nextThreshold ? Math.max(0, Math.min(1, points.total / nextThreshold)) : 1;
 
   const px = Math.floor(save.player.x);
   const py = Math.floor(save.player.y);
   const areaId = world.area[py * world.width + px] ?? null;
   const areaName = areaId ? AREAS[areaId].name : '';
+
+  // エリアが変わった（起動直後を含む）ら、名前を数秒だけ中央上部に出す。
+  useEffect(() => {
+    if (!areaName) return;
+    if (lastAreaRef.current === areaName && areaBannerShownRef.current) return;
+    lastAreaRef.current = areaName;
+    areaBannerShownRef.current = true;
+    window.clearTimeout(areaBannerTimer.current);
+    setAreaBanner(areaName);
+    areaBannerTimer.current = window.setTimeout(() => setAreaBanner(null), 2000);
+  }, [areaName]);
 
   const closeSheet = () => setSheet(null);
 
@@ -182,97 +209,121 @@ export function Game({ onExit }: { onExit: () => void }) {
     closeSheet();
   };
 
+  const onStationTap = (kind: StationKind) => {
+    if (sheet !== null) return; // シートが開いている間は二重に開かない
+    setSheet({ kind: kind === 'ruins' ? 'skill' : 'craft' });
+    hapticTap();
+  };
+
+  const staminaPct = Math.max(0, Math.min(1, stamina.value / stamina.max)) * 100;
+
   return (
-    <div className="app app-play">
-      <header className="header">
-        <div className="header-row">
-          <div className="header-left">
-            <button className="icon-btn" aria-label="戻る" onClick={onExit}>
-              <BackIcon />
-            </button>
-          </div>
-          <h1 className="title">{areaName}</h1>
-          <div className="header-actions">
-            <button className="icon-btn" aria-label="あそびかた" onClick={() => setSheet({ kind: 'help' })}>
-              ?
-            </button>
-            <button className="icon-btn" aria-label="設定" onClick={() => setSheet({ kind: 'settings' })}>
-              <SettingsIcon />
-            </button>
-          </div>
-        </div>
-        <div className="status-bar">
-          <span className="stat stamina-stat" aria-label={`スタミナ ${stamina.value}/${stamina.max}`}>
-            <svg className="stamina-icon" viewBox="0 0 12 12" aria-hidden="true">
+    <div className="field-app">
+      <div className="field-map">
+        <WorldView
+          decorate={decorate}
+          paused={sheet !== null}
+          onSignTap={(plotId) => setSheet({ kind: 'sign', plotId })}
+          onSlotTap={(slotId) => setSheet({ kind: 'place', slotId })}
+          onStationTap={onStationTap}
+        />
+      </div>
+
+      <div className="hud-layer">
+        {/* 左上: スタミナ・島レベル */}
+        <div className="hud-topleft panel">
+          <div className="hud-row" aria-label={`スタミナ ${stamina.value}/${stamina.max}`}>
+            <svg className="hud-icon" viewBox="0 0 12 12" aria-hidden="true">
               <path d="M7 1 2.5 7H6l-1 4 4.5-6H6z" fill="currentColor" />
             </svg>
-            <span className="stamina-bar">
-              <span
-                className="stamina-bar-fill"
-                style={{ width: `${Math.max(0, Math.min(1, stamina.value / stamina.max)) * 100}%` }}
-              />
+            <span className="hud-bar-track">
+              <span className="hud-bar-fill" style={{ width: `${staminaPct}%` }} />
             </span>
-            <span className="stat-num">
+            <span className="hud-num">
               {stamina.value}/{stamina.max}
             </span>
-            {/* 満タンでも場所は取っておく。出たり消えたりで行 2 の幅が変わると、隣の表示が揺れる。 */}
-            <span className="stamina-next" style={{ visibility: stamina.value < stamina.max ? 'visible' : 'hidden' }}>
+          </div>
+          <div className="hud-row">
+            <span style={{ width: 14 }} />
+            {/* 満タンでも場所は取っておく（行の高さ・幅が数値で動かないように）。 */}
+            <span className="hud-countdown" style={{ visibility: stamina.value < stamina.max ? 'visible' : 'hidden' }}>
               {formatCountdown(stamina.value < stamina.max ? stamina.nextInMs : 0)}
             </span>
-          </span>
-          <span className="stat">
-            <span className="stat-label">島Lv</span>
-            <span className="stat-num">{islandLevel}</span>
-          </span>
-          <span className="stat">
-            <span className="stat-label">経験値</span>
-            <span className="stat-num">{save.xp}</span>
-          </span>
-        </div>
-      </header>
-
-      <main className="play">
-        <div className="map-area">
-          <WorldView
-            decorate={decorate}
-            paused={sheet !== null}
-            onSignTap={(plotId) => setSheet({ kind: 'sign', plotId })}
-            onSlotTap={(slotId) => setSheet({ kind: 'place', slotId })}
-          />
-
-          {failMsg ? <div className="fail-toast">{failMsg}</div> : null}
-          {banner ? (
-            <div className="levelup-banner">
-              {banner.split('\n').map((line, i) => (
-                <div key={i}>{line}</div>
-              ))}
-            </div>
-          ) : null}
+          </div>
+          <div className="hud-level-row">
+            <span className="hud-level-label">島Lv {islandLevel}</span>
+            <span className="hud-bar-track">
+              <span className="hud-bar-fill is-level" style={{ width: `${levelProgress * 100}%` }} />
+            </span>
+          </div>
+          <div className="hud-xp">経験値 {save.xp}</div>
         </div>
 
-        <footer className="footer">
-          <button className="tool" aria-label="もちもの" onClick={() => setSheet({ kind: 'inventory' })}>
-            <InventoryIcon />
+        {/* 右上: 設定・ヘルプ */}
+        <div className="hud-topright">
+          <button className="icon-btn" aria-label="あそびかた" onClick={() => setSheet({ kind: 'help' })}>
+            <HelpIcon />
           </button>
-          <button className="tool" aria-label="スキル" onClick={() => setSheet({ kind: 'skill' })}>
-            <SkillIcon />
+          <button className="icon-btn" aria-label="設定" onClick={() => setSheet({ kind: 'settings' })}>
+            <SettingsIcon />
           </button>
-          <button className="tool" aria-label="クラフト" onClick={() => setSheet({ kind: 'craft' })}>
-            <CraftIcon />
+        </div>
+
+        {/* 右辺中央: もちもの・もくひょう・模様替え */}
+        <div className="hud-rightcol">
+          <button className="hud-tool" aria-label="もちもの" onClick={() => setSheet({ kind: 'inventory' })}>
+            <span className="hud-tool-btn">
+              <BagIcon />
+            </span>
+            <span className="hud-tool-label">もちもの</span>
           </button>
-          <button className="tool" aria-label="もくひょう" onClick={() => setSheet({ kind: 'goal' })}>
-            <GoalIcon />
+          <button className="hud-tool" aria-label="もくひょう" onClick={() => setSheet({ kind: 'goal' })}>
+            <span className="hud-tool-btn">
+              <GoalIcon />
+            </span>
+            <span className="hud-tool-label">もくひょう</span>
           </button>
           <button
-            className={`tool${decorate ? ' is-active' : ''}`}
+            className={`hud-tool${decorate ? ' is-active' : ''}`}
             aria-label="模様替え"
             aria-pressed={decorate}
             onClick={() => setDecorate((v) => !v)}
           >
-            <DecorateIcon />
+            <span className="hud-tool-btn">
+              <BrushIcon />
+            </span>
+            <span className="hud-tool-label">模様替え</span>
           </button>
-        </footer>
-      </main>
+        </div>
+
+        {/* 左下: テスト用 */}
+        <button className="dev-pill hud-clickable" onClick={() => setSheet({ kind: 'dev' })}>
+          テスト用
+        </button>
+
+        <AnimatePresence>
+          {areaBanner ? (
+            <motion.div
+              key={areaBanner}
+              className="area-banner"
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0, transition: BANNER_SPRING }}
+              exit={{ opacity: 0, transition: { duration: 0.25 } }}
+            >
+              {areaBanner}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        {failMsg ? <div className="fail-toast">{failMsg}</div> : null}
+        {banner ? (
+          <div className="levelup-banner">
+            {banner.split('\n').map((line, i) => (
+              <div key={i}>{line}</div>
+            ))}
+          </div>
+        ) : null}
+      </div>
 
       <AnimatePresence>
         {sheet?.kind === 'inventory' ? <InventorySheet key="inventory" save={save} onClose={closeSheet} /> : null}
@@ -338,6 +389,10 @@ export function Game({ onExit }: { onExit: () => void }) {
             onClose={closeSheet}
           />
         ) : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {sheet?.kind === 'dev' ? <DevSheet key="dev" onClose={closeSheet} onChange={() => {}} /> : null}
       </AnimatePresence>
 
       <AnimatePresence>
