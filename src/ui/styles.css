@@ -857,3 +857,68 @@ body {
     animation-duration: 1ms !important;
   }
 }
+
+/* ---- Pigg Island 風スパイク（絵柄テスト） ----
+ * ゲーム本体には無関係。試作の質感確認だけが目的なので、共通トークンには寄せず、
+ * ここに直接ベタ書きする（本採用するなら別途ちゃんと設計し直す）。 */
+.pigg-field {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #4fb0d8;
+}
+
+.pigg-field-ground {
+  position: absolute;
+  inset: 0;
+  background-repeat: repeat;
+  background-size: 220px 220px;
+}
+
+.pigg-obj {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  /* 生成画像は滑らかな塗りなので、ドット絵と違って拡大縮小もぼかしたままでよい */
+  image-rendering: auto;
+  filter: drop-shadow(0 6px 6px rgb(0 0 0 / 0.18));
+  pointer-events: none;
+  user-select: none;
+}
+
+.pigg-field-badge {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  background: rgb(255 255 255 / 0.92);
+  border-radius: 14px;
+  padding: 10px 14px;
+  font-weight: 700;
+  font-size: 14px;
+  color: #3d2b2e;
+  box-shadow: 0 4px 0 rgb(0 0 0 / 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pigg-field-badge span {
+  font-weight: 500;
+  font-size: 12px;
+  color: #7a6a6c;
+}
+
+.pigg-field-close {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 28px;
+  border-radius: 999px;
+  border: 2px solid #3d2b2e;
+  background: #fbf4e2;
+  font-weight: 700;
+  font-size: 15px;
+  color: #3d2b2e;
+  box-shadow: 0 3px 0 #3d2b2e;
+}

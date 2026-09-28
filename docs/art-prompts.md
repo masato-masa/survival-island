@@ -105,3 +105,17 @@
 > leaf particle. Row 3: inventory item icons, each 16x16 with dark outline, no shadow: (1) a chopped
 > wood log, (2) a grey stone chunk, (3) a copper ore nugget, (4) a harvested turnip, (5) a sunflower
 > head, (6) a red tomato.
+
+## スパイク: Pigg Island 風（試作、texture/pigg/ 配下）
+
+普段の Kenney/ChatGPT ドット絵パイプラインとは別の絵柄を試すためのもの。
+マゼンタ背景 → `node scripts/slice-pigg-spike.mjs` で透過に変換（脱色にじみ処理つき）。
+
+> Create a single object illustration in the art style of the mobile social game "Pigg Island" / Ameba
+> Pigg: a soft, rounded, semi-flat cel-shaded 2.5D cartoon illustration (NOT pixel art, no visible pixel
+> grid, smooth anti-aliased edges), warm saturated tropical colors, simple gradient shading with a clear
+> soft drop shadow underneath, a subtle dark outline around the silhouette, gentle rim-light highlight on
+> the top-left edges. [木の説明]... Background: flat solid pure magenta #FF00FF (2 回目以降。1 回目は
+> transparent 指定で縁ににじみが出て失敗した)。
+
+砂は `docs/art-prompts.md` の別プロンプトで、マゼンタ無しの敷き詰めテクスチャとして生成。

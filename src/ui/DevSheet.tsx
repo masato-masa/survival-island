@@ -8,7 +8,15 @@ import { getArtMode, setArtMode } from '@/render/sprites';
 
 import { Sheet } from './Sheets';
 
-export function DevSheet({ onClose, onChange }: { onClose: () => void; onChange: () => void }) {
+export function DevSheet({
+  onClose,
+  onChange,
+  onOpenPiggTest,
+}: {
+  onClose: () => void;
+  onChange: () => void;
+  onOpenPiggTest?: () => void;
+}) {
   const [confirmReset, setConfirmReset] = useState(false);
   const [artMode, setArtModeState] = useState(getArtMode);
 
@@ -29,6 +37,11 @@ export function DevSheet({ onClose, onChange }: { onClose: () => void; onChange:
           }}
         />
       </div>
+      {onOpenPiggTest ? (
+        <button className="sheet-row" onClick={onOpenPiggTest}>
+          絵柄テスト（Pigg 風・試作）
+        </button>
+      ) : null}
       <button
         className="sheet-row"
         onClick={() => {

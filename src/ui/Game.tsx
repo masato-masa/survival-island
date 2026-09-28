@@ -74,7 +74,7 @@ function collectUnlocks(level: number): string[] {
 
 const BANNER_SPRING = { type: 'spring', stiffness: 380, damping: 26 } as const;
 
-export function Game() {
+export function Game({ onOpenPiggTest }: { onOpenPiggTest?: () => void } = {}) {
   // store の版数を購読し、行動のたびに再描画する。
   useSyncExternalStore(store.subscribe, store.version, store.version);
 
@@ -408,7 +408,9 @@ export function Game() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {sheet?.kind === 'dev' ? <DevSheet key="dev" onClose={closeSheet} onChange={() => {}} /> : null}
+        {sheet?.kind === 'dev' ? (
+          <DevSheet key="dev" onClose={closeSheet} onChange={() => {}} onOpenPiggTest={onOpenPiggTest} />
+        ) : null}
       </AnimatePresence>
 
       <AnimatePresence>
