@@ -4,44 +4,20 @@
 import { useState } from 'react';
 
 import { store } from '@/game/store';
-import { getArtMode, setArtMode } from '@/render/sprites';
 
 import { Sheet } from './Sheets';
 
 export function DevSheet({
   onClose,
   onChange,
-  onOpenPiggTest,
 }: {
   onClose: () => void;
   onChange: () => void;
-  onOpenPiggTest?: () => void;
 }) {
   const [confirmReset, setConfirmReset] = useState(false);
-  const [artMode, setArtModeState] = useState(getArtMode);
 
   return (
     <Sheet title="テスト用" subtitle="数値はすぐ反映される" onClose={onClose}>
-      <div className="sheet-row static">
-        <span>素材: Kenney / 仮素材</span>
-        <button
-          className="switch"
-          role="switch"
-          aria-checked={artMode === 'kenney'}
-          aria-label="素材: Kenney / 仮素材"
-          onClick={() => {
-            const next = artMode === 'kenney' ? 'code' : 'kenney';
-            setArtMode(next);
-            setArtModeState(next);
-            onChange();
-          }}
-        />
-      </div>
-      {onOpenPiggTest ? (
-        <button className="sheet-row" onClick={onOpenPiggTest}>
-          絵柄テスト（Pigg 風・試作）
-        </button>
-      ) : null}
       <button
         className="sheet-row"
         onClick={() => {

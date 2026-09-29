@@ -18,11 +18,25 @@
 
 ## 素材
 
-Kenney の CC0 パック（16×16 を 2 倍で 32×32）。対応が無いものはコードで描いた仮素材にフォールバックする。
+絵柄は **pigg 風（やわらかい着色イラスト）**。ドット絵・Kenney・旧 ChatGPT ドット絵は 1 つも残していない。
+出どころは 2 つだけ:
 
-```bash
-node scripts/fetch-kenney.mjs   # refs/kenney/ へ取得（refs/ は git 管理外）
-npm run atlas                   # scripts/kenney-map.mjs の対応表から src/assets/kenney-atlas.* を作る
-```
+1. ユーザー提供の素材シート `src/assets/refimg/`（木・岩・家具・花）と `src/assets/pigg/`（主人公・宝箱・岩）。
+   シートからの切り出しは `scripts/slice-refimg.mjs`。切り出し後の後処理は次の 3 本（どれも何度走らせても同じ結果）:
+   `scripts/strip-tree-shadows.mjs`（木の焼き込み影を消す）、`scripts/clean-checker.mjs`（家具の市松模様の抜き残りを消す）、
+   `scripts/clean-pigg-alpha.mjs`（pigg 素材の薄い半透明のにじみを消す）。
+   **`slice-refimg.mjs` を走らせ直したら上の 3 本も走らせる**（`furn_flower_bed` は手で切り詰めてあるので、
+   再切り出しで戻ってしまう。`git checkout` で戻すこと）。
+   ChatGPT で生成した絵（`pigg_ship` `pigg_tower` `pigg_arch`）は、ダウンロードしたものを
+   `node scripts/import-generated.mjs <入力> <出力>` で透過・トリミングして `src/assets/pigg/` に入れる（元画像は `refs/`）。
+2. `src/render/sprites.ts` の `PAINTERS` に書いたコード描画のベクター絵（作物・アイテム・道具・エフェクト・看板・
+   道タイルなど、提供素材に無いもの）。
 
-対応表を変えたら `npm run atlas` を必ず走らせる。ChatGPT で作る素材も同じ流れ（スクリプトで切り出す）に乗せる。
+地面は画像を使わず `src/render/terrainCore.ts` が色を計算する（重いので `terrainWorker.ts` = Web Worker で焼き、
+使えない環境ではメインスレッドで区切って焼く）。草の葉先・花・小石は `forestTrees.ts` の `buildGroundDecor` が
+見た目だけの物体として散らす。
+
+- スプライトは名前で引く（`getSprite('tree')`）。対応表は `sprites.ts` の `SHEET_TARGET`（サイズはワールド px 幅）。
+- 足りない絵は `PAINTERS` に描くか、素材シートに足して `SHEET_TARGET` に載せる。ChatGPT で作る場合も、
+  スクリプトで切り出して `src/assets/refimg/` に入れる流れに乗せる。
+- 確認用に `sprites.html`（`npm run dev` 中に `/survival-island/sprites.html`）で全スプライトを一覧できる。

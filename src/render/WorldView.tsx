@@ -21,7 +21,7 @@ import {
 } from './camera';
 import { draw, effects, type RenderState, type Vec2 } from './renderer';
 import { paintTerrainAsync, type PaintedTerrain } from './terrain';
-import { buildForestTrees, type TreeInstance } from './forestTrees';
+import { buildForestTrees, buildGroundDecor, type TreeInstance } from './forestTrees';
 import { PointerController } from '@/input/pointer';
 
 export interface WorldViewProps {
@@ -33,6 +33,10 @@ export interface WorldViewProps {
 }
 
 const MAX_DT_MS = 50;
+
+// pigg 風の低いカメラ: プレイヤーを画面中央ではなくやや下に固定し、進行方向側を
+// 広く見せる。PiggTestField（絵柄テスト）で詰めた値をそのまま本編にも適用する。
+const CAMERA_ANCHOR_Y = 0.62;
 
 export function WorldView(props: WorldViewProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -53,8 +57,9 @@ export function WorldView(props: WorldViewProps): JSX.Element {
 
     const camera: CameraState = createCamera();
     const world = store.world;
-    camera.x = (world.start.x + 0.5) * TILE;
-    camera.y = (world.start.y + 0.5) * TILE;
+    // セーブに残っている現在位置から始める（開始位置から動かしていると、読み込みのたびにカメラが滑って見える）。
+    camera.x = store.get().player.x * TILE;
+    camera.y = store.get().player.y * TILE;
 
     // 地面レイヤーを一度だけ焼く。焼いている間は draw() 側が terrain=null を見て
     // フォールバックのベタ塗りを出すので、画面が固まって見えることはない。
@@ -62,6 +67,7 @@ export function WorldView(props: WorldViewProps): JSX.Element {
     let cancelled = false;
     // 森の木のインスタンスはタイルを舐めるだけ（ピクセル処理ではない）ので同期で十分軽い。
     const forestTrees: TreeInstance[] = buildForestTrees(world);
+    const groundDecor: TreeInstance[] = buildGroundDecor(world);
     paintTerrainAsync(world).then((result) => {
       if (cancelled) return;
       terrain = result;
@@ -82,7 +88,7 @@ export function WorldView(props: WorldViewProps): JSX.Element {
       const w = Math.max(1, rect.width);
       const h = Math.max(1, rect.height);
       dpr = window.devicePixelRatio || 1;
-      viewport = { widthCssPx: w, heightCssPx: h, baseScale: baseScaleFor(w, h) };
+      viewport = { widthCssPx: w, heightCssPx: h, baseScale: baseScaleFor(w, h), anchorY: CAMERA_ANCHOR_Y };
       canvas.width = Math.round(w * dpr);
       canvas.height = Math.round(h * dpr);
       canvas.style.width = `${w}px`;
@@ -194,6 +200,9 @@ export function WorldView(props: WorldViewProps): JSX.Element {
         world.height * TILE,
         viewport.widthCssPx,
         viewport.heightCssPx,
+        0.09, // halfLifeSec（既定値。以前と同じ追従の締まり具合）
+        0.5, // anchorX（左右は今までどおり中央）
+        CAMERA_ANCHOR_Y,
       );
       camera.x = newCam.x;
       camera.y = newCam.y;
@@ -216,6 +225,7 @@ export function WorldView(props: WorldViewProps): JSX.Element {
         stick: stickVisual,
         terrain,
         forestTrees,
+        groundDecor,
       };
       draw(ctx, state);
     };

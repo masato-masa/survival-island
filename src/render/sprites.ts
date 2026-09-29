@@ -1,1165 +1,17 @@
-// ドット絵のスプライト定義。React・DOM・Canvas に依存しない「定義」の部分と、
-// 実際に Canvas へ焼く「baking」の部分を分けている。
+// スプライト（pigg 風のやわらかい絵）。React・DOM に依存しない「定義」と、Canvas へ焼く部分を分けている。
 //
-// 各スプライトは 16×16（一部はもっと縦長）の文字グリッド＋パレット（文字→色）。
+// 絵の出どころは 2 つだけ:
+//   1. ユーザー提供の素材シート（src/assets/refimg/*.png ・ src/assets/pigg/*.png）
+//   2. 下の painters に書いた「コードで描く滑らかなベクター絵」（作物・アイテム・道具・エフェクトなど、
+//      提供素材に無いもの）。ドット絵は 1 つも使わない。
+//
 // `getSprite('tree')` のように名前で引く。焼くのは初回アクセス時（遅延）なので、
-// このファイル自体は Canvas の無いテスト環境（vitest / jsdom 抜き）でも import できる。
-//
-// 1 マス = 32 ワールドピクセル。スプライトは 16 幅を 2 倍して 32 幅にする。
-// 縦に長いスプライト（木など）はタイルの「下辺・中央」に合わせて描く
-// （描画側は `tileBottomY - baked.h` を y にすればよい）。
-
-// ---------------------------------------------------------------------------
-// パレット（全スプライト共通の 1 つのオブジェクトを使い回す）
-//
-// クリーム色の背景 #f6f5ef に馴染む、少し落ち着いた暖色寄りのパステル。
-// 輪郭線は純黒ではなく #3d2b2e（焦げ茶）。
-
-const PALETTE: Record<string, string> = {
-  K: '#3d2b2e', // 輪郭線
-  g: '#8bc36a', // 草
-  G: '#6fae57', // 草（濃い）
-  s: '#ecd9a0', // 砂
-  S: '#dfc788', // 砂（濃い）
-  w: '#6cc3d5', // 水
-  W: '#4fa9c4', // 水（濃い）
-  f: '#eaf6f5', // 泡・白波
-  o: '#a8744f', // 土
-  O: '#8a5a3c', // 土（濃い）／木の濃い色
-  b: '#c08a52', // 木材
-  B: '#8a5a3c', // 木材（濃い・幹）
-  h: '#e0b378', // 木材（明るい）
-  l: '#8bc36a', // 葉
-  L: '#4f8f45', // 葉（濃い）
-  r: '#a7a9ac', // 石
-  R: '#7d8084', // 石（濃い）
-  p: '#c7c9cc', // 石（明るい）
-  c: '#c97b4a', // 銅
-  C: '#e8a86a', // 銅（明るい）
-  k: '#e8b48a', // 肌
-  y: '#e8c33f', // 麦わら帽子
-  Y: '#b89448', // 麦わら帽子（影）
-  m: '#d96a5a', // シャツ
-  M: '#b8503f', // シャツ（影）
-  n: '#5a7a9a', // ズボン
-  N: '#46607a', // ズボン（影）
-  e: '#f6f5ef', // 白・クリーム
-  d: '#c0453f', // 赤（トマト・実）
-  j: '#5a9a4a', // 緑（作物の葉）
-  u: '#e88ab0', // ピンクの花びら
-  i: '#f0c33a', // 黄色の花びら
-  z: '#6b4a35', // 濃い茶（道具の柄など）
-  x: '#7a9a5a', // 苔
-  q: '#8a9aa8', // 青みがかった灰色（境界の大岩）
-  v: '#d4af37', // 金
-  A: '#5fe3c9', // 遺跡の光る紋様（発光する青緑）
-  a: '#2fae95', // 遺跡の光る紋様（濃い側）
-};
-
-/** 森の「壁」役の木（進入不可・非対話）用パレット。葉・幹だけ暗く冷たい緑寄りに
- *  差し替え、資源ノードとして拾える標準の tree/bigTree（PALETTE のまま＝鮮やか）
- *  とひと目で見分けがつくようにする。境界ノード用の BORDER_TINT（紫）とは別系統。 */
-const WALL_PALETTE: Record<string, string> = {
-  ...PALETTE,
-  l: '#4a6b52', // 葉（暗く冷たい緑）
-  L: '#33503c', // 葉（濃い・さらに暗く）
-  B: '#5c5245', // 幹（暗い）
-  O: '#463d33', // 幹（濃い・さらに暗く）
-};
-
-// ---------------------------------------------------------------------------
-// グリッド作成のヘルパー
-
-type Grid = string[][];
-
-const T = '.'; // 透明
-
-function newGrid(w: number, h: number): Grid {
-  return Array.from({ length: h }, () => Array.from({ length: w }, () => T));
-}
-
-function gridToRows(g: Grid): string[] {
-  return g.map((row) => row.join(''));
-}
-
-function px(g: Grid, x: number, y: number, c: string): void {
-  const row = g[y];
-  if (row && x >= 0 && x < row.length) row[x] = c;
-}
-
-function rect(g: Grid, x0: number, y0: number, x1: number, y1: number, c: string): void {
-  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) px(g, x, y, c);
-}
-
-function circleFill(g: Grid, cx: number, cy: number, r: number, c: string): void {
-  const h = g.length;
-  const w = g[0]?.length ?? 0;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const dx = x - cx + 0.5;
-      const dy = y - cy + 0.5;
-      if (dx * dx + dy * dy <= r * r) px(g, x, y, c);
-    }
-  }
-}
-
-/** 塗られたマスの周り 1px を輪郭線色で囲む（透明なマスだけを上書き）。 */
-function outlineShape(g: Grid, oc: string): void {
-  const h = g.length;
-  const w = g[0]?.length ?? 0;
-  const src = g.map((row) => row.slice());
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      if (src[y]?.[x] !== T) continue;
-      const touches =
-        (src[y - 1]?.[x] ?? T) !== T ||
-        (src[y + 1]?.[x] ?? T) !== T ||
-        (src[y]?.[x - 1] ?? T) !== T ||
-        (src[y]?.[x + 1] ?? T) !== T;
-      if (touches) px(g, x, y, oc);
-    }
-  }
-}
-
-function mirrorRows(rows: string[]): string[] {
-  return rows.map((row) => row.split('').reverse().join(''));
-}
-
-// ---------------------------------------------------------------------------
-// 地面タイル（16×16・継ぎ目なし・輪郭線なし）
-
-function tileGrass(seed: number, tufts: [number, number][]): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 0, 0, 15, 15, 'g');
-  for (let y = 0; y < 16; y++) {
-    for (let x = 0; x < 16; x++) {
-      if ((x * 13 + y * 7 + seed * 11) % 17 < 3) px(g, x, y, 'G');
-    }
-  }
-  for (const [x, y] of tufts) {
-    px(g, x, y, 'G');
-    px(g, x, y - 1, 'G');
-  }
-  return g;
-}
-
-function tileSand(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 0, 0, 15, 15, 's');
-  for (let y = 0; y < 16; y++) {
-    for (let x = 0; x < 16; x++) {
-      if ((x * 9 + y * 5) % 19 < 3) px(g, x, y, 'S');
-    }
-  }
-  return g;
-}
-
-function tileWater(frame: 0 | 1): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 0, 0, 15, 15, 'w');
-  const shift = frame === 0 ? 0 : 3;
-  for (let y = 0; y < 16; y++) {
-    if (y % 4 < 2) {
-      for (let x = 0; x < 16; x++) {
-        if ((x + shift) % 6 < 2) px(g, x, y, 'W');
-      }
-    }
-  }
-  return g;
-}
-
-function tileSoil(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 0, 0, 15, 15, 'o');
-  for (let y = 0; y < 16; y++) {
-    if (y % 4 === 1 || y % 4 === 2) rect(g, 0, y, 15, y, 'O');
-  }
-  return g;
-}
-
-// ---------------------------------------------------------------------------
-// 波打ち際（水タイルの上に重ねる。陸に接する辺だけ泡を置く）
-
-function shoreOverlay(dir: 'N' | 'S' | 'E' | 'W'): Grid {
-  const g = newGrid(16, 16);
-  if (dir === 'N') {
-    rect(g, 0, 0, 15, 1, 'f');
-    for (let x = 0; x < 16; x += 3) px(g, x, 2, 'f');
-  } else if (dir === 'S') {
-    rect(g, 0, 14, 15, 15, 'f');
-    for (let x = 1; x < 16; x += 3) px(g, x, 13, 'f');
-  } else if (dir === 'E') {
-    rect(g, 14, 0, 15, 15, 'f');
-    for (let y = 1; y < 16; y += 3) px(g, 13, y, 'f');
-  } else {
-    rect(g, 0, 0, 1, 15, 'f');
-    for (let y = 0; y < 16; y += 3) px(g, 2, y, 'f');
-  }
-  return g;
-}
-
-// ---------------------------------------------------------------------------
-// 資源ノード
-
-function treeGrid(): Grid {
-  const g = newGrid(16, 24);
-  rect(g, 7, 18, 8, 23, 'B');
-  circleFill(g, 8, 12, 7, 'L');
-  circleFill(g, 7, 9, 5, 'l');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function bigTreeGrid(): Grid {
-  const g = newGrid(16, 32);
-  rect(g, 5, 25, 10, 31, 'B');
-  rect(g, 5, 25, 6, 31, 'O');
-  circleFill(g, 8, 16, 9, 'L');
-  circleFill(g, 7, 12, 7, 'l');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function rockGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 3, 12, 13, 15, 'r');
-  circleFill(g, 8, 10, 6, 'r');
-  circleFill(g, 6, 8, 3, 'p');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function hardRockGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 3, 12, 13, 15, 'R');
-  circleFill(g, 8, 10, 6, 'R');
-  circleFill(g, 6, 8, 3, 'r');
-  for (const [x, y] of [
-    [5, 9],
-    [10, 7],
-    [9, 12],
-    [6, 13],
-  ] as [number, number][]) {
-    px(g, x, y, 'c');
-  }
-  outlineShape(g, 'K');
-  return g;
-}
-
-function borderTreeGrid(): Grid {
-  const g = newGrid(16, 32);
-  rect(g, 4, 24, 11, 31, 'B');
-  rect(g, 4, 24, 6, 31, 'O');
-  circleFill(g, 8, 15, 10, 'L');
-  circleFill(g, 7, 11, 7, 'l');
-  for (const [x, y] of [
-    [3, 10],
-    [13, 9],
-    [5, 20],
-    [11, 22],
-    [8, 6],
-  ] as [number, number][]) {
-    circleFill(g, x, y, 1, 'x');
-  }
-  outlineShape(g, 'K');
-  return g;
-}
-
-function borderRockGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 2, 13, 14, 15, 'q');
-  circleFill(g, 8, 9, 7, 'q');
-  circleFill(g, 6, 7, 3, 'p');
-  px(g, 6, 5, 'K');
-  px(g, 7, 6, 'K');
-  px(g, 7, 7, 'K');
-  px(g, 8, 8, 'K');
-  px(g, 8, 9, 'K');
-  px(g, 9, 10, 'K');
-  outlineShape(g, 'K');
-  return g;
-}
-
-/** ヤシの木（砂浜の tree ノード用）。幹が緩くカーブし、房状の葉を扇状に広げる。 */
-function palmGrid(): Grid {
-  const g = newGrid(16, 40);
-  // 幹（下から上へ緩くカーブ）
-  for (let y = 39; y >= 14; y--) {
-    const t = (39 - y) / 25;
-    const cx = 7 + Math.round(Math.sin(t * 1.6) * 2.2);
-    px(g, cx, y, 'O');
-    px(g, cx + 1, y, 'B');
-  }
-  // 葉（扇状に 6 房）
-  const fronds: [number, number][] = [
-    [2, 8],
-    [4, 6],
-    [7, 5],
-    [10, 6],
-    [13, 8],
-    [8, 9],
-  ];
-  for (const [fx, fy] of fronds) {
-    circleFill(g, fx, fy, 3, 'L');
-    circleFill(g, fx, fy - 1, 2, 'l');
-  }
-  circleFill(g, 8, 8, 2, 'B');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function stumpGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 6, 10, 9, 15, 'B');
-  circleFill(g, 7, 10, 2, 'O');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function rubbleGrid(): Grid {
-  const g = newGrid(16, 16);
-  circleFill(g, 5, 13, 2, 'r');
-  circleFill(g, 9, 14, 2, 'R');
-  circleFill(g, 12, 12, 1, 'r');
-  outlineShape(g, 'K');
-  return g;
-}
-
-/** 昔の暮らしの名残：低い瓦礫の山（decor_rubble）。歩ける想定なので低め。 */
-function decorRubbleGrid(): Grid {
-  const g = newGrid(16, 16);
-  circleFill(g, 4, 12, 3, 'r');
-  circleFill(g, 9, 13, 3, 'R');
-  circleFill(g, 12, 10, 2, 'r');
-  circleFill(g, 6, 9, 1, 'p');
-  for (const [x, y] of [
-    [3, 10],
-    [10, 9],
-  ] as [number, number][]) {
-    circleFill(g, x, y, 1, 'x');
-  }
-  outlineShape(g, 'K');
-  return g;
-}
-
-/** 崩れた石ブロック（decor_brokenStone）。四角い切石が斜めに崩れている。 */
-function decorBrokenStoneGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 2, 9, 9, 14, 'R');
-  rect(g, 2, 9, 9, 10, 'p');
-  rect(g, 8, 12, 14, 15, 'r');
-  circleFill(g, 5, 7, 1, 'x');
-  circleFill(g, 12, 13, 1, 'x');
-  outlineShape(g, 'K');
-  return g;
-}
-
-/** 折れた石柱（decor_pillar）。16×32。苔むした古代の柱、上半分が欠けている。 */
-function decorPillarGrid(): Grid {
-  const g = newGrid(16, 32);
-  // 台座
-  rect(g, 3, 28, 12, 31, 'R');
-  // 柱身（縦の溝を筋で表現）
-  rect(g, 5, 9, 10, 28, 'q');
-  rect(g, 5, 9, 6, 28, 'R');
-  for (let y = 10; y < 28; y += 4) px(g, 8, y, 'p');
-  // 折れた断面（斜めに欠けている）
-  rect(g, 5, 6, 12, 9, 'p');
-  px(g, 11, 5, 'p');
-  px(g, 12, 6, 'r');
-  // 苔
-  circleFill(g, 4, 20, 1, 'x');
-  circleFill(g, 11, 24, 1, 'x');
-  circleFill(g, 4, 30, 1, 'x');
-  outlineShape(g, 'K');
-  return g;
-}
-
-/** 商船（decor_ship）。7×8 マスの大きな置き物。船体・マスト・帆・小さな旗。 */
-function decorShipGrid(): Grid {
-  const TILE_PX = 16;
-  const w = TILE_PX * 7;
-  const h = TILE_PX * 8;
-  const g = newGrid(w, h);
-  const cx = Math.floor(w / 2);
-  // 船体（下 1/3、台形）
-  const hullTop = Math.floor(h * 0.62);
-  const hullBottom = h - 10;
-  for (let y = hullTop; y <= hullBottom; y++) {
-    const t = (y - hullTop) / (hullBottom - hullTop);
-    const halfW = Math.round((w / 2 - 6) * (1 - t * 0.55));
-    rect(g, cx - halfW, y, cx + halfW, y, 'O');
-  }
-  for (let y = hullTop; y <= hullTop + 4; y++) {
-    const t = (y - hullTop) / (hullBottom - hullTop);
-    const halfW = Math.round((w / 2 - 6) * (1 - t * 0.55));
-    rect(g, cx - halfW, y, cx + halfW, y, 'b');
-  }
-  // 波打ち際の影（船体の下）
-  for (let x = cx - Math.floor(w / 2) + 4; x < cx + Math.floor(w / 2) - 4; x++) {
-    px(g, x, hullBottom + 1, 'W');
-    px(g, x, hullBottom + 2, 'w');
-  }
-  // マスト
-  const mastX = cx - 4;
-  rect(g, mastX, Math.floor(h * 0.08), mastX + 1, hullTop, 'B');
-  // 帆（クリーム色・少したわむ台形）
-  const sailTop = Math.floor(h * 0.1);
-  const sailBottom = Math.floor(h * 0.5);
-  for (let y = sailTop; y <= sailBottom; y++) {
-    const t = (y - sailTop) / (sailBottom - sailTop);
-    const rightW = Math.round(18 * Math.sin(t * Math.PI));
-    rect(g, mastX + 2, y, mastX + 2 + Math.max(2, rightW), y, 'e');
-  }
-  // 帆のたわみの陰影
-  for (let y = sailTop; y <= sailBottom; y += 3) {
-    const t = (y - sailTop) / (sailBottom - sailTop);
-    const rightW = Math.round(18 * Math.sin(t * Math.PI));
-    px(g, mastX + 2 + Math.max(2, rightW) - 1, y, 'S');
-  }
-  // 旗
-  rect(g, mastX + 1, sailTop - 5, mastX + 6, sailTop - 2, 'd');
-  // 横帆桁
-  rect(g, mastX - 6, sailTop - 1, mastX + 20, sailTop, 'z');
-  outlineShape(g, 'K');
-  return g;
-}
-
-/** 遺跡入口の崩れたアーチ（見た目だけの置物）。コード版フォールバックは簡素な門形。 */
-function decorArchGrid(): Grid {
-  const g = newGrid(32, 24);
-  rect(g, 2, 8, 7, 23, 'q');
-  rect(g, 24, 8, 29, 23, 'q');
-  rect(g, 2, 4, 29, 9, 'R');
-  for (const [x, y] of [
-    [4, 12],
-    [26, 16],
-  ] as [number, number][]) {
-    circleFill(g, x, y, 1, 'x');
-  }
-  outlineShape(g, 'K');
-  return g;
-}
-
-/** 広場のかがり火（見た目だけの置物）。コード版フォールバックは石の囲いと炎。 */
-function decorCampfireGrid(): Grid {
-  const g = newGrid(16, 16);
-  circleFill(g, 8, 13, 6, 'R');
-  circleFill(g, 8, 13, 4, 'K');
-  rect(g, 6, 10, 9, 13, 'z');
-  circleFill(g, 8, 7, 3, 'd');
-  circleFill(g, 8, 5, 2, 'i');
-  outlineShape(g, 'K');
-  return g;
-}
-
-// ---------------------------------------------------------------------------
-// 設備（遺跡・作業台）
-//
-// 「ただの岩」に見えないよう、遺跡は縦長の石碑＋発光する紋様で「古代・魔法」を
-// 強く出す。作業台は f_woodWorkbench（家具）と見分けがつくよう、天板の上に
-// のこぎり・金づちを直接乗せた形にする。
-
-function stationRuinsGrid(): Grid {
-  const g = newGrid(16, 32);
-  // 台座
-  rect(g, 2, 27, 13, 31, 'R');
-  rect(g, 2, 27, 13, 28, 'r');
-  // 石碑本体（少し先細りの角柱）
-  rect(g, 4, 6, 11, 27, 'q');
-  rect(g, 4, 6, 6, 27, 'R');
-  rect(g, 5, 3, 10, 6, 'q');
-  // 苔
-  for (const [x, y] of [
-    [3, 24],
-    [12, 20],
-    [3, 15],
-    [11, 9],
-  ] as [number, number][]) {
-    circleFill(g, x, y, 1, 'x');
-  }
-  // 発光する紋様（同心の輪＋十字）
-  circleFill(g, 8, 15, 3, 'a');
-  circleFill(g, 8, 15, 2, 'A');
-  rect(g, 7, 10, 8, 20, 'a');
-  rect(g, 3, 14, 12, 15, 'a');
-  px(g, 8, 15, 'A');
-  outlineShape(g, 'K');
-  return g;
-}
-
-/** 船着き場の係留柱：太い杭にロープが巻きついている。 */
-function stationDockGrid(): Grid {
-  const g = newGrid(16, 24);
-  rect(g, 6, 4, 9, 23, 'O');
-  rect(g, 6, 4, 7, 23, 'B');
-  for (const y of [8, 12, 16]) {
-    rect(g, 4, y, 11, y + 1, 'z');
-  }
-  circleFill(g, 7, 4, 3, 'R');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function stationWorkbenchGrid(): Grid {
-  const g = newGrid(16, 24);
-  // 脚
-  rect(g, 2, 18, 3, 23, 'B');
-  rect(g, 12, 18, 13, 23, 'B');
-  // 天板
-  rect(g, 1, 13, 14, 17, 'b');
-  rect(g, 1, 13, 14, 14, 'h');
-  // のこぎり（斜めの刃＋柄）
-  rect(g, 2, 9, 9, 10, 'r');
-  rect(g, 2, 9, 3, 12, 'z');
-  for (let x = 3; x <= 9; x += 2) px(g, x, 11, 'r');
-  // 金づち（頭＋柄）
-  rect(g, 10, 5, 13, 8, 'R');
-  rect(g, 11, 8, 12, 12, 'z');
-  outlineShape(g, 'K');
-  return g;
-}
-
-// ---------------------------------------------------------------------------
-// 畑まわり
-
-function signGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 7, 7, 8, 15, 'B');
-  rect(g, 2, 2, 13, 8, 'b');
-  rect(g, 2, 2, 13, 3, 'h');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function chestGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 2, 7, 13, 14, 'b');
-  rect(g, 2, 4, 13, 7, 'B');
-  rect(g, 7, 8, 8, 11, 'v');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function chestOpenGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 2, 8, 13, 14, 'b');
-  rect(g, 2, 8, 13, 9, 'O');
-  rect(g, 2, 1, 13, 4, 'B');
-  rect(g, 7, 10, 8, 12, 'v');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function sproutGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 7, 10, 8, 14, 'O');
-  circleFill(g, 6, 9, 2, 'j');
-  circleFill(g, 10, 9, 2, 'j');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function midPlantGrid(accent: string): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 7, 9, 8, 14, 'O');
-  circleFill(g, 5, 8, 3, 'j');
-  circleFill(g, 11, 8, 3, 'j');
-  circleFill(g, 8, 6, 2, accent);
-  outlineShape(g, 'K');
-  return g;
-}
-
-function turnipRipeGrid(): Grid {
-  const g = newGrid(16, 16);
-  circleFill(g, 6, 4, 2, 'j');
-  circleFill(g, 10, 4, 2, 'j');
-  circleFill(g, 8, 10, 5, 'e');
-  circleFill(g, 8, 9, 4, 'u');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function sunflowerRipeGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 7, 10, 8, 15, 'j');
-  circleFill(g, 8, 7, 5, 'i');
-  circleFill(g, 8, 7, 2, 'O');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function tomatoRipeGrid(): Grid {
-  const g = newGrid(16, 16);
-  circleFill(g, 8, 5, 2, 'j');
-  circleFill(g, 5, 7, 1, 'j');
-  circleFill(g, 11, 7, 1, 'j');
-  circleFill(g, 6, 10, 3, 'd');
-  circleFill(g, 10, 10, 3, 'd');
-  circleFill(g, 8, 13, 3, 'd');
-  outlineShape(g, 'K');
-  return g;
-}
-
-// ---------------------------------------------------------------------------
-// アイテムアイコン
-
-function itemWoodGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 2, 6, 13, 10, 'b');
-  rect(g, 2, 6, 13, 7, 'h');
-  circleFill(g, 2, 8, 2, 'O');
-  circleFill(g, 13, 8, 2, 'O');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function itemStoneGrid(): Grid {
-  const g = newGrid(16, 16);
-  circleFill(g, 8, 9, 6, 'r');
-  circleFill(g, 6, 7, 2, 'p');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function itemCopperGrid(): Grid {
-  const g = newGrid(16, 16);
-  circleFill(g, 8, 9, 6, 'R');
-  for (const [x, y] of [
-    [6, 8],
-    [10, 7],
-    [8, 11],
-    [5, 11],
-  ] as [number, number][]) {
-    px(g, x, y, 'c');
-  }
-  outlineShape(g, 'K');
-  return g;
-}
-
-// ---------------------------------------------------------------------------
-// 家具（f_<id>）
-
-function fWoodFenceGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 2, 4, 3, 15, 'b');
-  rect(g, 12, 4, 13, 15, 'b');
-  rect(g, 1, 6, 14, 8, 'h');
-  rect(g, 1, 11, 14, 13, 'h');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function fWoodPathGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 1, 1, 14, 14, 'b');
-  rect(g, 1, 1, 14, 2, 'h');
-  rect(g, 1, 7, 14, 8, 'O');
-  return g;
-}
-
-function fWoodSignGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 6, 2, 9, 15, 'B');
-  rect(g, 6, 5, 9, 9, 'h');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function fWoodBenchGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 2, 10, 13, 11, 'b');
-  rect(g, 2, 4, 13, 5, 'h');
-  rect(g, 2, 6, 3, 10, 'B');
-  rect(g, 12, 6, 13, 10, 'B');
-  rect(g, 3, 12, 4, 15, 'B');
-  rect(g, 11, 12, 12, 15, 'B');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function fWoodDeskGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 2, 7, 13, 9, 'b');
-  rect(g, 2, 10, 13, 12, 'h');
-  rect(g, 3, 10, 4, 15, 'B');
-  rect(g, 11, 10, 12, 15, 'B');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function fWoodWorkbenchGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 1, 8, 14, 10, 'b');
-  rect(g, 2, 11, 3, 15, 'B');
-  rect(g, 12, 11, 13, 15, 'B');
-  rect(g, 3, 3, 4, 8, 'z');
-  rect(g, 3, 3, 10, 4, 'z');
-  circleFill(g, 11, 5, 2, 'r');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function fWoodTowerGrid(): Grid {
-  const g = newGrid(16, 32);
-  rect(g, 3, 10, 4, 31, 'B');
-  rect(g, 11, 10, 12, 31, 'B');
-  rect(g, 2, 8, 13, 11, 'b');
-  rect(g, 4, 0, 11, 8, 'h');
-  rect(g, 4, 0, 11, 1, 'O');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function fStonePathGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 1, 1, 14, 14, 'r');
-  rect(g, 1, 1, 7, 7, 'p');
-  rect(g, 8, 8, 14, 14, 'p');
-  return g;
-}
-
-function fStoneFenceGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 1, 6, 14, 15, 'r');
-  rect(g, 1, 6, 14, 7, 'p');
-  for (let x = 1; x < 14; x += 4) rect(g, x, 6, x, 15, 'R');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function fStoneBenchGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 2, 9, 13, 11, 'r');
-  rect(g, 3, 12, 5, 15, 'R');
-  rect(g, 10, 12, 12, 15, 'R');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function fStoneOvenGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 2, 6, 13, 15, 'r');
-  rect(g, 10, 1, 12, 6, 'R');
-  circleFill(g, 8, 11, 3, 'K');
-  circleFill(g, 8, 11, 2, 'O');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function fStoneLanternGrid(): Grid {
-  const g = newGrid(16, 24);
-  rect(g, 7, 10, 8, 23, 'r');
-  rect(g, 4, 1, 11, 4, 'r');
-  rect(g, 5, 4, 10, 10, 'R');
-  rect(g, 6, 5, 9, 9, 'v');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function fCopperLampGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 7, 9, 8, 15, 'B');
-  circleFill(g, 8, 7, 4, 'c');
-  circleFill(g, 8, 7, 2, 'v');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function fFlowerBedGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 1, 10, 14, 14, 'O');
-  for (const [x, y, c] of [
-    [3, 9, 'u'],
-    [6, 8, 'i'],
-    [9, 9, 'u'],
-    [12, 8, 'i'],
-  ] as [number, number, string][]) {
-    circleFill(g, x, y, 1, c);
-    px(g, x, y + 1, 'j');
-  }
-  outlineShape(g, 'K');
-  return g;
-}
-
-function fFlowerPotGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 5, 10, 10, 15, 'o');
-  rect(g, 5, 10, 10, 11, 'O');
-  circleFill(g, 8, 7, 3, 'j');
-  circleFill(g, 6, 6, 1, 'u');
-  circleFill(g, 10, 6, 1, 'i');
-  circleFill(g, 8, 4, 1, 'u');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function fFruitTableGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 2, 9, 13, 10, 'b');
-  rect(g, 3, 11, 4, 15, 'B');
-  rect(g, 11, 11, 12, 15, 'B');
-  circleFill(g, 6, 7, 2, 'd');
-  circleFill(g, 10, 7, 2, 'j');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function fVeggieStandGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 1, 9, 14, 10, 'b');
-  rect(g, 2, 11, 3, 15, 'B');
-  rect(g, 12, 11, 13, 15, 'B');
-  rect(g, 3, 1, 12, 9, 'h');
-  circleFill(g, 5, 6, 2, 'u');
-  circleFill(g, 8, 5, 2, 'd');
-  circleFill(g, 11, 6, 2, 'j');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function fFlowerArchGrid(): Grid {
-  const g = newGrid(16, 32);
-  rect(g, 2, 10, 4, 31, 'B');
-  rect(g, 11, 10, 13, 31, 'B');
-  rect(g, 2, 4, 13, 10, 'B');
-  for (const [x, y, c] of [
-    [2, 4, 'u'],
-    [5, 3, 'i'],
-    [8, 3, 'u'],
-    [11, 3, 'i'],
-    [13, 4, 'u'],
-    [2, 10, 'j'],
-    [13, 10, 'j'],
-  ] as [number, number, string][]) {
-    circleFill(g, x, y, 2, c);
-  }
-  outlineShape(g, 'K');
-  return g;
-}
-
-function fStoneStatueGrid(): Grid {
-  const g = newGrid(16, 32);
-  rect(g, 4, 26, 11, 31, 'R');
-  rect(g, 6, 10, 9, 27, 'r');
-  rect(g, 4, 10, 5, 20, 'r');
-  rect(g, 10, 10, 11, 20, 'r');
-  circleFill(g, 8, 7, 4, 'p');
-  outlineShape(g, 'K');
-  return g;
-}
-
-// ---------------------------------------------------------------------------
-// プレイヤー（4 方向 × 2 歩行フレーム。right は left を左右反転して作る）
-
-function playerGrid(dir: 'down' | 'up' | 'left', frame: 0 | 1 | 2): Grid {
-  const g = newGrid(16, 16);
-  // frame 2 は仮素材では frame 1 と同じ扱い（コード版はあくまでフォールバックなので、
-  // 3 コマ目の専用ポーズまでは持たない）。
-  const step = frame === 0 ? 0 : 1;
-  const frontLeg = step === 0 ? 'n' : 'N';
-  const backLeg = step === 0 ? 'N' : 'n';
-  rect(g, 5, 13, 6, 15, frontLeg);
-  rect(g, 9, 13, 10, 15, backLeg);
-  rect(g, 4, 8, 11, 13, 'm');
-  if (dir === 'left') {
-    rect(g, 2, 9, 3, 12, 'M');
-  } else if (dir === 'down') {
-    rect(g, 3, 9, 4, 12, 'M');
-    rect(g, 11, 9, 12, 12, 'M');
-  }
-  circleFill(g, 8, 6, 4, 'k');
-  if (dir === 'down') {
-    px(g, 6, 6, 'K');
-    px(g, 10, 6, 'K');
-  }
-  rect(g, 3, 2, 12, 3, 'y');
-  rect(g, 5, 0, 10, 2, 'Y');
-  if (dir === 'left') {
-    rect(g, 1, 2, 3, 3, 'y');
-  }
-  outlineShape(g, 'K');
-  return g;
-}
-
-// ---------------------------------------------------------------------------
-// 道具アイコン（振り動作のオーバーレイ）
-
-function toolAxeGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 4, 3, 5, 13, 'b');
-  rect(g, 6, 2, 12, 7, 'p');
-  rect(g, 6, 2, 12, 3, 'r');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function toolPickGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 7, 5, 8, 14, 'b');
-  rect(g, 2, 2, 5, 5, 'R');
-  rect(g, 5, 3, 10, 6, 'R');
-  rect(g, 9, 2, 13, 5, 'R');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function toolHoeGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 7, 2, 8, 12, 'b');
-  rect(g, 3, 12, 12, 14, 'O');
-  outlineShape(g, 'K');
-  return g;
-}
-
-// ---------------------------------------------------------------------------
-// エフェクト（fx_*）のコード版フォールバック。ごく小さいので簡素な形でよい。
-
-function fxSparkleGrid(): Grid {
-  const g = newGrid(6, 6);
-  px(g, 2, 0, 'e');
-  px(g, 3, 0, 'e');
-  px(g, 2, 5, 'e');
-  px(g, 3, 5, 'e');
-  px(g, 0, 2, 'e');
-  px(g, 0, 3, 'e');
-  px(g, 5, 2, 'e');
-  px(g, 5, 3, 'e');
-  circleFill(g, 2, 2, 1, 'i');
-  return g;
-}
-
-function fxLeafGrid(): Grid {
-  const g = newGrid(6, 6);
-  circleFill(g, 3, 3, 2, 'l');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function fxDustGrid(): Grid {
-  const g = newGrid(6, 6);
-  circleFill(g, 3, 3, 2, 'R');
-  return g;
-}
-
-// ---------------------------------------------------------------------------
-// 配置スペースの属性アイコン（白い記号＋輪郭線。輪郭が無いとクリーム背景に
-// 白がほぼ溶けて見えなくなるため、他のスプライトと同じく 1px の暗い輪郭を足す）
-
-function slotBenchGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 2, 7, 13, 8, 'e');
-  rect(g, 3, 9, 4, 12, 'e');
-  rect(g, 11, 9, 12, 12, 'e');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function slotLandmarkGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 7, 2, 8, 13, 'e');
-  rect(g, 8, 2, 13, 7, 'e');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function slotPathGrid(): Grid {
-  const g = newGrid(16, 16);
-  for (let i = 0; i < 4; i++) rect(g, 2 + i * 4, 7, 4 + i * 4, 8, 'e');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function slotWorkbenchGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 3, 3, 4, 12, 'e');
-  rect(g, 2, 2, 12, 4, 'e');
-  rect(g, 10, 3, 13, 5, 'e');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function slotKitchenGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 3, 7, 12, 12, 'e');
-  rect(g, 6, 3, 9, 6, 'e');
-  outlineShape(g, 'K');
-  return g;
-}
-
-function slotDeskGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 3, 3, 12, 13, 'e');
-  rect(g, 5, 6, 10, 6, T);
-  rect(g, 5, 9, 10, 9, T);
-  outlineShape(g, 'K');
-  return g;
-}
-
-function slotDecorGrid(): Grid {
-  const g = newGrid(16, 16);
-  circleFill(g, 8, 8, 1, 'e');
-  for (const [dx, dy] of [
-    [0, -4],
-    [0, 4],
-    [-4, 0],
-    [4, 0],
-    [-3, -3],
-    [3, -3],
-    [-3, 3],
-    [3, 3],
-  ] as [number, number][]) {
-    px(g, 8 + dx, 8 + dy, 'e');
-  }
-  outlineShape(g, 'K');
-  return g;
-}
-
-function slotFenceGrid(): Grid {
-  const g = newGrid(16, 16);
-  rect(g, 2, 4, 3, 13, 'e');
-  rect(g, 12, 4, 13, 13, 'e');
-  rect(g, 1, 7, 14, 8, 'e');
-  outlineShape(g, 'K');
-  return g;
-}
-
-// ---------------------------------------------------------------------------
-// 素材モード（Kenney / 仮素材）
-//
-// 既定は 'kenney'。localStorage に保存し、次に開いたときも保たれる
-// （settings.ts の sound/haptics と同じ形）。モジュール読み込み時ではなく、
-// 値が最初に要求されたタイミングで localStorage を読むのは、テスト環境や
-// サーバーサイドでも安全に import できるようにするため。
-
-export type ArtMode = 'kenney' | 'code';
-
-const ART_KEY = 'survival-island:art';
-
-let artMode: ArtMode | null = null;
-
-function readArtMode(): ArtMode {
-  try {
-    const raw = localStorage.getItem(ART_KEY);
-    return raw === 'code' ? 'code' : 'kenney';
-  } catch {
-    return 'kenney';
-  }
-}
-
-function writeArtMode(mode: ArtMode): void {
-  try {
-    localStorage.setItem(ART_KEY, mode);
-  } catch {
-    // 保存できなくても遊べる
-  }
-}
-
-export function getArtMode(): ArtMode {
-  if (artMode === null) artMode = readArtMode();
-  return artMode;
-}
-
-export function setArtMode(mode: ArtMode): void {
-  artMode = mode;
-  writeArtMode(mode);
-  bakedCache.clear();
-  dataUrlCache.clear();
-}
-
-// ---------------------------------------------------------------------------
-// Kenney アトラス（scripts/build-atlas.mjs が生成する PNG + JSON）
-//
-// JSON は素の座標データなので DOM に触らず import できる。PNG は Vite の
-// `?url` でファイル URL だけを取り、実際に読み込むのは loadArt() が呼ばれた
-// ときだけ（= このファイル自体はモジュール読み込み時に Image を作らない）。
-
-import atlasMeta from '../assets/kenney-atlas.json';
-import atlasUrl from '../assets/kenney-atlas.png?url';
-import { getTextureImage, type TextureName } from './textures';
-
-type AtlasRect = { x: number; y: number; w: number; h: number };
-const ATLAS: Record<string, AtlasRect> = atlasMeta;
-
-let atlasImage: HTMLImageElement | null = null;
-
-function loadAtlasImage(): Promise<void> {
-  return new Promise((resolve) => {
-    if (typeof Image === 'undefined') {
-      resolve();
-      return;
-    }
-    const img = new Image();
-    img.onload = () => {
-      atlasImage = img;
-      bakedCache.clear();
-      dataUrlCache.clear();
-      resolve();
-    };
-    img.onerror = () => resolve();
-    img.src = atlasUrl as unknown as string;
-  });
-}
-
-// ---------------------------------------------------------------------------
-// ChatGPT 生成のドット絵（src/assets/gen/*.png）。1 art px = 1 png px。
-// tex_*.png（地面テクスチャ）は render/textures.ts が読み込むので、ここでは除く。
-// import.meta.glob は静的解析でファイル一覧を集めるだけ（Image は作らない）ので、
 // このファイル自体は Canvas の無いテスト環境でも import できる。
-
-const genUrls = import.meta.glob('../assets/gen/*.png', {
-  eager: true,
-  query: '?url',
-  import: 'default',
-}) as Record<string, string>;
-
-const genImages = new Map<string, HTMLImageElement>();
-
-function loadGenImages(): Promise<void> {
-  const entries = Object.entries(genUrls).filter(([path]) => !path.includes('/tex_'));
-  if (entries.length === 0 || typeof Image === 'undefined') return Promise.resolve();
-  const loaders = entries.map(
-    ([path, url]) =>
-      new Promise<void>((resolve) => {
-        const name = path.slice(path.lastIndexOf('/') + 1).replace(/\.png$/, '');
-        const img = new Image();
-        img.onload = () => {
-          genImages.set(name, img);
-          resolve();
-        };
-        img.onerror = () => resolve();
-        img.src = url;
-      })
-  );
-  return Promise.all(loaders).then(() => undefined);
-}
-
-/** ChatGPT 生成アセット＋Kenney アトラスを読み込む。main.tsx から最初の描画前に await される。
- *  どちらも失敗して構わない（getSprite はコード版にフォールバックする）ので、
- *  ここで例外を投げて画面を止めることはない。main.tsx 側は 1.5 秒のタイムアウトで
- *  レースさせているが、これらの読み込みはタイムアウト後もバックグラウンドで続き、
- *  終わり次第キャッシュを消す＝次の rAF フレームで本物の絵に差し替わる。 */
-export function loadArt(): Promise<void> {
-  return Promise.all([loadAtlasImage(), loadGenImages()]).then(() => {
-    bakedCache.clear();
-    dataUrlCache.clear();
-  });
-}
-
-// ---------------------------------------------------------------------------
-// スプライト名とその定義
+//
+// 1 マス = 32 ワールドピクセル。w/h はワールド px（描画側が scale 倍する）。
+// 縦に長いスプライト（木など）はタイルの「下辺・中央」に合わせて描く。
 
 export type SpriteName =
-  | 'grass'
-  | 'grass2'
-  | 'sand'
-  | 'water'
-  | 'water2'
-  | 'soil'
-  | 'shoreN'
-  | 'shoreS'
-  | 'shoreE'
-  | 'shoreW'
   | 'tree'
   | 'bigTree'
   | 'wallOak'
@@ -1243,160 +95,36 @@ export type SpriteName =
   | 'slot_kitchen'
   | 'slot_desk'
   | 'slot_decor'
-  | 'slot_fence';
-
-export interface SpriteDef {
-  rows: string[];
-  palette: Record<string, string>;
-}
-
-const playerLeft0 = gridToRows(playerGrid('left', 0));
-const playerLeft1 = gridToRows(playerGrid('left', 1));
-const playerLeft2 = gridToRows(playerGrid('left', 2));
-
-export const SPRITE_DEFS: Record<SpriteName, SpriteDef> = {
-  grass: { rows: gridToRows(tileGrass(0, [])), palette: PALETTE },
-  grass2: {
-    rows: gridToRows(
-      tileGrass(3, [
-        [2, 3],
-        [9, 2],
-        [13, 8],
-        [4, 11],
-        [11, 13],
-        [6, 7],
-      ])
-    ),
-    palette: PALETTE,
-  },
-  sand: { rows: gridToRows(tileSand()), palette: PALETTE },
-  water: { rows: gridToRows(tileWater(0)), palette: PALETTE },
-  water2: { rows: gridToRows(tileWater(1)), palette: PALETTE },
-  soil: { rows: gridToRows(tileSoil()), palette: PALETTE },
-
-  shoreN: { rows: gridToRows(shoreOverlay('N')), palette: PALETTE },
-  shoreS: { rows: gridToRows(shoreOverlay('S')), palette: PALETTE },
-  shoreE: { rows: gridToRows(shoreOverlay('E')), palette: PALETTE },
-  shoreW: { rows: gridToRows(shoreOverlay('W')), palette: PALETTE },
-
-  tree: { rows: gridToRows(treeGrid()), palette: PALETTE },
-  bigTree: { rows: gridToRows(bigTreeGrid()), palette: PALETTE },
-  // 森の「壁」役の木（forestTrees.ts が生成する、進入不可・非対話の背景木）。
-  // 形は資源ノードの tree/bigTree と同じグリッドを使い回し、パレットだけ
-  // 暗く冷たい緑に差し替えることで「奥にある通れない森」だと一目でわかるようにする。
-  wallOak: { rows: gridToRows(treeGrid()), palette: WALL_PALETTE },
-  wallPine: { rows: gridToRows(bigTreeGrid()), palette: WALL_PALETTE },
-  rock: { rows: gridToRows(rockGrid()), palette: PALETTE },
-  hardRock: { rows: gridToRows(hardRockGrid()), palette: PALETTE },
-  borderTree: { rows: gridToRows(borderTreeGrid()), palette: PALETTE },
-  borderRock: { rows: gridToRows(borderRockGrid()), palette: PALETTE },
-  stump: { rows: gridToRows(stumpGrid()), palette: PALETTE },
-  rubble: { rows: gridToRows(rubbleGrid()), palette: PALETTE },
-  palm: { rows: gridToRows(palmGrid()), palette: PALETTE },
-  decor_rubble: { rows: gridToRows(decorRubbleGrid()), palette: PALETTE },
-  decor_brokenStone: { rows: gridToRows(decorBrokenStoneGrid()), palette: PALETTE },
-  decor_pillar: { rows: gridToRows(decorPillarGrid()), palette: PALETTE },
-  decor_ship: { rows: gridToRows(decorShipGrid()), palette: PALETTE },
-  decor_arch: { rows: gridToRows(decorArchGrid()), palette: PALETTE },
-  decor_campfire: { rows: gridToRows(decorCampfireGrid()), palette: PALETTE },
-  station_ruins: { rows: gridToRows(stationRuinsGrid()), palette: PALETTE },
-  station_workbench: { rows: gridToRows(stationWorkbenchGrid()), palette: PALETTE },
-  station_dock: { rows: gridToRows(stationDockGrid()), palette: PALETTE },
-
-  sign: { rows: gridToRows(signGrid()), palette: PALETTE },
-  chest: { rows: gridToRows(chestGrid()), palette: PALETTE },
-  chestOpen: { rows: gridToRows(chestOpenGrid()), palette: PALETTE },
-
-  turnip0: { rows: gridToRows(sproutGrid()), palette: PALETTE },
-  turnip1: { rows: gridToRows(midPlantGrid('u')), palette: PALETTE },
-  turnip2: { rows: gridToRows(turnipRipeGrid()), palette: PALETTE },
-  sunflower0: { rows: gridToRows(sproutGrid()), palette: PALETTE },
-  sunflower1: { rows: gridToRows(midPlantGrid('i')), palette: PALETTE },
-  sunflower2: { rows: gridToRows(sunflowerRipeGrid()), palette: PALETTE },
-  tomato0: { rows: gridToRows(sproutGrid()), palette: PALETTE },
-  tomato1: { rows: gridToRows(midPlantGrid('d')), palette: PALETTE },
-  tomato2: { rows: gridToRows(tomatoRipeGrid()), palette: PALETTE },
-
-  item_wood: { rows: gridToRows(itemWoodGrid()), palette: PALETTE },
-  item_stone: { rows: gridToRows(itemStoneGrid()), palette: PALETTE },
-  item_copper: { rows: gridToRows(itemCopperGrid()), palette: PALETTE },
-  item_turnip: { rows: gridToRows(turnipRipeGrid()), palette: PALETTE },
-  item_sunflower: { rows: gridToRows(sunflowerRipeGrid()), palette: PALETTE },
-  item_tomato: { rows: gridToRows(tomatoRipeGrid()), palette: PALETTE },
-
-  f_woodFence: { rows: gridToRows(fWoodFenceGrid()), palette: PALETTE },
-  f_woodPath: { rows: gridToRows(fWoodPathGrid()), palette: PALETTE },
-  f_woodSign: { rows: gridToRows(fWoodSignGrid()), palette: PALETTE },
-  f_woodBench: { rows: gridToRows(fWoodBenchGrid()), palette: PALETTE },
-  f_woodDesk: { rows: gridToRows(fWoodDeskGrid()), palette: PALETTE },
-  f_woodWorkbench: { rows: gridToRows(fWoodWorkbenchGrid()), palette: PALETTE },
-  f_woodTower: { rows: gridToRows(fWoodTowerGrid()), palette: PALETTE },
-  f_stonePath: { rows: gridToRows(fStonePathGrid()), palette: PALETTE },
-  f_stoneFence: { rows: gridToRows(fStoneFenceGrid()), palette: PALETTE },
-  f_stoneBench: { rows: gridToRows(fStoneBenchGrid()), palette: PALETTE },
-  f_stoneOven: { rows: gridToRows(fStoneOvenGrid()), palette: PALETTE },
-  f_stoneLantern: { rows: gridToRows(fStoneLanternGrid()), palette: PALETTE },
-  f_copperLamp: { rows: gridToRows(fCopperLampGrid()), palette: PALETTE },
-  f_flowerBed: { rows: gridToRows(fFlowerBedGrid()), palette: PALETTE },
-  f_flowerPot: { rows: gridToRows(fFlowerPotGrid()), palette: PALETTE },
-  f_fruitTable: { rows: gridToRows(fFruitTableGrid()), palette: PALETTE },
-  f_veggieStand: { rows: gridToRows(fVeggieStandGrid()), palette: PALETTE },
-  f_flowerArch: { rows: gridToRows(fFlowerArchGrid()), palette: PALETTE },
-  f_stoneStatue: { rows: gridToRows(fStoneStatueGrid()), palette: PALETTE },
-  f_ruinPillar: { rows: gridToRows(decorPillarGrid()), palette: PALETTE },
-
-  player_down0: { rows: gridToRows(playerGrid('down', 0)), palette: PALETTE },
-  player_down1: { rows: gridToRows(playerGrid('down', 1)), palette: PALETTE },
-  player_down2: { rows: gridToRows(playerGrid('down', 2)), palette: PALETTE },
-  player_up0: { rows: gridToRows(playerGrid('up', 0)), palette: PALETTE },
-  player_up1: { rows: gridToRows(playerGrid('up', 1)), palette: PALETTE },
-  player_up2: { rows: gridToRows(playerGrid('up', 2)), palette: PALETTE },
-  player_left0: { rows: playerLeft0, palette: PALETTE },
-  player_left1: { rows: playerLeft1, palette: PALETTE },
-  player_left2: { rows: playerLeft2, palette: PALETTE },
-  player_right0: { rows: mirrorRows(playerLeft0), palette: PALETTE },
-  player_right1: { rows: mirrorRows(playerLeft1), palette: PALETTE },
-  player_right2: { rows: mirrorRows(playerLeft2), palette: PALETTE },
-
-  tool_axe: { rows: gridToRows(toolAxeGrid()), palette: PALETTE },
-  tool_pick: { rows: gridToRows(toolPickGrid()), palette: PALETTE },
-  tool_hoe: { rows: gridToRows(toolHoeGrid()), palette: PALETTE },
-
-  fx_sparkle: { rows: gridToRows(fxSparkleGrid()), palette: PALETTE },
-  fx_leaf: { rows: gridToRows(fxLeafGrid()), palette: PALETTE },
-  fx_dust: { rows: gridToRows(fxDustGrid()), palette: PALETTE },
-
-  slot_bench: { rows: gridToRows(slotBenchGrid()), palette: PALETTE },
-  slot_landmark: { rows: gridToRows(slotLandmarkGrid()), palette: PALETTE },
-  slot_path: { rows: gridToRows(slotPathGrid()), palette: PALETTE },
-  slot_workbench: { rows: gridToRows(slotWorkbenchGrid()), palette: PALETTE },
-  slot_kitchen: { rows: gridToRows(slotKitchenGrid()), palette: PALETTE },
-  slot_desk: { rows: gridToRows(slotDeskGrid()), palette: PALETTE },
-  slot_decor: { rows: gridToRows(slotDecorGrid()), palette: PALETTE },
-  slot_fence: { rows: gridToRows(slotFenceGrid()), palette: PALETTE },
-};
-
-// ---------------------------------------------------------------------------
-// 焼く（Canvas API を使うのはここだけ。呼ぶまで実行されない＝遅延）
+  | 'slot_fence'
+  | 'deco_0'
+  | 'deco_1'
+  | 'deco_2'
+  | 'deco_3'
+  | 'deco_4'
+  | 'deco_5'
+  | 'deco_6'
+  | 'deco_7'
+  | 'deco_pebble'
+  | 'deco_mossy'
+  | 'deco_tuft0'
+  | 'deco_tuft1';
 
 export interface BakedSprite {
-  canvas: HTMLCanvasElement | OffscreenCanvas;
-  /** ワールドピクセル単位（2 倍後）の幅・高さ。1 マス = 32 なので幅は常に 32。 */
+  // 素材シート由来は元画像をそのまま返すことがあるので HTMLImageElement も許す。
+  // ctx.drawImage は 3 つとも同じ CanvasImageSource として扱えるので描画側の分岐は要らない。
+  canvas: HTMLCanvasElement | OffscreenCanvas | HTMLImageElement;
+  /** ワールドピクセル単位の幅・高さ。 */
   w: number;
   h: number;
 }
 
-const SCALE = 2;
+type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
-const bakedCache = new Map<SpriteName, BakedSprite>();
-const dataUrlCache = new Map<SpriteName, string>();
-
-function hasOffscreenCanvas(): boolean {
-  return typeof OffscreenCanvas !== 'undefined';
-}
+const bakedCache = new Map<string, BakedSprite>();
+const dataUrlCache = new Map<string, string>();
 
 function makeCanvas(w: number, h: number): HTMLCanvasElement | OffscreenCanvas {
-  if (hasOffscreenCanvas()) return new OffscreenCanvas(w, h);
+  if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
   const c = document.createElement('canvas');
   c.width = w;
   c.height = h;
@@ -1404,105 +132,706 @@ function makeCanvas(w: number, h: number): HTMLCanvasElement | OffscreenCanvas {
 }
 
 // ---------------------------------------------------------------------------
-// gen アセット（ChatGPT 生成のドット絵）へのマッピング。
-// SpriteName → src/assets/gen/ のファイル名（拡張子抜き）。
-// ここに無いもの（borderTree/borderRock は色調変更、f_woodPath/f_stonePath は
-// 地面テクスチャの切り出し）は bakeFromGen 内で個別に処理する。
+// 素材シートの読み込み（refimg / pigg）。glob は静的に URL 一覧を集めるだけで通信しない。
 
-const SPRITE_TO_GEN: Partial<Record<SpriteName, string>> = {
-  tree: 'gen_oak',
-  bigTree: 'gen_pine',
-  palm: 'gen_palm',
-  rock: 'gen_rock',
-  hardRock: 'gen_hardRock',
-  stump: 'gen_stump',
-  rubble: 'gen_rubble',
-  decor_rubble: 'gen_rubble',
-  decor_brokenStone: 'gen_brokenStone',
-  decor_pillar: 'gen_pillar',
-  decor_ship: 'gen_ship',
-  decor_arch: 'gen_arch',
-  decor_campfire: 'gen_campfire',
-  station_ruins: 'gen_monolith',
-  station_workbench: 'gen_workbench',
-  station_dock: 'gen_mooring',
-  sign: 'gen_sign',
-  chest: 'gen_chest',
-  chestOpen: 'gen_chestOpen',
+const refimgUrls = import.meta.glob('../assets/refimg/*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
+const piggUrls = import.meta.glob('../assets/pigg/*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
 
-  turnip0: 'gen_turnip0',
-  turnip1: 'gen_turnip1',
-  turnip2: 'gen_turnip2',
-  sunflower0: 'gen_sunflower0',
-  sunflower1: 'gen_sunflower1',
-  sunflower2: 'gen_sunflower2',
-  tomato0: 'gen_tomato0',
-  tomato1: 'gen_tomato1',
-  tomato2: 'gen_tomato2',
+const sheetImages = new Map<string, HTMLImageElement>();
 
-  item_wood: 'gen_item_wood',
-  item_stone: 'gen_item_stone',
-  item_copper: 'gen_item_copper',
-  item_turnip: 'gen_item_turnip',
-  item_sunflower: 'gen_item_sunflower',
-  item_tomato: 'gen_item_tomato',
+function urlForSheet(name: string): string | undefined {
+  const suffix = `/${name}.png`;
+  for (const path in refimgUrls) if (path.endsWith(suffix)) return refimgUrls[path];
+  for (const path in piggUrls) if (path.endsWith(suffix)) return piggUrls[path];
+  return undefined;
+}
 
-  f_woodFence: 'gen_f_woodFence',
-  f_woodSign: 'gen_f_woodSign',
-  f_woodBench: 'gen_f_woodBench',
-  f_woodDesk: 'gen_f_woodDesk',
-  f_woodWorkbench: 'gen_f_woodWorkbench',
-  f_woodTower: 'gen_f_woodTower',
-  f_stoneFence: 'gen_f_stoneFence',
-  f_stoneBench: 'gen_f_stoneBench',
-  f_stoneOven: 'gen_f_stoneOven',
-  f_stoneLantern: 'gen_f_stoneLantern',
-  f_copperLamp: 'gen_f_copperLamp',
-  f_ruinPillar: 'gen_f_ruinPillar',
-  f_flowerBed: 'gen_f_flowerBed',
-  f_flowerPot: 'gen_f_flowerPot',
-  f_fruitTable: 'gen_f_fruitTable',
-  f_veggieStand: 'gen_f_veggieStand',
-  f_flowerArch: 'gen_f_flowerArch',
-  f_stoneStatue: 'gen_f_stoneStatue',
+function loadSheetImages(names: readonly string[]): Promise<void> {
+  if (typeof Image === 'undefined') return Promise.resolve();
+  return Promise.all(
+    names.map(
+      (name) =>
+        new Promise<void>((resolve) => {
+          const url = urlForSheet(name);
+          if (!url) return resolve();
+          const img = new Image();
+          img.onload = () => {
+            sheetImages.set(name, img);
+            resolve();
+          };
+          img.onerror = () => resolve();
+          img.src = url;
+        }),
+    ),
+  ).then(() => undefined);
+}
 
-  player_down0: 'gen_player_down0',
-  player_down1: 'gen_player_down1',
-  player_down2: 'gen_player_down2',
-  player_up0: 'gen_player_up0',
-  player_up1: 'gen_player_up1',
-  player_up2: 'gen_player_up2',
-  player_left0: 'gen_player_left0',
-  player_left1: 'gen_player_left1',
-  player_left2: 'gen_player_left2',
-  player_right0: 'gen_player_right0',
-  player_right1: 'gen_player_right1',
-  player_right2: 'gen_player_right2',
+/** 素材を読み込む。main.tsx から最初の描画前に await される（失敗しても止まらない）。 */
+export function loadArt(): Promise<void> {
+  const names = Array.from(new Set(Object.values(SHEET_TARGET).map((spec) => spec.src)));
+  return loadSheetImages(names).then(() => {
+    bakedCache.clear();
+    dataUrlCache.clear();
+  });
+}
 
-  fx_sparkle: 'gen_fx_sparkle',
-  fx_leaf: 'gen_fx_leaf',
-  fx_dust: 'gen_fx_dust',
+// ---------------------------------------------------------------------------
+// 素材シートへの対応表。worldW は「ワールド px（1 マス = 32）」での目標幅、高さは元画像の比率から出す。
+
+interface SheetSpec {
+  src: string;
+  worldW: number;
+  tint?: string; // 乗算合成で色違いを作る
+}
+
+const WALL_TINT = '#b3c6aa'; // 森の壁の木: ほんの少しだけ落ち着かせる（資源の木と見分けがつく程度）
+const BORDER_TINT = '#a99bd0'; // 境界ノード: 淡い紫がかった色
+const STONE_TINT = '#a7afba'; // 石材家具用（暖色の木目を寒色の石灰岩っぽく）
+const COPPER_TINT = '#e59a58'; // 銅ランプ
+
+const SHEET_TARGET: Partial<Record<SpriteName, SheetSpec>> = {
+  tree: { src: 'tree_medium', worldW: 46 },
+  bigTree: { src: 'tree_big', worldW: 66 },
+  palm: { src: 'furn_palm_tree', worldW: 48 },
+  rock: { src: 'rock_medium', worldW: 32 },
+  hardRock: { src: 'rock_medium', worldW: 34, tint: '#8b97a3' },
+  wallOak: { src: 'tree_medium', worldW: 54, tint: WALL_TINT },
+  wallPine: { src: 'tree_small', worldW: 50, tint: WALL_TINT },
+  borderTree: { src: 'tree_medium', worldW: 48, tint: BORDER_TINT },
+  borderRock: { src: 'rock_medium', worldW: 34, tint: BORDER_TINT },
+
+  stump: { src: 'tree_stump', worldW: 30 },
+  rubble: { src: 'rock_pebble', worldW: 26 },
+  chest: { src: 'furn_chest', worldW: 34 },
+  chestOpen: { src: 'furn_chest', worldW: 34 },
+
+  decor_campfire: { src: 'furn_campfire', worldW: 36 },
+  decor_rubble: { src: 'rock_pile', worldW: 36 },
+  decor_brokenStone: { src: 'rock_collapsed', worldW: 40 },
+  decor_arch: { src: 'cave_entrance', worldW: 50 },
+  decor_pillar: { src: 'rock_cliff', worldW: 42 },
+  // ChatGPT で生成した pigg 風の帆船（scripts/import-generated.mjs で取り込み）。7×8 マスの用地に収まる大きさ。
+  decor_ship: { src: 'pigg_ship', worldW: 190 },
+  f_woodTower: { src: 'pigg_tower', worldW: 84 },
+  f_flowerArch: { src: 'pigg_arch', worldW: 84 },
+  station_ruins: { src: 'rock_fossil', worldW: 44 },
+  station_workbench: { src: 'furn_workbench_blueprint', worldW: 46 },
+
+  f_woodFence: { src: 'furn_fence_wood', worldW: 40 },
+  f_woodSign: { src: 'furn_signpost', worldW: 30 },
+  f_woodBench: { src: 'furn_bench_log', worldW: 42 },
+  f_woodDesk: { src: 'furn_desk_dining', worldW: 42 },
+  f_woodWorkbench: { src: 'furn_workbench', worldW: 44 },
+  f_stoneFence: { src: 'furn_fence_white', worldW: 40 },
+  f_stoneBench: { src: 'furn_bench', worldW: 42, tint: STONE_TINT },
+  f_stoneOven: { src: 'furn_pizza_oven', worldW: 40 },
+  f_stoneLantern: { src: 'furn_torch', worldW: 24 },
+  f_copperLamp: { src: 'furn_torch', worldW: 24, tint: COPPER_TINT },
+  f_flowerBed: { src: 'furn_flower_bed', worldW: 38 },
+  f_flowerPot: { src: 'plant_02', worldW: 28 },
+  f_fruitTable: { src: 'furn_barrel_table', worldW: 38 },
+  f_veggieStand: { src: 'furn_fish_table', worldW: 42 },
+  f_stoneStatue: { src: 'rock_big', worldW: 48, tint: STONE_TINT },
+  f_ruinPillar: { src: 'rock_cliff', worldW: 42 },
+
+  // 地面の飾り（当たり判定なし）。参考シートの花・草を色違いで混ぜる。
+  // plant_10/16/54/59 は市松模様の抜き残りが出るので使わない。
+  deco_0: { src: 'plant_01', worldW: 24 },
+  deco_1: { src: 'plant_05', worldW: 24 },
+  deco_2: { src: 'plant_12', worldW: 22 },
+  deco_3: { src: 'plant_18', worldW: 24 },
+  deco_4: { src: 'plant_22', worldW: 22 },
+  deco_5: { src: 'plant_29', worldW: 24 },
+  deco_6: { src: 'plant_33', worldW: 22 },
+  deco_7: { src: 'plant_40', worldW: 24 },
+  deco_pebble: { src: 'rock_pebble', worldW: 14 },
+  deco_mossy: { src: 'rock_mossy', worldW: 22 },
+
+  // 主人公は正面立ち絵 1 枚。向き・歩きコマは描画側の揺れ（renderer.ts）で表す。
+  player_down0: { src: 'pigg_player_down0', worldW: 30 },
+  player_down1: { src: 'pigg_player_down0', worldW: 30 },
+  player_down2: { src: 'pigg_player_down0', worldW: 30 },
+  player_up0: { src: 'pigg_player_down0', worldW: 30 },
+  player_up1: { src: 'pigg_player_down0', worldW: 30 },
+  player_up2: { src: 'pigg_player_down0', worldW: 30 },
+  player_left0: { src: 'pigg_player_down0', worldW: 30 },
+  player_left1: { src: 'pigg_player_down0', worldW: 30 },
+  player_left2: { src: 'pigg_player_down0', worldW: 30 },
+  player_right0: { src: 'pigg_player_down0', worldW: 30 },
+  player_right1: { src: 'pigg_player_down0', worldW: 30 },
+  player_right2: { src: 'pigg_player_down0', worldW: 30 },
 };
 
-/** 「古代の見えない力に塞がれた木・岩」感を出すための、境界ノード用の色調（乗算）。
- *  素の gen_oak / gen_brokenStone を暗い紫がかった色で乗算し、輪郭（アルファ）は保つ。 */
-const BORDER_TINT = '#5f5878';
+// ---------------------------------------------------------------------------
+// コードで描くベクター絵。Canvas 座標はワールド px、内部は SUPERSAMPLE 倍の解像度で焼く。
 
-/** 森の「壁」役の木（forestTrees.ts の非対話インスタンス）用の色調（乗算）。
- *  BORDER_TINT の紫とは別系統で、信じられる「日陰の濃い森」寄りの暗く冷たい緑にする。
- *  資源ノードの tree/bigTree は無加工（鮮やか）のまま描くので、この乗算があるかどうかで
- *  「奥の壁」と「拾える手前の木」が一目で見分けられる。 */
-const WALL_TINT = '#3c4f3a';
+const SUPERSAMPLE = 5;
 
-function bakeTintedGen(genName: string, tint: string): BakedSprite | null {
-  const img = genImages.get(genName);
-  if (!img) return null;
-  const w = img.naturalWidth * SCALE;
-  const h = img.naturalHeight * SCALE;
-  const canvas = makeCanvas(w, h);
-  const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+type Painter = (ctx: Ctx2D) => void;
+type Fill = string | CanvasGradient;
+
+interface PainterSpec {
+  w: number;
+  h: number;
+  paint: Painter;
+}
+
+// 配色（やさしい暖色の輪郭 + 明るいパステル）
+const OUTLINE = '#6b4a35';
+const LEAF = '#7fc45a';
+const LEAF_DARK = '#4f9a43';
+const SOIL = '#8a5a3c';
+
+function ellipse(ctx: Ctx2D, cx: number, cy: number, rx: number, ry: number, fill: Fill, stroke?: string, lw = 0.7, rot = 0): void {
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, rot, 0, Math.PI * 2);
+  ctx.fillStyle = fill;
+  ctx.fill();
+  if (stroke) {
+    ctx.lineWidth = lw;
+    ctx.strokeStyle = stroke;
+    ctx.stroke();
+  }
+}
+
+function roundedRect(ctx: Ctx2D, x: number, y: number, w: number, h: number, r: number): void {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
+function fillRR(ctx: Ctx2D, x: number, y: number, w: number, h: number, r: number, fill: Fill, stroke?: string, lw = 0.7): void {
+  roundedRect(ctx, x, y, w, h, r);
+  ctx.fillStyle = fill;
+  ctx.fill();
+  if (stroke) {
+    ctx.lineWidth = lw;
+    ctx.strokeStyle = stroke;
+    ctx.stroke();
+  }
+}
+
+function vgrad(ctx: Ctx2D, y0: number, y1: number, c0: string, c1: string): CanvasGradient {
+  const g = ctx.createLinearGradient(0, y0, 0, y1);
+  g.addColorStop(0, c0);
+  g.addColorStop(1, c1);
+  return g;
+}
+
+/** 葉 1 枚。(x,y) が付け根、ang は上向きが 0（ラジアン、右が正）、len が長さ。 */
+function leaf(ctx: Ctx2D, x: number, y: number, len: number, ang: number, wid: number, fill = LEAF, stroke = LEAF_DARK): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(ang);
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.quadraticCurveTo(wid, -len * 0.45, 0, -len);
+  ctx.quadraticCurveTo(-wid, -len * 0.45, 0, 0);
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.lineWidth = 0.55;
+  ctx.strokeStyle = stroke;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(0, -len * 0.08);
+  ctx.lineTo(0, -len * 0.82);
+  ctx.lineWidth = 0.35;
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+  ctx.stroke();
+  ctx.restore();
+}
+
+function moundOfSoil(ctx: Ctx2D, cx: number, cy: number, rx: number): void {
+  ellipse(ctx, cx, cy, rx, rx * 0.42, vgrad(ctx, cy - rx * 0.4, cy + rx * 0.4, '#a67552', SOIL));
+}
+
+function star(ctx: Ctx2D, cx: number, cy: number, r: number, inner: number, fill: string): void {
+  ctx.beginPath();
+  for (let i = 0; i < 8; i++) {
+    const a = (Math.PI / 4) * i - Math.PI / 2;
+    const rr = i % 2 === 0 ? r : inner;
+    const px = cx + Math.cos(a) * rr;
+    const py = cy + Math.sin(a) * rr;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+}
+
+// --- 作物 -----------------------------------------------------------------
+
+function paintTurnip(stage: 0 | 1 | 2): Painter {
+  return (ctx) => {
+    const cx = 16;
+    const gy = 28;
+    moundOfSoil(ctx, cx, gy, 9);
+    if (stage === 0) {
+      leaf(ctx, cx, gy - 1, 8, -0.5, 2.2);
+      leaf(ctx, cx, gy - 1, 8, 0.5, 2.2);
+      return;
+    }
+    if (stage === 2) {
+      // 土から頭を出したかぶ
+      ellipse(ctx, cx, gy - 3, 6.2, 5.4, vgrad(ctx, gy - 9, gy + 1, '#fffaf2', '#f0cfe0'), '#c9a0b4', 0.6);
+      ellipse(ctx, cx - 1.6, gy - 5.2, 2, 1.3, 'rgba(255,255,255,0.75)');
+      moundOfSoil(ctx, cx, gy + 1.4, 8);
+    }
+    const base = stage === 2 ? gy - 7 : gy - 1;
+    const len = stage === 2 ? 15 : 11;
+    for (const a of [-0.95, -0.5, 0, 0.5, 0.95]) leaf(ctx, cx, base, len * (1 - Math.abs(a) * 0.18), a, stage === 2 ? 3.2 : 2.6);
+  };
+}
+
+function paintSunflower(stage: 0 | 1 | 2): Painter {
+  return (ctx) => {
+    const cx = 16;
+    const gy = 29;
+    moundOfSoil(ctx, cx, gy, 8);
+    if (stage === 0) {
+      leaf(ctx, cx, gy - 1, 7, -0.7, 2);
+      leaf(ctx, cx, gy - 1, 7, 0.7, 2);
+      return;
+    }
+    const top = stage === 2 ? gy - 22 : gy - 13;
+    ctx.beginPath();
+    ctx.moveTo(cx, gy - 1);
+    ctx.quadraticCurveTo(cx + 1, (gy + top) / 2, cx, top);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = LEAF_DARK;
+    ctx.stroke();
+    leaf(ctx, cx, gy - 6, 10, -1.1, 3.2);
+    leaf(ctx, cx, gy - 10, 10, 1.1, 3.2);
+    if (stage === 1) {
+      ellipse(ctx, cx, top, 3.2, 3.2, '#8fce5f', LEAF_DARK, 0.6);
+      return;
+    }
+    for (let i = 0; i < 14; i++) {
+      const a = (Math.PI * 2 * i) / 14;
+      ellipse(ctx, cx + Math.cos(a) * 5.6, top + Math.sin(a) * 5.6, 3.3, 1.7, i % 2 ? '#ffd23f' : '#ffc21a', '#d99a0a', 0.4, a);
+    }
+    ellipse(ctx, cx, top, 4.2, 4.2, vgrad(ctx, top - 4, top + 4, '#8a5a2b', '#5a3a1e'), '#4a2f18', 0.5);
+    ellipse(ctx, cx - 1.2, top - 1.3, 1.1, 0.9, 'rgba(255,220,160,0.5)');
+  };
+}
+
+function paintTomato(stage: 0 | 1 | 2): Painter {
+  return (ctx) => {
+    const cx = 16;
+    const gy = 29;
+    moundOfSoil(ctx, cx, gy, 9);
+    if (stage === 0) {
+      leaf(ctx, cx, gy - 1, 7, -0.7, 2.2);
+      leaf(ctx, cx, gy - 1, 7, 0.7, 2.2);
+      return;
+    }
+    const spread = stage === 2 ? 1 : 0.7;
+    for (const a of [-1.2, -0.75, -0.3, 0.3, 0.75, 1.2]) leaf(ctx, cx, gy - 2, 13 * spread * (1 - Math.abs(a) * 0.12), a, 3.6 * spread + 0.4);
+    if (stage === 1) {
+      for (const [dx, dy] of [[-4, -12], [3, -15]] as const) ellipse(ctx, cx + dx, gy + dy, 1.2, 1.2, '#ffe36a');
+      return;
+    }
+    for (const [dx, dy, r] of [[-6, -9, 3.6], [5, -11, 3.9], [-1, -16, 3.4], [7, -5, 3.2]] as const) {
+      const x = cx + dx;
+      const y = gy + dy;
+      ellipse(ctx, x, y, r, r * 0.93, vgrad(ctx, y - r, y + r, '#ff7a5c', '#d8362c'), '#a8231c', 0.5);
+      ellipse(ctx, x - r * 0.35, y - r * 0.4, r * 0.32, r * 0.22, 'rgba(255,255,255,0.7)');
+      leaf(ctx, x, y - r * 0.7, r * 0.9, -0.4, r * 0.4, '#5fae4a', '#3d7a34');
+      leaf(ctx, x, y - r * 0.7, r * 0.9, 0.4, r * 0.4, '#5fae4a', '#3d7a34');
+    }
+  };
+}
+
+// --- アイテムアイコン -------------------------------------------------------
+
+function log(ctx: Ctx2D, x: number, y: number, len: number, r: number): void {
+  fillRR(ctx, x, y - r, len, r * 2, r * 0.5, vgrad(ctx, y - r, y + r, '#c99a63', '#96683d'), '#6f4a2a', 0.6);
+  ellipse(ctx, x + len, y, r * 0.55, r, '#e6c18a', '#6f4a2a', 0.6);
+  ellipse(ctx, x + len, y, r * 0.28, r * 0.5, 'rgba(150,100,60,0.5)');
+}
+
+const paintItemWood: Painter = (ctx) => {
+  log(ctx, 3, 15, 14, 3.6);
+  log(ctx, 5, 8.5, 14, 3.6);
+  log(ctx, 2, 21.5, 15, 3.4);
+};
+
+const paintItemStone: Painter = (ctx) => {
+  ctx.beginPath();
+  ctx.moveTo(4, 18);
+  ctx.quadraticCurveTo(3, 9, 10, 6.5);
+  ctx.quadraticCurveTo(17, 4, 20, 11);
+  ctx.quadraticCurveTo(23, 19, 17, 20.5);
+  ctx.quadraticCurveTo(8, 22, 4, 18);
+  ctx.closePath();
+  ctx.fillStyle = vgrad(ctx, 5, 22, '#e2e4e7', '#9a9fa6');
+  ctx.fill();
+  ctx.lineWidth = 0.7;
+  ctx.strokeStyle = '#6f757c';
+  ctx.stroke();
+  ellipse(ctx, 9.5, 10.5, 3.2, 1.6, 'rgba(255,255,255,0.65)', undefined, 0, -0.5);
+};
+
+const paintItemCopper: Painter = (ctx) => {
+  ctx.beginPath();
+  ctx.moveTo(4, 17);
+  ctx.lineTo(7, 8);
+  ctx.lineTo(15, 5);
+  ctx.lineTo(21, 10);
+  ctx.lineTo(20, 18);
+  ctx.lineTo(12, 21.5);
+  ctx.closePath();
+  ctx.fillStyle = vgrad(ctx, 5, 22, '#f0a26a', '#b25a2c');
+  ctx.fill();
+  ctx.lineWidth = 0.7;
+  ctx.strokeStyle = '#7d3c1c';
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(7, 8);
+  ctx.lineTo(13, 12);
+  ctx.lineTo(15, 5);
+  ctx.moveTo(13, 12);
+  ctx.lineTo(12, 21.5);
+  ctx.moveTo(13, 12);
+  ctx.lineTo(21, 10);
+  ctx.strokeStyle = 'rgba(125,60,28,0.55)';
+  ctx.lineWidth = 0.5;
+  ctx.stroke();
+  star(ctx, 17, 8, 2.4, 0.8, 'rgba(255,255,255,0.85)');
+};
+
+const paintItemTurnip: Painter = (ctx) => {
+  for (const a of [-0.6, 0, 0.6]) leaf(ctx, 12, 9.5, 8, a, 2.4);
+  ellipse(ctx, 12, 15.5, 6.6, 6.2, vgrad(ctx, 9, 22, '#fffaf2', '#ecc3d8'), '#b98aa2', 0.6);
+  ellipse(ctx, 9.6, 12.8, 2, 1.3, 'rgba(255,255,255,0.75)');
+};
+
+const paintItemSunflower: Painter = (ctx) => {
+  for (let i = 0; i < 12; i++) {
+    const a = (Math.PI * 2 * i) / 12;
+    ellipse(ctx, 12 + Math.cos(a) * 6.6, 12 + Math.sin(a) * 6.6, 3.6, 1.9, i % 2 ? '#ffd23f' : '#ffc21a', '#d99a0a', 0.4, a);
+  }
+  ellipse(ctx, 12, 12, 4.6, 4.6, vgrad(ctx, 7, 17, '#8a5a2b', '#5a3a1e'), '#4a2f18', 0.5);
+};
+
+const paintItemTomato: Painter = (ctx) => {
+  ellipse(ctx, 12, 13.5, 7.8, 7.2, vgrad(ctx, 6, 21, '#ff7a5c', '#d8362c'), '#a8231c', 0.6);
+  ellipse(ctx, 9, 10.5, 2.4, 1.5, 'rgba(255,255,255,0.7)');
+  for (const a of [-1.1, -0.4, 0.4, 1.1]) leaf(ctx, 12, 7.2, 4.6, a, 1.6, '#5fae4a', '#3d7a34');
+};
+
+// --- 道具 -----------------------------------------------------------------
+// 描画側は「下辺中央を握り手（回転の中心）」にして回すので、持ち手の下端を (w/2, h) に置く。
+
+function handle(ctx: Ctx2D, x: number, y0: number, y1: number): void {
+  fillRR(ctx, x - 1.5, y1, 3, y0 - y1, 1.5, vgrad(ctx, y1, y0, '#c99a63', '#8a5a3c'), '#6f4a2a', 0.5);
+}
+
+const paintToolAxe: Painter = (ctx) => {
+  handle(ctx, 11, 28, 5);
+  ctx.beginPath();
+  ctx.moveTo(11, 4.5);
+  ctx.quadraticCurveTo(15, 0.5, 20.5, 2.5);
+  ctx.quadraticCurveTo(22, 8, 20, 11);
+  ctx.quadraticCurveTo(15, 10, 11, 10);
+  ctx.closePath();
+  ctx.fillStyle = vgrad(ctx, 1, 11, '#eef1f4', '#9aa2ab');
+  ctx.fill();
+  ctx.lineWidth = 0.6;
+  ctx.strokeStyle = '#5f6770';
+  ctx.stroke();
+};
+
+const paintToolPick: Painter = (ctx) => {
+  handle(ctx, 11, 28, 6);
+  ctx.beginPath();
+  ctx.moveTo(1.5, 8);
+  ctx.quadraticCurveTo(11, -1, 20.5, 8);
+  ctx.quadraticCurveTo(11, 3.6, 1.5, 8);
+  ctx.closePath();
+  ctx.fillStyle = vgrad(ctx, 0, 8, '#eef1f4', '#8f979f');
+  ctx.fill();
+  ctx.lineWidth = 0.6;
+  ctx.strokeStyle = '#5f6770';
+  ctx.stroke();
+};
+
+const paintToolHoe: Painter = (ctx) => {
+  handle(ctx, 11, 28, 5);
+  ctx.beginPath();
+  ctx.moveTo(11, 4);
+  ctx.lineTo(21, 3);
+  ctx.lineTo(19.5, 10.5);
+  ctx.lineTo(11, 8);
+  ctx.closePath();
+  ctx.fillStyle = vgrad(ctx, 3, 10, '#eef1f4', '#8f979f');
+  ctx.fill();
+  ctx.lineWidth = 0.6;
+  ctx.strokeStyle = '#5f6770';
+  ctx.stroke();
+};
+
+// --- エフェクト -------------------------------------------------------------
+
+const paintFxLeaf: Painter = (ctx) => leaf(ctx, 5, 9, 8, 0.6, 3);
+
+const paintFxDust: Painter = (ctx) => {
+  const g = ctx.createRadialGradient(5, 5, 0.5, 5, 5, 5);
+  g.addColorStop(0, 'rgba(255,248,230,0.95)');
+  g.addColorStop(1, 'rgba(230,205,160,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(5, 5, 5, 0, Math.PI * 2);
+  ctx.fill();
+};
+
+const paintFxSparkle: Painter = (ctx) => {
+  const g = ctx.createRadialGradient(8, 8, 0.5, 8, 8, 8);
+  g.addColorStop(0, 'rgba(255,255,220,0.9)');
+  g.addColorStop(1, 'rgba(255,230,120,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(8, 8, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(8, 0.5);
+  ctx.quadraticCurveTo(8.8, 7.2, 15.5, 8);
+  ctx.quadraticCurveTo(8.8, 8.8, 8, 15.5);
+  ctx.quadraticCurveTo(7.2, 8.8, 0.5, 8);
+  ctx.quadraticCurveTo(7.2, 7.2, 8, 0.5);
+  ctx.closePath();
+  ctx.fillStyle = '#fff6c2';
+  ctx.fill();
+  ctx.lineWidth = 0.4;
+  ctx.strokeStyle = '#f0c33a';
+  ctx.stroke();
+};
+
+// --- 看板・宝箱まわり ---------------------------------------------------------
+
+const paintSign: Painter = (ctx) => {
+  fillRR(ctx, 10.5, 14, 3.4, 18, 1.2, vgrad(ctx, 14, 32, '#b98a58', '#8a5a3c'), OUTLINE, 0.5);
+  fillRR(ctx, 2, 3, 20, 13, 2.6, vgrad(ctx, 3, 16, '#e8c48c', '#c9955c'), OUTLINE, 0.7);
+  ctx.strokeStyle = 'rgba(111,74,42,0.35)';
+  ctx.lineWidth = 0.5;
+  for (const y of [7.5, 11.5]) {
+    ctx.beginPath();
+    ctx.moveTo(4.5, y);
+    ctx.lineTo(19.5, y);
+    ctx.stroke();
+  }
+  ellipse(ctx, 4.6, 5.6, 0.8, 0.8, '#7a5a3c');
+  ellipse(ctx, 19.4, 5.6, 0.8, 0.8, '#7a5a3c');
+  ellipse(ctx, 12, 33, 6, 1.6, 'rgba(0,0,0,0.0)');
+  leaf(ctx, 15, 32, 5, 0.9, 1.6);
+  leaf(ctx, 9, 32, 5, -0.9, 1.6);
+};
+
+// --- 船・桟橋・大物 ----------------------------------------------------------
+
+const paintDock: Painter = (ctx) => {
+  // 係留杭（ロープを巻いた丸い杭）
+  fillRR(ctx, 6, 8, 12, 22, 5, vgrad(ctx, 8, 30, '#b98a58', '#7d5232'), OUTLINE, 0.7);
+  ellipse(ctx, 12, 8.5, 6, 2.6, '#dcb47c', OUTLINE, 0.7);
+  ctx.strokeStyle = '#e8d6a4';
+  ctx.lineWidth = 1.6;
+  for (const y of [15, 19.5]) {
+    ctx.beginPath();
+    ctx.ellipse(12, y, 6.4, 2, 0, 0, Math.PI);
+    ctx.stroke();
+  }
+};
+
+// --- 配置スロットの記号 -------------------------------------------------------
+
+function badge(ctx: Ctx2D, color: string, draw: (ctx: Ctx2D) => void): void {
+  ellipse(ctx, 10, 10, 9, 9, 'rgba(255,255,255,0.88)', color, 1);
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.4;
+  ctx.lineCap = 'round';
+  draw(ctx);
+  ctx.restore();
+}
+
+const SLOT_COLOR = {
+  bench: '#c97b4a',
+  landmark: '#d64550',
+  path: '#b8a06a',
+  workbench: '#5d8fc9',
+  kitchen: '#e0a72e',
+  desk: '#7a5ac9',
+  decor: '#3fae7a',
+  fence: '#7a8a3f',
+} as const;
+
+function slotPainter(kind: keyof typeof SLOT_COLOR): Painter {
+  const color = SLOT_COLOR[kind];
+  return (ctx) =>
+    badge(ctx, color, (c) => {
+      switch (kind) {
+        case 'bench':
+          c.fillRect(5, 8, 10, 2.6);
+          c.fillRect(5.6, 10.6, 1.6, 4);
+          c.fillRect(12.8, 10.6, 1.6, 4);
+          break;
+        case 'landmark':
+          c.fillRect(6.6, 4.5, 1.4, 11);
+          c.beginPath();
+          c.moveTo(8, 4.5);
+          c.lineTo(15, 7.2);
+          c.lineTo(8, 10);
+          c.fill();
+          break;
+        case 'path':
+          for (const [x, y] of [[6.5, 13], [10, 9.6], [13.5, 6.4]] as const) ellipse(c, x, y, 2.2, 1.7, color);
+          break;
+        case 'workbench':
+          c.save();
+          c.translate(10, 10);
+          c.rotate(0.7);
+          c.fillRect(-0.9, -6, 1.8, 12);
+          c.fillRect(-4, -6.5, 8, 3.4);
+          c.restore();
+          break;
+        case 'kitchen':
+          fillRR(c, 5, 8, 10, 6.4, 2.2, color);
+          c.fillRect(3.4, 8.6, 2, 1.4);
+          c.fillRect(14.6, 8.6, 2, 1.4);
+          c.beginPath();
+          c.arc(10, 6.6, 1.5, 0, Math.PI * 2);
+          c.fill();
+          break;
+        case 'desk':
+          c.fillRect(4.6, 7.4, 10.8, 2);
+          c.fillRect(5.6, 9.4, 1.6, 5);
+          c.fillRect(12.8, 9.4, 1.6, 5);
+          break;
+        case 'decor':
+          for (let k = 0; k < 5; k++) {
+            const a = (Math.PI * 2 * k) / 5 - Math.PI / 2;
+            ellipse(c, 10 + Math.cos(a) * 3.3, 10 + Math.sin(a) * 3.3, 2.2, 2.2, color);
+          }
+          ellipse(c, 10, 10, 1.6, 1.6, '#fff6c2');
+          break;
+        case 'fence':
+          for (const x of [5.4, 9.2, 13]) fillRR(c, x, 5.4, 1.9, 9, 0.8, color);
+          c.fillRect(4.6, 8, 11, 1.3);
+          c.fillRect(4.6, 11.2, 11, 1.3);
+          break;
+      }
+    });
+}
+
+// --- 道タイル（クラフト画面・持ち物のアイコン。ワールドの敷石は renderer が同じ絵を敷く） --------
+
+const paintWoodPath: Painter = (ctx) => {
+  const rows = 4;
+  const rh = 32 / rows;
+  const tones = ['#d9b27a', '#cfa46a', '#dcb680', '#c99b62'];
+  for (let r = 0; r < rows; r++) {
+    const y = r * rh;
+    const joint = 6 + ((r * 13) % 20);
+    for (const [x0, x1] of [[0, joint], [joint, 32]] as const) {
+      ctx.fillStyle = tones[(r + (x0 ? 1 : 0)) % tones.length]!;
+      ctx.fillRect(x0, y, x1 - x0, rh);
+      ctx.fillStyle = 'rgba(255,255,255,0.18)';
+      ctx.fillRect(x0, y, x1 - x0, 1);
+    }
+    ctx.fillStyle = 'rgba(90,58,30,0.5)';
+    ctx.fillRect(0, y + rh - 0.8, 32, 0.8);
+    ctx.fillRect(joint - 0.4, y, 0.8, rh);
+  }
+};
+
+const paintStonePath: Painter = (ctx) => {
+  ctx.fillStyle = '#b9b4a8';
+  ctx.fillRect(0, 0, 32, 32);
+  const stones: [number, number, number, number, string][] = [
+    [1, 1, 14, 14, '#dad6cb'], [17, 1, 14, 14, '#cfcbbf'],
+    [1, 17, 14, 14, '#cfcbbf'], [17, 17, 14, 14, '#dad6cb'],
+  ];
+  for (const [x, y, w, h, c] of stones) {
+    fillRR(ctx, x, y, w, h, 4, c, 'rgba(120,114,100,0.6)', 0.6);
+    ellipse(ctx, x + 4.5, y + 4, 3, 1.6, 'rgba(255,255,255,0.45)');
+  }
+};
+
+// 草の葉先（参考画像の地面に散っている小さな「ᴗ」の印）。細い葉 3〜5 枚の束。
+function paintTuft(variant: 0 | 1): Painter {
+  return (ctx) => {
+    const blades: [number, number, number][] =
+      variant === 0
+        ? [[-0.55, 6.5, 1.1], [0, 8.5, 1.3], [0.5, 6, 1.1]]
+        : [[-0.8, 5, 1], [-0.3, 7.5, 1.2], [0.25, 8, 1.3], [0.75, 5.5, 1]];
+    for (const [ang, len, wid] of blades) leaf(ctx, 8 + ang * 1.6, 10, len, ang * 0.9, wid, '#78bb58', '#5ea146');
+  };
+}
+
+const PAINTERS: Partial<Record<SpriteName, PainterSpec>> = {
+  deco_tuft0: { w: 16, h: 11, paint: paintTuft(0) },
+  deco_tuft1: { w: 16, h: 11, paint: paintTuft(1) },
+  turnip0: { w: 32, h: 32, paint: paintTurnip(0) },
+  turnip1: { w: 32, h: 32, paint: paintTurnip(1) },
+  turnip2: { w: 32, h: 32, paint: paintTurnip(2) },
+  sunflower0: { w: 32, h: 32, paint: paintSunflower(0) },
+  sunflower1: { w: 32, h: 32, paint: paintSunflower(1) },
+  sunflower2: { w: 32, h: 32, paint: paintSunflower(2) },
+  tomato0: { w: 32, h: 32, paint: paintTomato(0) },
+  tomato1: { w: 32, h: 32, paint: paintTomato(1) },
+  tomato2: { w: 32, h: 32, paint: paintTomato(2) },
+  item_wood: { w: 24, h: 24, paint: paintItemWood },
+  item_stone: { w: 24, h: 24, paint: paintItemStone },
+  item_copper: { w: 24, h: 24, paint: paintItemCopper },
+  item_turnip: { w: 24, h: 24, paint: paintItemTurnip },
+  item_sunflower: { w: 24, h: 24, paint: paintItemSunflower },
+  item_tomato: { w: 24, h: 24, paint: paintItemTomato },
+  tool_axe: { w: 22, h: 28, paint: paintToolAxe },
+  tool_pick: { w: 22, h: 28, paint: paintToolPick },
+  tool_hoe: { w: 22, h: 28, paint: paintToolHoe },
+  fx_leaf: { w: 10, h: 10, paint: paintFxLeaf },
+  fx_dust: { w: 10, h: 10, paint: paintFxDust },
+  fx_sparkle: { w: 16, h: 16, paint: paintFxSparkle },
+  sign: { w: 24, h: 34, paint: paintSign },
+  station_dock: { w: 24, h: 32, paint: paintDock },
+  f_woodPath: { w: 32, h: 32, paint: paintWoodPath },
+  f_stonePath: { w: 32, h: 32, paint: paintStonePath },
+  slot_bench: { w: 20, h: 20, paint: slotPainter('bench') },
+  slot_landmark: { w: 20, h: 20, paint: slotPainter('landmark') },
+  slot_path: { w: 20, h: 20, paint: slotPainter('path') },
+  slot_workbench: { w: 20, h: 20, paint: slotPainter('workbench') },
+  slot_kitchen: { w: 20, h: 20, paint: slotPainter('kitchen') },
+  slot_desk: { w: 20, h: 20, paint: slotPainter('desk') },
+  slot_decor: { w: 20, h: 20, paint: slotPainter('decor') },
+  slot_fence: { w: 20, h: 20, paint: slotPainter('fence') },
+};
+
+function bakePainted(spec: PainterSpec): BakedSprite {
+  const canvas = makeCanvas(Math.ceil(spec.w * SUPERSAMPLE), Math.ceil(spec.h * SUPERSAMPLE));
+  const ctx = canvas.getContext('2d') as Ctx2D | null;
   if (ctx) {
-    ctx.imageSmoothingEnabled = false;
+    ctx.scale(SUPERSAMPLE, SUPERSAMPLE);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    spec.paint(ctx);
+  }
+  return { canvas, w: spec.w, h: spec.h };
+}
+
+function bakeTinted(img: HTMLImageElement, tint: string): HTMLCanvasElement | OffscreenCanvas {
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  const canvas = makeCanvas(w, h);
+  const ctx = canvas.getContext('2d') as Ctx2D | null;
+  if (ctx) {
     ctx.drawImage(img, 0, 0, w, h);
     ctx.globalCompositeOperation = 'multiply';
     ctx.fillStyle = tint;
@@ -1511,187 +840,71 @@ function bakeTintedGen(genName: string, tint: string): BakedSprite | null {
     ctx.drawImage(img, 0, 0, w, h);
     ctx.globalCompositeOperation = 'source-over';
   }
-  return { canvas, w, h };
+  return canvas;
 }
 
-/** 地面テクスチャ（tex_dock / tex_paving）を 16×16 切り出して家具として焼く
- *  （f_woodPath / f_stonePath 専用。道はワールド座標に応じて切り出し位置をずらし、
- *  隣の地面のテクスチャと自然につながって見えるようにする）。 */
-const groundCropCache = new Map<string, BakedSprite>();
-
-/** アルファに端から `featherPx` ぶんのなだらかな減衰をかける（正方形の角も含めて全辺）。
- *  1 回焼いたときだけ呼ぶ軽い後処理（毎フレームではない）ので、getImageData を使っても重くない。 */
-function featherEdgeAlpha(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, w: number, h: number, featherPx: number): void {
-  const imgData = ctx.getImageData(0, 0, w, h);
-  const data = imgData.data;
-  for (let y = 0; y < h; y++) {
-    const dy = Math.min(y, h - 1 - y);
-    for (let x = 0; x < w; x++) {
-      const dx = Math.min(x, w - 1 - x);
-      const d = Math.min(dx, dy);
-      if (d >= featherPx) continue;
-      const f = Math.max(0, Math.min(1, (d + 0.5) / featherPx));
-      const idx = (y * w + x) * 4 + 3;
-      data[idx] = Math.round((data[idx] ?? 0) * f);
-    }
-  }
-  ctx.putImageData(imgData, 0, 0);
-}
-
-/** 道の家具（f_woodPath / f_stonePath）専用：四辺を ~2〜3 art px（=SCALE 後で ~5 world px）
- *  だけフェザーして、切り出した四角いテクスチャが下の有機的な地面の上でくっきりした
- *  「パッチ」に見えないようにする。ワールド座標（4x4 の余りで決まるオフセット）ごとに
- *  1 回だけ焼いてキャッシュするので、毎フレームのコストにはならない。 */
-const GROUND_FURNITURE_FEATHER_PX = 5;
-
-function bakeGroundTextureCrop(tex: TextureName, srcX: number, srcY: number): BakedSprite {
-  const key = `${tex}:${srcX},${srcY}`;
-  const cached = groundCropCache.get(key);
-  if (cached) return cached;
-  const img = getTextureImage(tex);
-  const w = TERRAIN_TILE_PX * SCALE;
-  const h = TERRAIN_TILE_PX * SCALE;
-  const canvas = makeCanvas(w, h);
-  const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
-  if (ctx) {
-    ctx.imageSmoothingEnabled = false;
-    if (img) {
-      ctx.drawImage(img, srcX, srcY, TERRAIN_TILE_PX, TERRAIN_TILE_PX, 0, 0, w, h);
-    } else {
-      ctx.fillStyle = tex === 'dock' ? '#a8744f' : '#a7a9ac';
-      ctx.fillRect(0, 0, w, h);
-    }
-    featherEdgeAlpha(ctx, w, h, GROUND_FURNITURE_FEATHER_PX);
-  }
-  const baked = { canvas, w, h };
-  groundCropCache.set(key, baked);
-  return baked;
-}
-
-/** src/assets/gen 側の 1 タイル = 16 art px（terrain.ts の TERRAIN_PX と同じ）。
- *  ここで再 import すると terrain.ts → sprites.ts の循環になるので定数だけ複製する。 */
-const TERRAIN_TILE_PX = 16;
-
-/** 道の家具（f_woodPath / f_stonePath）をワールド座標に応じて焼く。
- *  地面テクスチャは 64×64 で 4×4 タイル分敷き詰められているので、
- *  タイル座標を 4 で割った余りぶんだけずらして切り出せば、周りの地面と自然につながる。 */
-export function getGroundFurnitureSprite(id: 'woodPath' | 'stonePath', worldTx: number, worldTy: number): BakedSprite {
-  const tex: TextureName = id === 'woodPath' ? 'dock' : 'paving';
-  const ox = (((worldTx % 4) + 4) % 4) * TERRAIN_TILE_PX;
-  const oy = (((worldTy % 4) + 4) % 4) * TERRAIN_TILE_PX;
-  return bakeGroundTextureCrop(tex, ox, oy);
-}
-
-/** gen アセットから焼く。対応が無い／画像未読み込みなら null（呼び出し側がフォールバックする）。 */
-function bakeFromGen(name: SpriteName): BakedSprite | null {
-  if (name === 'borderTree') return bakeTintedGen('gen_oak', BORDER_TINT);
-  if (name === 'borderRock') return bakeTintedGen('gen_brokenStone', BORDER_TINT);
-  if (name === 'wallOak') return bakeTintedGen('gen_oak', WALL_TINT);
-  if (name === 'wallPine') return bakeTintedGen('gen_pine', WALL_TINT);
-  // f_woodPath / f_stonePath は一般的な「代表アイコン」として原点 (0,0) 切り出しを返す
-  // （クラフト画面・もちもの欄など、ワールド座標が無い場面での表示用）。
-  // 実際にワールドへ敷くときは renderer.ts が getGroundFurnitureSprite を直接呼ぶ。
-  if (name === 'f_woodPath') return bakeGroundTextureCrop('dock', 0, 0);
-  if (name === 'f_stonePath') return bakeGroundTextureCrop('paving', 0, 0);
-
-  const genName = SPRITE_TO_GEN[name];
-  if (!genName) return null;
-  const img = genImages.get(genName);
+function bakeFromSheet(name: SpriteName): BakedSprite | null {
+  const spec = SHEET_TARGET[name];
+  if (!spec) return null;
+  const img = sheetImages.get(spec.src);
   if (!img) return null;
-  const w = img.naturalWidth * SCALE;
-  const h = img.naturalHeight * SCALE;
-  const canvas = makeCanvas(w, h);
-  const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
-  if (ctx) {
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(img, 0, 0, w, h);
-  }
-  return { canvas, w, h };
+  return {
+    canvas: spec.tint ? bakeTinted(img, spec.tint) : img,
+    w: spec.worldW,
+    h: spec.worldW * (img.naturalHeight / img.naturalWidth),
+  };
 }
 
-/** アトラスから焼く（Kenney 素材モード）。対応する名前が無ければ null。 */
-function bakeFromAtlas(name: SpriteName): BakedSprite | null {
-  if (!atlasImage) return null;
-  const rect = ATLAS[name];
-  if (!rect) return null;
+const EMPTY: BakedSprite = { canvas: makeEmpty(), w: 1, h: 1 };
 
-  const w = rect.w * SCALE;
-  const h = rect.h * SCALE;
-  const canvas = makeCanvas(w, h);
-  const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
-  if (ctx) {
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(atlasImage, rect.x, rect.y, rect.w, rect.h, 0, 0, w, h);
+function makeEmpty(): HTMLCanvasElement | OffscreenCanvas {
+  // Canvas の無い環境（テスト）でも import できるよう、遅延せず作るのは 1×1 だけ。
+  try {
+    return makeCanvas(1, 1);
+  } catch {
+    return {} as HTMLCanvasElement;
   }
-  return { canvas, w, h };
 }
 
-/** コード定義のドット絵から焼く（仮素材モード・フォールバック）。 */
-function bakeFromCode(name: SpriteName): BakedSprite {
-  const def = SPRITE_DEFS[name];
-  const srcH = def.rows.length;
-  const srcW = def.rows[0]?.length ?? 0;
-  const w = srcW * SCALE;
-  const h = srcH * SCALE;
-
-  const canvas = makeCanvas(w, h);
-  const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
-  if (ctx) {
-    ctx.imageSmoothingEnabled = false;
-    for (let y = 0; y < srcH; y++) {
-      const row = def.rows[y] ?? '';
-      for (let x = 0; x < srcW; x++) {
-        const ch = row[x];
-        if (!ch || ch === '.') continue;
-        const color = def.palette[ch];
-        if (!color) continue;
-        ctx.fillStyle = color;
-        ctx.fillRect(x * SCALE, y * SCALE, SCALE, SCALE);
-      }
-    }
-  }
-  return { canvas, w, h };
+function bake(name: SpriteName): BakedSprite | null {
+  const painted = PAINTERS[name];
+  if (painted) return bakePainted(painted);
+  return bakeFromSheet(name);
 }
 
-function bake(name: SpriteName): BakedSprite {
-  if (getArtMode() === 'kenney') {
-    const fromGen = bakeFromGen(name);
-    if (fromGen) return fromGen;
-    const fromAtlas = bakeFromAtlas(name);
-    if (fromAtlas) return fromAtlas;
-  }
-  return bakeFromCode(name);
-}
-
-/** 名前でスプライトを引く。初回だけ焼いてキャッシュする。 */
+/** 名前でスプライトを引く。初回だけ焼いてキャッシュする（素材の読み込み前は空の 1×1 を返し、キャッシュしない）。 */
 export function getSprite(name: SpriteName): BakedSprite {
-  let baked = bakedCache.get(name);
-  if (!baked) {
-    baked = bake(name);
-    bakedCache.set(name, baked);
-  }
+  const cached = bakedCache.get(name);
+  if (cached) return cached;
+  const baked = bake(name);
+  if (!baked) return EMPTY;
+  bakedCache.set(name, baked);
   return baked;
+}
+
+/** 道の家具（f_woodPath / f_stonePath）。1 マスで縦横に継ぎ目なく連なる絵なので、座標に依らず同じものを返す。 */
+export function getGroundFurnitureSprite(id: 'woodPath' | 'stonePath', _worldTx: number, _worldTy: number): BakedSprite {
+  return getSprite(id === 'woodPath' ? 'f_woodPath' : 'f_stonePath');
 }
 
 export function spriteNames(): SpriteName[] {
-  return Object.keys(SPRITE_DEFS) as SpriteName[];
+  return Array.from(new Set([...Object.keys(SHEET_TARGET), ...Object.keys(PAINTERS)])) as SpriteName[];
 }
 
-/** `<img>` などで使うための data URL。こちらも遅延生成・キャッシュ。 */
+/** `<img>` などで使うための data URL（アイコン用に 3 倍の解像度で出す）。遅延生成・キャッシュ。 */
 export function spriteDataUrl(name: SpriteName): string {
   const cached = dataUrlCache.get(name);
   if (cached) return cached;
 
   const baked = getSprite(name);
-  let canvas: HTMLCanvasElement;
-  if (typeof HTMLCanvasElement !== 'undefined' && baked.canvas instanceof HTMLCanvasElement) {
-    canvas = baked.canvas;
-  } else {
-    canvas = document.createElement('canvas');
-    canvas.width = baked.w;
-    canvas.height = baked.h;
-    const ctx = canvas.getContext('2d');
-    ctx?.drawImage(baked.canvas as OffscreenCanvas, 0, 0);
+  const canvas = document.createElement('canvas');
+  const k = 3;
+  canvas.width = Math.max(1, Math.round(baked.w * k));
+  canvas.height = Math.max(1, Math.round(baked.h * k));
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(baked.canvas as CanvasImageSource, 0, 0, canvas.width, canvas.height);
   }
   const url = canvas.toDataURL();
   dataUrlCache.set(name, url);

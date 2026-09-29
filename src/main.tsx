@@ -22,9 +22,9 @@ function render() {
   );
 }
 
-// Kenney 素材を先に読み込んでから初回描画する（差し替え忘れのチラつき防止）。
+// 素材を先に読み込んでから初回描画する（差し替え忘れのチラつき防止）。
 // ただし読み込みが遅い・失敗する場合に画面が固まらないよう、1.5 秒でタイムアウト
-// してコード版フォールバックのまま進む（CLAUDE.md: 無言で固まる 1 秒は許容しない）。
+// して素材が揃わないまま進む（CLAUDE.md: 無言で固まる 1 秒は許容しない）。
 function timeout(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

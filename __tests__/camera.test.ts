@@ -8,24 +8,25 @@ import {
   screenToWorld,
   stepCamera,
   TILE,
+  TILES_ACROSS_SHORT_SIDE,
   worldToScreen,
   type CameraState,
   type Viewport,
 } from '../src/render/camera';
 
 describe('baseScaleFor', () => {
-  it('縦持ち（幅が短辺）では、幅に 10.5 マスが収まるスケールを返す', () => {
+  it('縦持ち（幅が短辺）では、幅に TILES_ACROSS_SHORT_SIDE マスが収まるスケールを返す', () => {
     const s = baseScaleFor(390, 844);
-    expect(s).toBeCloseTo(390 / (10.5 * TILE));
+    expect(s).toBeCloseTo(390 / (TILES_ACROSS_SHORT_SIDE * TILE));
     const tilesAcross = 390 / s / TILE;
-    expect(tilesAcross).toBeCloseTo(10.5);
+    expect(tilesAcross).toBeCloseTo(TILES_ACROSS_SHORT_SIDE);
   });
 
-  it('横持ち・PC（高さが短辺）では、高さに 10.5 マスが収まるスケールを返す', () => {
+  it('横持ち・PC（高さが短辺）では、高さに TILES_ACROSS_SHORT_SIDE マスが収まるスケールを返す', () => {
     const s = baseScaleFor(1100, 700);
-    expect(s).toBeCloseTo(700 / (10.5 * TILE));
+    expect(s).toBeCloseTo(700 / (TILES_ACROSS_SHORT_SIDE * TILE));
     const tilesTall = 700 / s / TILE;
-    expect(tilesTall).toBeCloseTo(10.5);
+    expect(tilesTall).toBeCloseTo(TILES_ACROSS_SHORT_SIDE);
   });
 });
 
@@ -53,6 +54,16 @@ describe('computeClampBounds / clampCameraCenter', () => {
     expect(bounds.minX).toBe(150);
     expect(bounds.minY).toBe(bounds.maxY);
     expect(bounds.minY).toBe(150);
+  });
+
+  it('anchorY を 0.5 より大きくすると、上側の余白を広く・下側を狭くクランプする', () => {
+    const bounds = computeClampBounds(2000, 2000, 800, 600, 0.5, 0.66);
+    // 上側の許容量（minY）は anchorY 分だけ大きく、下側（マップ端からの距離）は
+    // その分だけ小さくなる。合計は anchor によらず viewHeightPx のまま。
+    expect(bounds.minY).toBeCloseTo(600 * 0.66);
+    expect(bounds.maxY).toBeCloseTo(2000 - 600 * 0.34);
+    // X は anchorX を省略しているので従来どおり中央対称。
+    expect(bounds.minX).toBe(400);
   });
 });
 
@@ -97,5 +108,16 @@ describe('worldToScreen / screenToWorld round trip', () => {
     const s = worldToScreen(100, 100, cam, viewport);
     expect(s.x).toBeCloseTo(400);
     expect(s.y).toBeCloseTo(300);
+  });
+
+  it('anchorY を指定すると、カメラ中心はその比率の高さに描かれる（pigg 風の低いカメラ）', () => {
+    const cam: CameraState = { x: 100, y: 100, zoom: 1 };
+    const viewport: Viewport = { widthCssPx: 800, heightCssPx: 600, baseScale: 1, anchorY: 0.66 };
+    const s = worldToScreen(100, 100, cam, viewport);
+    expect(s.x).toBeCloseTo(400); // anchorX は省略時 0.5 のまま
+    expect(s.y).toBeCloseTo(600 * 0.66);
+    const back = screenToWorld(s.x, s.y, cam, viewport);
+    expect(back.x).toBeCloseTo(100, 6);
+    expect(back.y).toBeCloseTo(100, 6);
   });
 });

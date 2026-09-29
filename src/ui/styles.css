@@ -3,8 +3,9 @@
    4 ゲーム共通のヘッダー・フッター前提のレイアウトと相容れない）。
    トークン・レイアウト・シートまで、すべてこのファイル 1 つが出どころ。
 
-   見た目のねらい: Kenney のドット絵マップに乗せる「ゲームらしい」チャンキーな UI。
-   クリームのパネル + 焦げ茶の太い輪郭 + ぼかし無しの硬い影。角丸は少なめ。 */
+   見た目のねらい: pigg 風のやわらかいマップに乗せる UI。
+   マップ上の HUD は「淡い緑の半透明の丸ボタン + 焦げ茶の半透明ピル」。
+   シート（下から出るパネル）だけ、クリームのパネル + 焦げ茶の輪郭を使う。 */
 
 :root {
   /* ---- 地と面 ---- */
@@ -43,7 +44,7 @@ html,
 body {
   margin: 0;
   height: 100%;
-  background: #223a2e; /* キャンバス読み込み前に見える地の色（草原に近い暗緑） */
+  background: #93cc6f; /* キャンバス読み込み前に見える地の色（草原の明るい緑） */
   color: var(--ink);
   font-family: var(--font);
   font-weight: 700;
@@ -108,11 +109,11 @@ body {
   display: grid;
   place-items: center;
   padding: 0;
-  border: var(--border-w) solid var(--ink);
-  border-radius: var(--radius-s);
-  background: var(--panel);
-  box-shadow: var(--hard-shadow-sm);
-  color: var(--ink);
+  border: 2px solid rgb(255 255 255 / 0.92);
+  border-radius: 50%;
+  background: rgb(226 244 214 / 0.8);
+  box-shadow: 0 2px 8px rgb(50 100 50 / 0.3);
+  color: #735056;
   cursor: pointer;
   transition: transform 0.12s var(--ease, ease);
 }
@@ -134,8 +135,7 @@ body {
 }
 
 .icon-btn:active {
-  transform: translate(1px, 1px);
-  box-shadow: none;
+  transform: scale(0.93);
 }
 
 .icon-btn:disabled {
@@ -145,6 +145,34 @@ body {
 
 /* ---------------------------------------------------------------------
    左上: スタミナ・島レベル */
+
+.hud-topleft.panel {
+  background: rgb(60 45 40 / 0.55);
+  backdrop-filter: blur(4px);
+  border: 0;
+  border-radius: 18px;
+  box-shadow: none;
+  color: #fff;
+}
+
+.hud-topleft .hud-num,
+.hud-topleft .hud-level-label {
+  color: #fff;
+}
+
+.hud-topleft .hud-countdown,
+.hud-topleft .hud-xp {
+  color: rgb(255 255 255 / 0.75);
+}
+
+.hud-topleft .hud-bar-track {
+  border: 0;
+  background: rgb(255 255 255 / 0.28);
+}
+
+.hud-topleft .hud-icon {
+  color: #ffd66b;
+}
 
 .hud-topleft {
   position: absolute;
@@ -269,15 +297,15 @@ body {
 }
 
 .hud-tool-btn {
-  width: 50px;
-  height: 50px;
+  width: 54px;
+  height: 54px;
   display: grid;
   place-items: center;
-  border: var(--border-w) solid var(--ink);
-  border-radius: var(--radius-m);
-  background: var(--panel);
-  box-shadow: var(--hard-shadow);
-  color: var(--ink);
+  border: 2px solid rgb(255 255 255 / 0.92);
+  border-radius: 50%;
+  background: rgb(226 244 214 / 0.8);
+  box-shadow: 0 3px 10px rgb(50 100 50 / 0.3);
+  color: #735056;
   transition: transform 0.12s ease, background-color 0.12s ease;
 }
 
@@ -288,22 +316,21 @@ body {
 }
 
 .hud-tool:active .hud-tool-btn {
-  transform: translate(2px, 2px);
-  box-shadow: none;
+  transform: scale(0.93);
 }
 
 .hud-tool.is-active .hud-tool-btn {
-  background: var(--accent);
+  background: rgb(255 214 120 / 0.92);
 }
 
 .hud-tool-label {
   font-size: 10px;
   font-weight: 700;
-  color: var(--ink);
-  background: var(--panel);
-  border: 1px solid var(--ink);
+  color: #fff;
+  background: rgb(60 45 40 / 0.55);
+  border: 0;
   border-radius: 999px;
-  padding: 1px 7px;
+  padding: 2px 8px;
   white-space: nowrap;
 }
 
@@ -339,13 +366,13 @@ body {
   left: 50%;
   transform: translateX(-50%);
   padding: 7px 18px;
-  border: var(--border-w) solid var(--ink);
+  border: 0;
   border-radius: 999px;
-  background: var(--panel);
-  box-shadow: var(--hard-shadow);
+  background: rgb(60 45 40 / 0.55);
+  backdrop-filter: blur(4px);
   font-size: 14px;
   font-weight: 700;
-  color: var(--ink);
+  color: #fff;
   white-space: nowrap;
 }
 
@@ -856,149 +883,4 @@ body {
     transition-duration: 1ms !important;
     animation-duration: 1ms !important;
   }
-}
-
-
-/* ---- Pigg Island 風スパイク（絵柄テスト・操作つき） ----
- * ゲーム本体には無関係。試作の質感・操作感の確認だけが目的なので、共通トークンには寄せず、
- * ここに直接ベタ書きする（本採用するなら別途ちゃんと設計し直す）。
- * カメラは Canvas を使わず「プレイヤーを画面中心に固定し、世界ごと逆に動かす」方式。 */
-.pigg-field {
-  position: fixed;
-  inset: 0;
-  overflow: hidden;
-  background: #4fb0d8;
-  touch-action: none;
-}
-
-.pigg-world {
-  position: absolute;
-  left: 0;
-  top: 0;
-  /* translate(...) scale(ZOOM) はどちらも原点 (0,0) 基準で計算しているので、
-     transform-origin もデフォルトの中心 (50% 50%) ではなく左上に固定する。
-     ここがずれるとズーム時にカメラのパン計算が全部狂う。 */
-  transform-origin: 0 0;
-  will-change: transform;
-}
-
-/* 地面は piggGround.ts が焼いた Canvas そのもの（タイル繰り返しはやめた。継ぎ目が出るため）。 */
-.pigg-field-ground {
-  position: absolute;
-  left: 0;
-  top: 0;
-  display: block;
-}
-
-.pigg-loading {
-  position: fixed;
-  inset: 0;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #4fb0d8;
-  color: #fff;
-  font-weight: 700;
-  font-size: 16px;
-  letter-spacing: 0.04em;
-}
-
-.pigg-obj {
-  position: absolute;
-  transform: translate(-50%, -100%);
-  image-rendering: auto;
-  filter: drop-shadow(0 6px 6px rgb(0 0 0 / 0.18));
-  pointer-events: none;
-  user-select: none;
-}
-
-/* 地面の草花などの飾り。物体ほど大きな影を落とさない（薄め）。 */
-.pigg-obj-flat {
-  filter: drop-shadow(0 2px 2px rgb(0 0 0 / 0.12));
-}
-
-/* 主人公（ChatGPT 生成の正面立ち絵）。画面中心に固定し、World 側を動かす。 */
-.pigg-player {
-  position: absolute;
-  left: 0;
-  top: 0;
-  pointer-events: none;
-  will-change: transform;
-  transition: none;
-}
-
-.pigg-player-sprite {
-  display: block;
-  width: 100%;
-  height: 100%;
-  user-select: none;
-  pointer-events: none;
-}
-
-.pigg-joystick {
-  position: fixed;
-  width: 84px;
-  height: 84px;
-  margin-left: -42px;
-  margin-top: -42px;
-  border-radius: 50%;
-  background: rgb(255 255 255 / 0.35);
-  border: 2px solid rgb(255 255 255 / 0.7);
-  pointer-events: none;
-  z-index: 5;
-}
-
-.pigg-joystick-knob {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 40px;
-  height: 40px;
-  margin-left: -20px;
-  margin-top: -20px;
-  border-radius: 50%;
-  background: rgb(255 255 255 / 0.85);
-  box-shadow: 0 2px 4px rgb(0 0 0 / 0.25);
-}
-
-.pigg-field-badge {
-  position: fixed;
-  top: 16px;
-  left: 16px;
-  right: 16px;
-  background: rgb(255 255 255 / 0.92);
-  border-radius: 14px;
-  padding: 10px 14px;
-  font-weight: 700;
-  font-size: 14px;
-  color: #3d2b2e;
-  box-shadow: 0 4px 0 rgb(0 0 0 / 0.15);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  pointer-events: none;
-  z-index: 4;
-}
-
-.pigg-field-badge span {
-  font-weight: 500;
-  font-size: 12px;
-  color: #7a6a6c;
-}
-
-.pigg-field-close {
-  position: fixed;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 12px 28px;
-  border-radius: 999px;
-  border: 2px solid #3d2b2e;
-  background: #fbf4e2;
-  font-weight: 700;
-  font-size: 15px;
-  color: #3d2b2e;
-  box-shadow: 0 3px 0 #3d2b2e;
-  z-index: 5;
 }

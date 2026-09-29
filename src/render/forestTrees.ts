@@ -131,3 +131,66 @@ export function buildForestTrees(world: World): TreeInstance[] {
 
   return instances;
 }
+
+// ---------------------------------------------------------------------------
+// 地面の飾り（花・草・小石）。ゲームロジックには存在しない見た目だけの物体で、当たり判定は無い。
+// 参考画像は「開けた草地に花や草がほどよく散っている」ので、草・砂タイルの一部に
+// 決定的なハッシュで散らす。ノード・設備・畑・配置スペース・置物の上とそのすぐ隣には置かない。
+
+const DECO_DENSITY_GRASS = 0.17;
+const DECO_DENSITY_SAND = 0.07;
+const DECO_DENSITY_TUFT = 0.55; // 草タイルの何割に葉先を置くか（花・草が乗らないタイルだけ）
+const DECO_PLANTS: SpriteName[] = ['deco_0', 'deco_1', 'deco_2', 'deco_3', 'deco_4', 'deco_5', 'deco_6', 'deco_7'];
+
+// renderer.ts の見た目だけの置物（アーチ・かがり火）の位置。ここを避ける。
+const KEEP_CLEAR: { x: number; y: number }[] = [
+  { x: 15, y: 28 },
+  { x: 30, y: 34 },
+];
+
+export function buildGroundDecor(world: World): TreeInstance[] {
+  const blocked = new Set<number>();
+  const block = (x: number, y: number, w = 1, h = 1, pad = 1) => {
+    for (let yy = y - pad; yy < y + h + pad; yy++) {
+      for (let xx = x - pad; xx < x + w + pad; xx++) {
+        if (xx >= 0 && yy >= 0 && xx < world.width && yy < world.height) blocked.add(yy * world.width + xx);
+      }
+    }
+  };
+  for (const n of world.nodes) block(n.x, n.y, 1, 1, 0);
+  for (const s of world.slots) block(s.x, s.y, s.w ?? 1, s.h ?? 1, 1);
+  for (const p of world.plots) {
+    block(p.sign.x, p.sign.y);
+    for (const t of p.tiles) block(t.x, t.y);
+  }
+  for (const c of world.chests) block(c.x, c.y);
+  for (const st of world.stations) block(st.x, st.y);
+  for (const d of world.decor ?? []) block(d.x, d.y, d.w, d.h, 1);
+  for (const k of KEEP_CLEAR) block(k.x, k.y, 1, 1, 1);
+  block(world.start.x, world.start.y, 1, 1, 1);
+
+  const out: TreeInstance[] = [];
+  for (let ty = 0; ty < world.height; ty++) {
+    for (let tx = 0; tx < world.width; tx++) {
+      const idx = ty * world.width + tx;
+      if (blocked.has(idx)) continue;
+      const g = world.ground[idx];
+      const r = hash2i(tx, ty, 701);
+      let sprite: SpriteName;
+      if (g === 'grass' && hash2i(tx, ty, 711) < DECO_DENSITY_TUFT && r >= DECO_DENSITY_GRASS) {
+        sprite = hash2i(tx, ty, 712) < 0.5 ? 'deco_tuft0' : 'deco_tuft1';
+      } else if (g === 'grass' && r < DECO_DENSITY_GRASS) {
+        const pick = hash2i(tx, ty, 702);
+        sprite = pick < 0.08 ? 'deco_mossy' : pick < 0.2 ? 'deco_pebble' : DECO_PLANTS[Math.floor(hash2i(tx, ty, 703) * DECO_PLANTS.length)]!;
+      } else if (g === 'sand' && r < DECO_DENSITY_SAND) {
+        sprite = 'deco_pebble';
+      } else continue;
+      out.push({
+        x: tx + 0.2 + hash2i(tx, ty, 704) * 0.6,
+        y: ty + 0.55 + hash2i(tx, ty, 705) * 0.4,
+        sprite,
+      });
+    }
+  }
+  return out;
+}

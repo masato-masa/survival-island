@@ -9,7 +9,6 @@
     "preview": "vite preview --port 5190 --strictPort",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "atlas": "node scripts/build-atlas.mjs",
     "deploy": "node scripts/deploy-pages.mjs"
   },
   "dependencies": {

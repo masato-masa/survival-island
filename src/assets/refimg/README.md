@@ -30,3 +30,14 @@
 地面テクスチャは既存の `src/assets/pigg/pigg_sand.png` などをそのまま正とする。
 手法（`deIsoTile()`）は `scripts/slice-refimg.mjs` に残してあるので、精度を上げて
 再挑戦したい場合はそこから始められる。
+
+## 切り出し後の後処理
+
+シートの「透過」は本物の透明ではなく市松模様の焼き込みなので、切り出しただけだと家具の脚の間などに
+白・薄灰色の四角が残る。また木には右下に灰色の影が焼き込まれている。次を走らせて取り除く（何度走らせても同じ結果）:
+
+```bash
+node scripts/strip-tree-shadows.mjs   # tree_*.png の焼き込み影
+node scripts/clean-checker.mjs        # furn_*.png の市松模様の抜き残り
+node scripts/clean-pigg-alpha.mjs     # src/assets/pigg の薄い半透明のにじみ
+```

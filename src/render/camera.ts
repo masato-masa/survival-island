@@ -6,11 +6,13 @@ export const TILE = 32; // 1 マス = 32 ワールドピクセル
 export const MIN_ZOOM = 0.6;
 export const MAX_ZOOM = 2.0;
 
-/** Stardew 風の見え方に寄せた基準タイル数：画面の短辺に 10.5 マス収まる大きさ
- *  （縦持ちスマホなら幅、横持ち・PC なら高さが「短辺」になる）。 */
-export const TILES_ACROSS_SHORT_SIDE = 10.5;
+/** pigg 風の低く・近いカメラに寄せた基準タイル数：画面の短辺に 7 マス収まる大きさ
+ *  （縦持ちスマホなら幅、横持ち・PC なら高さが「短辺」になる）。
+ *  旧 Stardew 風の 10.5 から縮め、キャラ・資源が画面に対して大きく＝近く見えるようにした。
+ *  遊びやすさ（対象の見え方・ジョイスティック操作感）とのバランスは実機で確認して詰める。 */
+export const TILES_ACROSS_SHORT_SIDE = 7;
 
-/** 基準スケール：画面の短辺に ~10.5 マスが収まる大きさ。 */
+/** 基準スケール：画面の短辺に ~7 マスが収まる大きさ。 */
 export function baseScaleFor(viewportWidthCssPx: number, viewportHeightCssPx: number): number {
   const shortSide = Math.min(viewportWidthCssPx, viewportHeightCssPx);
   return shortSide / (TILES_ACROSS_SHORT_SIDE * TILE);
@@ -52,23 +54,33 @@ export interface ClampBounds {
  * ビューポート（ワールド px 単位）に対して、マップ（ワールド px 単位）の外を
  * 映さないためのカメラ中心の許容範囲を作る。マップがビューポートより小さい軸は
  * 中央寄せ（min == max == センター）にする。
+ *
+ * anchorX/anchorY（既定 0.5）は「プレイヤーを画面のどこに固定するか」（0=最上/左、
+ * 1=最下/右）。pigg 風の低いカメラでは Y を 0.5 より大きくして、プレイヤーを画面の
+ * やや下に置く（進行方向側が広く見える）。左右・上下の余白配分が変わるだけで、
+ * 合計（leftExtent+rightExtent など）は anchor によらず常に viewWidthPx/viewHeightPx
+ * なので、「マップがビューポートより小さいか」の判定式自体は変えなくてよい。
  */
 export function computeClampBounds(
   mapWidthPx: number,
   mapHeightPx: number,
   viewWidthPx: number,
   viewHeightPx: number,
+  anchorX = 0.5,
+  anchorY = 0.5,
 ): ClampBounds {
-  const halfW = viewWidthPx / 2;
-  const halfH = viewHeightPx / 2;
+  const leftExtent = viewWidthPx * anchorX;
+  const rightExtent = viewWidthPx * (1 - anchorX);
+  const topExtent = viewHeightPx * anchorY;
+  const bottomExtent = viewHeightPx * (1 - anchorY);
 
   let minX: number;
   let maxX: number;
   if (mapWidthPx <= viewWidthPx) {
     minX = maxX = mapWidthPx / 2;
   } else {
-    minX = halfW;
-    maxX = mapWidthPx - halfW;
+    minX = leftExtent;
+    maxX = mapWidthPx - rightExtent;
   }
 
   let minY: number;
@@ -76,8 +88,8 @@ export function computeClampBounds(
   if (mapHeightPx <= viewHeightPx) {
     minY = maxY = mapHeightPx / 2;
   } else {
-    minY = halfH;
-    maxY = mapHeightPx - halfH;
+    minY = topExtent;
+    maxY = mapHeightPx - bottomExtent;
   }
 
   return { minX, maxX, minY, maxY, centerX: mapWidthPx / 2, centerY: mapHeightPx / 2 };
@@ -106,11 +118,13 @@ export function stepCamera(
   // WALK_SPEED を上げた分、追従を少し締めないとプレイヤーが画面中心から
   // 目に見えて遅れる（0.12 → 0.09）。
   halfLifeSec = 0.09,
+  anchorX = 0.5,
+  anchorY = 0.5,
 ): CameraState {
   const f = followFactor(dtSec, halfLifeSec);
   const nx = cam.x + (targetWorldPxX - cam.x) * f;
   const ny = cam.y + (targetWorldPxY - cam.y) * f;
-  const bounds = computeClampBounds(mapWidthPx, mapHeightPx, viewWidthPx, viewHeightPx);
+  const bounds = computeClampBounds(mapWidthPx, mapHeightPx, viewWidthPx, viewHeightPx, anchorX, anchorY);
   const clamped = clampCameraCenter(nx, ny, bounds);
   return { x: clamped.x, y: clamped.y, zoom: cam.zoom };
 }
@@ -119,6 +133,11 @@ export interface Viewport {
   widthCssPx: number;
   heightCssPx: number;
   baseScale: number;
+  // プレイヤー（＝カメラ中心）を画面のどこに固定するか（0=最上/左、1=最下/右）。
+  // 省略時は 0.5（画面中央）＝これまでどおりの見下ろし視点。pigg 風の低いカメラでは
+  // WorldView 側が anchorY を 0.5 より大きくして渡す。
+  anchorX?: number;
+  anchorY?: number;
 }
 
 export function effectiveScale(cam: CameraState, baseScale: number): number {
@@ -133,9 +152,11 @@ export function worldToScreen(
   viewport: Viewport,
 ): { x: number; y: number } {
   const scale = effectiveScale(cam, viewport.baseScale);
+  const ax = viewport.anchorX ?? 0.5;
+  const ay = viewport.anchorY ?? 0.5;
   return {
-    x: (worldX - cam.x) * scale + viewport.widthCssPx / 2,
-    y: (worldY - cam.y) * scale + viewport.heightCssPx / 2,
+    x: (worldX - cam.x) * scale + viewport.widthCssPx * ax,
+    y: (worldY - cam.y) * scale + viewport.heightCssPx * ay,
   };
 }
 
@@ -146,9 +167,11 @@ export function screenToWorld(
   viewport: Viewport,
 ): { x: number; y: number } {
   const scale = effectiveScale(cam, viewport.baseScale);
+  const ax = viewport.anchorX ?? 0.5;
+  const ay = viewport.anchorY ?? 0.5;
   return {
-    x: (screenX - viewport.widthCssPx / 2) / scale + cam.x,
-    y: (screenY - viewport.heightCssPx / 2) / scale + cam.y,
+    x: (screenX - viewport.widthCssPx * ax) / scale + cam.x,
+    y: (screenY - viewport.heightCssPx * ay) / scale + cam.y,
   };
 }
 

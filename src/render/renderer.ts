@@ -22,7 +22,8 @@ import { store } from '@/game/store';
 
 import { followFactor, TILE, type CameraState, type Viewport, worldToScreen } from './camera';
 import { getGroundFurnitureSprite, getSprite, type SpriteName } from './sprites';
-import { TERRAIN_PX, type PaintedTerrain } from './terrain';
+import type { PaintedTerrain } from './terrain';
+import { TERRAIN_PX } from './terrainCore';
 import type { TreeInstance } from './forestTrees';
 
 // ---------------------------------------------------------------------------
@@ -48,6 +49,8 @@ export interface RenderState {
   terrain: PaintedTerrain | null;
   /** 森タイルに撒いた木のインスタンス（WorldView が一度だけ生成して渡す）。 */
   forestTrees: TreeInstance[];
+  /** 草地に散らした花・草・小石（見た目だけ。WorldView が一度だけ生成して渡す）。 */
+  groundDecor: TreeInstance[];
 }
 
 // ---------------------------------------------------------------------------
@@ -207,15 +210,15 @@ function round(n: number): number {
 }
 
 const FALLBACK_COLOR: Record<string, string> = {
-  water: '#3fa9c4',
-  grass: '#8bc36a',
-  sand: '#ecd9a0',
-  soil: '#5a3d28',
-  dirt: '#a8744f',
-  paving: '#a7a9ac',
-  forest: '#3c6e3a',
-  dock: '#a8744f',
-  foundation: '#7a5a3f',
+  water: '#6cc3dc',
+  grass: '#93cc6f',
+  sand: '#f0e0ac',
+  soil: '#7a5036',
+  dirt: '#e4c18e',
+  paving: '#d6d2c8',
+  forest: '#74b454',
+  dock: '#d6ac74',
+  foundation: '#e4c18e',
 };
 
 const DECOR_SPRITE: Record<DecorKind, SpriteName> = {
@@ -231,7 +234,54 @@ const STATION_SPRITE: Partial<Record<StationKind, SpriteName>> = {
   dock: 'station_dock' as SpriteName,
 };
 
-/** 水面の動く演出（きらめき・波打ち際の泡）。可視範囲の水タイルだけを軽く処理する。 */
+// ---------------------------------------------------------------------------
+// 模様替え（配置）モードの床：参考画像（pigg 風の家の庭）を実測したダイヤ格子。
+// 「もようがえ」中だけ、地面の代わりにこの格子を敷く（水面は敷かず、下の地面テクスチャを
+// そのまま見せる＝池には置けないのが一目で分かる）。マス目 1 つ＝タイル 1 個に対応させ、
+// 4 辺の中点を結んだ菱形を並べるので、隣同士は角で接し継ぎ目のない格子になる。
+
+const DIAMOND_LIGHT: readonly [number, number, number] = [147, 204, 111];
+const DIAMOND_DARK: readonly [number, number, number] = [119, 184, 81];
+const DIAMOND_LINE = 'rgba(221, 237, 201, 0.85)';
+
+function drawDecorateFloorGrid(
+  ctx: CanvasRenderingContext2D,
+  world: World,
+  camera: CameraState,
+  viewport: Viewport,
+  scale: number,
+  minTx: number,
+  minTy: number,
+  maxTx: number,
+  maxTy: number
+): void {
+  const halfW = (TILE * scale) / 2;
+  const halfH = (TILE * scale) / 2;
+  ctx.save();
+  ctx.lineWidth = Math.max(1, scale * 0.9);
+  ctx.strokeStyle = DIAMOND_LINE;
+  for (let ty = minTy; ty <= maxTy; ty++) {
+    for (let tx = minTx; tx <= maxTx; tx++) {
+      const g = world.ground[ty * world.width + tx];
+      if (g === undefined || g === 'water') continue;
+      const c = worldToScreen((tx + 0.5) * TILE, (ty + 0.5) * TILE, camera, viewport);
+      const light = (tx + ty) % 2 === 0;
+      const rgb = light ? DIAMOND_LIGHT : DIAMOND_DARK;
+      ctx.fillStyle = `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+      ctx.beginPath();
+      ctx.moveTo(c.x, c.y - halfH);
+      ctx.lineTo(c.x + halfW, c.y);
+      ctx.lineTo(c.x, c.y + halfH);
+      ctx.lineTo(c.x - halfW, c.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+/** 水面の動く演出（やわらかいきらめき）。可視範囲の水タイルだけを軽く処理する。渚の泡は地面レイヤーに焼いてある。 */
 function drawWaterAnimated(
   ctx: CanvasRenderingContext2D,
   world: World,
@@ -243,33 +293,24 @@ function drawWaterAnimated(
   minTy: number,
   maxTx: number,
   maxTy: number,
-  isLand: (x: number, y: number) => boolean
+  _isLand: (x: number, y: number) => boolean
 ): void {
   for (let ty = minTy; ty <= maxTy; ty++) {
     for (let tx = minTx; tx <= maxTx; tx++) {
       if (world.ground[ty * world.width + tx] !== 'water') continue;
+      const seed = hash2(tx, ty);
+      if (seed > 0.45) continue; // 水面の半分弱のタイルにだけ
       const s = worldToScreen(tx * TILE, ty * TILE, camera, viewport);
       const size = TILE * scale;
-
-      // きらめき：1〜2 個の小さな光点がゆっくり移動する
-      const seed = hash2(tx, ty);
-      const t1 = (now / 2200 + seed) % 1;
-      const gx = s.x + (0.15 + 0.7 * ((seed * 7) % 1)) * size;
-      const gy = s.y + (0.15 + 0.7 * ((seed * 13) % 1)) * size;
-      const glow = Math.max(0, Math.sin(t1 * Math.PI * 2)) * 0.5;
-      if (glow > 0.05) {
-        ctx.fillStyle = `rgba(255,255,255,${glow.toFixed(2)})`;
-        ctx.fillRect(round(gx), round(gy), Math.max(1, round(1.5 * scale)), Math.max(1, round(1.5 * scale)));
-      }
-
-      // 波打ち際の泡：陸に接する辺だけ、じわっと明滅しながら細く動く
-      const foamAlpha = 0.55 + 0.25 * Math.sin(now / 700 + seed * 6.28);
-      ctx.fillStyle = `rgba(234,246,245,${foamAlpha.toFixed(2)})`;
-      const foamW = Math.max(1, round(2 * scale));
-      if (ty > 0 && isLand(tx, ty - 1)) ctx.fillRect(round(s.x), round(s.y), round(size), foamW);
-      if (ty < world.height - 1 && isLand(tx, ty + 1)) ctx.fillRect(round(s.x), round(s.y + size - foamW), round(size), foamW);
-      if (tx > 0 && isLand(tx - 1, ty)) ctx.fillRect(round(s.x), round(s.y), foamW, round(size));
-      if (tx < world.width - 1 && isLand(tx + 1, ty)) ctx.fillRect(round(s.x + size - foamW), round(s.y), foamW, round(size));
+      const t1 = (now / 2600 + seed * 3) % 1;
+      const glow = Math.max(0, Math.sin(t1 * Math.PI * 2));
+      if (glow < 0.08) continue;
+      const gx = s.x + (0.2 + 0.6 * ((seed * 7) % 1)) * size;
+      const gy = s.y + (0.2 + 0.6 * ((seed * 13) % 1)) * size;
+      ctx.fillStyle = `rgba(255,255,255,${(glow * 0.5).toFixed(2)})`;
+      ctx.beginPath();
+      ctx.ellipse(gx, gy, size * 0.16 * (0.6 + glow * 0.4), size * 0.045 * (0.6 + glow * 0.4), 0, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 }
@@ -330,37 +371,70 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
   };
 
   ctx.save();
-  ctx.imageSmoothingEnabled = false;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, viewport.widthCssPx, viewport.heightCssPx);
 
   const scale = camera.zoom * viewport.baseScale;
 
-  // 見えるマスの範囲だけ計算する
-  const topLeft = { x: camera.x - viewport.widthCssPx / 2 / scale, y: camera.y - viewport.heightCssPx / 2 / scale };
-  const bottomRight = { x: camera.x + viewport.widthCssPx / 2 / scale, y: camera.y + viewport.heightCssPx / 2 / scale };
+  // 見えるマスの範囲だけ計算する。anchorX/anchorY（既定 0.5）でカメラ中心が画面の
+  // どこに固定されているかが変わるので、左右・上下で画面端までの距離が非対称になりうる
+  // （pigg 風の低いカメラは anchorY > 0.5 でキャラを画面下寄りに置く）。中央対称決め打ちだと
+  // 実際に見えている側の端の物体が描画対象から漏れる（ちらつき・消失）ので、worldToScreen と
+  // 同じ anchor を使って計算する。
+  const anchorX = viewport.anchorX ?? 0.5;
+  const anchorY = viewport.anchorY ?? 0.5;
+  const topLeft = {
+    x: camera.x - (viewport.widthCssPx * anchorX) / scale,
+    y: camera.y - (viewport.heightCssPx * anchorY) / scale,
+  };
+  const bottomRight = {
+    x: camera.x + (viewport.widthCssPx * (1 - anchorX)) / scale,
+    y: camera.y + (viewport.heightCssPx * (1 - anchorY)) / scale,
+  };
   const minTx = Math.max(0, Math.floor(topLeft.x / TILE) - 1);
   const minTy = Math.max(0, Math.floor(topLeft.y / TILE) - 1);
   const maxTx = Math.min(world.width - 1, Math.ceil(bottomRight.x / TILE) + 1);
   const maxTy = Math.min(world.height - 1, Math.ceil(bottomRight.y / TILE) + 1);
 
-  const drawSpriteAtTile = (name: SpriteName, tx: number, ty: number, anchorBottom = true) => {
+  // 足元のやわらかい影（pigg 風の「地面に立っている」感じ）。sx,sy は足元の画面座標、w は絵の幅（画面 px）。
+  const drawShadow = (sx: number, sy: number, w: number, strength = 1) => {
+    const rx = w * 0.42;
+    const ry = rx * 0.3;
+    const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, rx);
+    g.addColorStop(0, `rgba(40,70,35,${(0.26 * strength).toFixed(3)})`);
+    g.addColorStop(1, 'rgba(40,70,35,0)');
+    ctx.save();
+    ctx.translate(0, sy);
+    ctx.scale(1, ry / rx);
+    ctx.translate(0, -sy);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(sx, sy, rx, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  };
+
+  const drawSpriteAtTile = (name: SpriteName, tx: number, ty: number, anchorBottom = true, shadow = true) => {
     const spr = getSprite(name);
     const feetX = (tx + 0.5) * TILE;
     const feetY = anchorBottom ? (ty + 1) * TILE : (ty + 0.5) * TILE;
     const s = worldToScreen(feetX, feetY, camera, viewport);
     const w = spr.w * scale;
     const h = spr.h * scale;
-    ctx.drawImage(spr.canvas, round(s.x - w / 2), round(s.y - h), round(w), round(h));
+    if (shadow) drawShadow(s.x, s.y - h * 0.03, w * 0.9);
+    ctx.drawImage(spr.canvas, s.x - w / 2, s.y - h, w, h);
   };
 
-  const drawSpriteAtWorld = (name: SpriteName, worldX: number, worldY: number, anchorBottom = true) => {
+  const drawSpriteAtWorld = (name: SpriteName, worldX: number, worldY: number, anchorBottom = true, shadow = true) => {
     const spr = getSprite(name);
     const s = worldToScreen(worldX, worldY, camera, viewport);
     const w = spr.w * scale;
     const h = spr.h * scale;
     const top = anchorBottom ? s.y - h : s.y - h / 2;
-    ctx.drawImage(spr.canvas, round(s.x - w / 2), round(top), round(w), round(h));
+    if (shadow && anchorBottom) drawShadow(s.x, s.y - h * 0.03, w * 0.9);
+    ctx.drawImage(spr.canvas, s.x - w / 2, top, w, h);
   };
 
   // 家具を「デザインで決めた表示サイズ」に contain-fit（アスペクト比を保って矩形へ収める）
@@ -385,7 +459,8 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
       drawW = boxH * artAspect;
     }
     const s = worldToScreen(worldX, worldY, camera, viewport);
-    ctx.drawImage(spr.canvas, round(s.x - drawW / 2), round(s.y - drawH), round(drawW), round(drawH));
+    drawShadow(s.x, s.y - drawH * 0.03, drawW * 0.85);
+    ctx.drawImage(spr.canvas, s.x - drawW / 2, s.y - drawH, drawW, drawH);
   };
 
   // --- 地面（事前描画したレイヤーを可視範囲だけ貼る。無ければ焼き上がるまで簡易フォールバック） ---
@@ -402,8 +477,9 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     const dst = worldToScreen(minTx * TILE, minTy * TILE, camera, viewport);
     const destW = (maxTx - minTx + 1) * TILE * scale;
     const destH = (maxTy - minTy + 1) * TILE * scale;
-    ctx.drawImage(state.terrain.canvas, srcX, srcY, srcW, srcH, round(dst.x), round(dst.y), round(destW), round(destH));
+    ctx.drawImage(state.terrain.canvas, srcX, srcY, srcW, srcH, dst.x, dst.y, destW, destH);
     drawWaterAnimated(ctx, world, camera, viewport, scale, now, minTx, minTy, maxTx, maxTy, isLand);
+    if (state.decorate) drawDecorateFloorGrid(ctx, world, camera, viewport, scale, minTx, minTy, maxTx, maxTy);
   } else {
     // フォールバック（焼いている最中）：ベタ塗りだけで地面種別が分かるようにする
     for (let ty = minTy; ty <= maxTy; ty++) {
@@ -427,7 +503,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
       const progress = cropProgress(tile, now);
       const stage = progress < 0.34 ? 0 : progress < 1 ? 1 : 2;
       const name = `${tile.crop}${stage}` as SpriteName;
-      drawSpriteAtTile(name, t.x, t.y);
+      drawSpriteAtTile(name, t.x, t.y, true, false);
       if (stage === 2) {
         // 収穫可能：控えめなスパークル（gen_fx_sparkle。無ければコード版の星形にフォールバック）
         const s = worldToScreen((t.x + 0.5) * TILE, t.y * TILE, camera, viewport);
@@ -444,7 +520,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
 
   // --- 看板（選んでいる作物のアイコンを小さく載せる） ---
   for (const plot of world.plots) {
-    drawSpriteAtTile('sign' as SpriteName, plot.sign.x, plot.sign.y);
+    drawSpriteAtTile('sign' as SpriteName, plot.sign.x, plot.sign.y, true, true);
     const ps = save.plots[plot.id];
     if (ps?.selected) {
       const s = worldToScreen((plot.sign.x + 0.5) * TILE, plot.sign.y * TILE + TILE * 0.35, camera, viewport);
@@ -581,7 +657,9 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
             const topLeft = worldToScreen(slot.x * TILE, slot.y * TILE, camera, viewport);
             const w = TILE * scale;
             const h = TILE * scale;
-            ctx.drawImage(spr.canvas, round(topLeft.x), round(topLeft.y), round(w), round(h));
+            const x0 = Math.floor(topLeft.x);
+            const y0 = Math.floor(topLeft.y);
+            ctx.drawImage(spr.canvas, x0, y0, Math.ceil(topLeft.x + w) - x0, Math.ceil(topLeft.y + h) - y0);
           },
         });
         continue;
@@ -615,14 +693,20 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
           if (alpha < 0.999) {
             ctx.save();
             ctx.globalAlpha = alpha;
-            drawSpriteAtWorld(t.sprite, anchorX, anchorY);
+            drawSpriteAtWorld(t.sprite, anchorX, anchorY, true, false);
             ctx.restore();
           } else {
-            drawSpriteAtWorld(t.sprite, anchorX, anchorY);
+            drawSpriteAtWorld(t.sprite, anchorX, anchorY, true, false);
           }
         },
       });
     }
+  }
+
+  // --- 地面の飾り（花・草・小石。影なし・見え隠れなし。可視範囲だけ描く） ---
+  for (const d of state.groundDecor) {
+    if (d.x < minTx - 1 || d.x > maxTx + 2 || d.y < minTy - 1 || d.y > maxTy + 2) continue;
+    drawables.push({ y: d.y - 0.6, draw: () => drawSpriteAtWorld(d.sprite, d.x * TILE, d.y * TILE, true, false) });
   }
 
   // --- 遺跡入口のアーチ・広場のかがり火（見た目だけの置物。ゲームロジックには存在しない）。 ---
@@ -635,15 +719,28 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     draw: () => drawSpriteAtWorld('decor_campfire' as SpriteName, PLAZA_CAMPFIRE.x * TILE, PLAZA_CAMPFIRE.y * TILE),
   });
 
-  // プレイヤー：歩行中は 1→0→2→0 を ~130ms ごとに回す（0 が「両足そろい」の中間ポーズ、
-  // 1/2 が左右の踏み出し）。止まっているときは 0 固定。
+  // プレイヤー: 立ち絵は正面 1 枚だけなので、歩行は「はずみ＋ゆれ」で表す（止まっているときはゆっくり呼吸）。
   const moving = state.moving;
-  const WALK_CYCLE = [1, 0, 2, 0] as const;
-  const frame = moving ? WALK_CYCLE[Math.floor(now / 130) % 4]! : 0;
-  const playerSprite = `player_${save.player.dir}${frame}` as SpriteName;
+  const playerSprite = `player_${save.player.dir}0` as SpriteName;
   drawables.push({
     y: save.player.y,
-    draw: () => drawSpriteAtWorld(playerSprite, save.player.x * TILE, save.player.y * TILE),
+    draw: () => {
+      const spr = getSprite(playerSprite);
+      const s0 = worldToScreen(save.player.x * TILE, save.player.y * TILE, camera, viewport);
+      const w = spr.w * scale;
+      const h = spr.h * scale;
+      const phase = now / 95;
+      const bob = moving ? Math.abs(Math.sin(phase)) * 2.6 * scale : Math.sin(now / 520) * 0.5 * scale;
+      const tilt = moving ? Math.sin(phase) * 0.07 : 0;
+      const squash = moving ? 1 - Math.abs(Math.cos(phase)) * 0.03 : 1;
+      drawShadow(s0.x, s0.y - h * 0.02, w * (moving ? 1.05 - bob / (scale * 40) : 1.05));
+      ctx.save();
+      ctx.translate(s0.x, s0.y - bob);
+      ctx.rotate(tilt);
+      ctx.scale(1 / squash, squash);
+      ctx.drawImage(spr.canvas, -w / 2, -h, w, h);
+      ctx.restore();
+    },
   });
 
   drawables.sort((a, b) => a.y - b.y);
