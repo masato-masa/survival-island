@@ -20,12 +20,12 @@ import { groundKindAt, paintPiggGroundAsync } from '@/render/piggGround';
 import type { GroundKind } from '@/render/piggGround';
 
 import piggChest from '@/assets/pigg/pigg_chest.png?url';
-import piggPalm from '@/assets/pigg/pigg_palm.png?url';
 import piggPlayerDown0 from '@/assets/pigg/pigg_player_down0.png?url';
 import piggRock from '@/assets/pigg/pigg_rock.png?url';
 import furnBenchLog from '@/assets/refimg/furn_bench_log.png?url';
 import furnCrate from '@/assets/refimg/furn_crate.png?url';
 import furnFlowerBed from '@/assets/refimg/furn_flower_bed.png?url';
+import furnPalmTree from '@/assets/refimg/furn_palm_tree.png?url';
 import furnSignpost from '@/assets/refimg/furn_signpost.png?url';
 import furnTorch from '@/assets/refimg/furn_torch.png?url';
 import oreCopper from '@/assets/refimg/ore_copper.png?url';
@@ -41,6 +41,8 @@ import plant45 from '@/assets/refimg/plant_45.png?url';
 import plant47 from '@/assets/refimg/plant_47.png?url';
 import plant51 from '@/assets/refimg/plant_51.png?url';
 import plant53 from '@/assets/refimg/plant_53.png?url';
+import plant55 from '@/assets/refimg/plant_55.png?url';
+import plant56 from '@/assets/refimg/plant_56.png?url';
 import rockFlatGround from '@/assets/refimg/rock_flat_ground.png?url';
 import rockMossy from '@/assets/refimg/rock_mossy.png?url';
 import rockPebble from '@/assets/refimg/rock_pebble.png?url';
@@ -53,8 +55,14 @@ import treeTopDown from '@/assets/refimg/tree_top_down.png?url';
 // 世界の大きさ（世界 px。1 世界 px ≒ 画面 1px 相当で作る）。
 const WORLD_W = 2600;
 const WORLD_H = 2000;
-const SPEED = 260; // 世界 px / 秒（本編の 6 マス/秒 ×TILE 相当のスケール感に合わせた値）
+const SPEED = 260; // 世界 px / 秒（本編の 6 マス/秒 ×TILE 相当のスケール感に合わせた値）。
+// ズームしても移動の速さ自体（世界座標上の速度）は変えない。画面上で動く距離が
+// 相対的に小さくなるのはズームアウトした結果として正しい挙動。
 const PLAYER_RADIUS = 22; // 当たり判定（見た目の主人公絵とだいたい合わせた半径）
+// カメラのズーム倍率。参考画像は今までの試作よりだいぶ引いた画角だったため、
+// 世界を 1 枚の layer として scale() で縮小してから画面中央に合わせる方式にした
+// （プレイヤーも他の物体と同じ world 直下の絶対配置にして、最後に描画するだけで済む）。
+const ZOOM = 0.62;
 
 // 主人公の立ち絵の表示サイズ（元画像は 465x557 の縦長）。
 const PLAYER_W = 56;
@@ -132,22 +140,71 @@ const ROCK_SPRITES = [piggRock, refRockMedium, refRockSmall, rockPebble, rockMos
 // 操作性のために小さく保ちたいので、両者を分けている。
 const PLACE_PAD = 34;
 
+// ---------------------------------------------------------------------------
+// 「ジャングル・池の角」の手作業アクセントエリア。
+//
+// ユーザーの参考画像（ジャングルの池の角: 密なヤシの木立が壁のように奥/左を塞ぎ、
+// 睡蓮とハスの花が水面を埋め、丈の高い草や白黄の花クラスターが岸を縁取り、
+// 浮き丸太と道しるべが添えてある）を、一部分だけでも本物に近づけて再現する。
+// 汎用の placeOnGround（ランダム＋間隔ルール）では密な「壁」感が出ないので、
+// この一角だけは piggGround.ts の池の楕円（pondCx/pondCy/pondRx/pondRy）を
+// そのまま使って、角度指定で直接座標を手配置する。
+const POND_CX = WORLD_W * 0.78;
+const POND_CY = WORLD_H * 0.24;
+const POND_RX = WORLD_W * 0.14;
+const POND_RY = WORLD_H * 0.13;
+
+/** 池の中心からの角度（度）＋楕円半径の倍率で世界座標を求める（池の縁に沿って物を並べるため）。 */
+function pondPoint(angleDeg: number, rxMul: number, ryMul: number): { x: number; y: number } {
+  const rad = (angleDeg * Math.PI) / 180;
+  return {
+    x: POND_CX + POND_RX * rxMul * Math.cos(rad),
+    y: POND_CY + POND_RY * ryMul * Math.sin(rad),
+  };
+}
+
+// 池の左奥（角度 155°→305°、楕円のやや外側＝草地）にヤシを詰めて並べ、
+// 「木立の壁」を作る。PLACE_PAD による間隔ルールは使わず直接手配置。
+function buildJungleTreeline(): Obj[] {
+  const count = 15;
+  return Array.from({ length: count }, (_, i) => {
+    const t = count > 1 ? i / (count - 1) : 0;
+    const angle = 155 + t * 150;
+    const { x, y } = pondPoint(angle, 1.26, 1.32);
+    return {
+      x: x + (hash(i * 2.1 + 811) - 0.5) * 22,
+      y: y + (hash(i * 3.3 + 812) - 0.5) * 22,
+      scale: 1.0 + hash(i * 5 + 813) * 0.35,
+      solidRadius: 26,
+      sprite: furnPalmTree,
+      baseWidth: 150,
+    };
+  });
+}
+
 function buildPalms(): Obj[] {
   // このモジュール読み込み中は複数回マウントされうる（例: テスト用フィールドを閉じて再度開く）。
   // placedSolids はモジュール直下の共有配列なので、置く物体の先頭（このあと rocks/trees と続く）
   // で必ずリセットする。そうしないと前回ぶんが残って、2 回目以降だけ配置がおかしくなる。
   placedSolids.length = 0;
-  return Array.from({ length: 22 }, (_, i) => {
+  // ジャングルの木立の壁は先に確定させ、placedSolids に積んでおく。
+  // こうすると、このあとのランダム配置（散らばったヤシ・岩・木）が壁と重ならず避けてくれる。
+  const treeline = buildJungleTreeline();
+  for (const p of treeline) placedSolids.push({ x: p.x, y: p.y, r: p.solidRadius + PLACE_PAD });
+  const scattered = Array.from({ length: 22 }, (_, i) => {
     const { x, y } = placeOnGround(i * 11 + 900, LAND_KINDS, 50, 50, 26 + PLACE_PAD);
     return {
       x,
       y,
       scale: 0.75 + hash(i * 2 + 5) * 0.55,
       solidRadius: 26,
-      sprite: piggPalm,
-      baseWidth: 170,
+      // pigg_palm.png（生成 AI 製）は参考シートと絵柄が合わず、脱色にじみも残っていたので
+      // 廃止。参考シート由来の furn_palm_tree.png（正方形 161x161）に統一する。
+      sprite: furnPalmTree,
+      baseWidth: 150,
     };
   });
+  return [...scattered, ...treeline];
 }
 
 function buildRocks(): Obj[] {
@@ -200,6 +257,26 @@ function buildPlants(): Obj[] {
   });
 }
 
+// 池の岸（草地側、角度 -70°→150°＝手前〜右側）を丈の高い草・リードと白黄の花クラスターで
+// 厚めに縁取る。plant_55/56 は背の高いリード寄りの草、18/29/33/40 は白黄の花クラスター。
+const EDGE_FLORA_SPRITES = [plant18, plant29, plant33, plant40, plant55, plant56];
+
+function buildJungleEdgeFlora(): Obj[] {
+  return Array.from({ length: 24 }, (_, i) => {
+    const angle = -70 + (i / 23) * 220;
+    const rMul = 1.04 + hash(i * 3 + 950) * 0.32;
+    const { x, y } = pondPoint(angle, rMul, rMul);
+    return {
+      x: x + (hash(i * 5 + 951) - 0.5) * 34,
+      y: y + (hash(i * 7 + 952) - 0.5) * 34,
+      scale: 0.7 + hash(i * 9 + 953) * 0.55,
+      solidRadius: 0,
+      sprite: pick(EDGE_FLORA_SPRITES, hash(i * 11 + 954)),
+      baseWidth: 52,
+    };
+  });
+}
+
 // 睡蓮っぽい草花は池（水）の上だけに置く。地面の焼き込み（piggGround.ts）と
 // 同じ groundKindAt() で判定するので、常に水面の上に乗る。
 const PLANT_SPRITES_WATER = [plant45, plant47, plant51, plant53];
@@ -216,6 +293,38 @@ function buildWaterPlants(): Obj[] {
       baseWidth: 52,
     };
   });
+}
+
+// ジャングル池のアクセント: 睡蓮（緑の葉、plant_47/51/53）を水面全体に多めに散らし、
+// ハスの花（ピンク、plant_45）を主役として少数・少し大きめに目立たせる。
+function buildJunglePondAccents(): Obj[] {
+  const lilyPads: Obj[] = Array.from({ length: 16 }, (_, i) => {
+    const angle = hash(i * 7 + 900) * 360;
+    const rMul = 0.1 + hash(i * 11 + 901) * 0.8;
+    const { x, y } = pondPoint(angle, rMul, rMul);
+    return {
+      x,
+      y,
+      scale: 0.7 + hash(i * 9 + 902) * 0.5,
+      solidRadius: 0,
+      sprite: pick([plant47, plant51, plant53], hash(i * 13 + 903)),
+      baseWidth: 56,
+    };
+  });
+  const lotuses: Obj[] = Array.from({ length: 4 }, (_, i) => {
+    const angle = 40 + i * 70 + (hash(i * 3 + 910) - 0.5) * 24;
+    const rMul = 0.3 + hash(i * 5 + 911) * 0.35;
+    const { x, y } = pondPoint(angle, rMul, rMul);
+    return {
+      x,
+      y,
+      scale: 0.9 + hash(i * 7 + 912) * 0.3,
+      solidRadius: 0,
+      sprite: plant45,
+      baseWidth: 82,
+    };
+  });
+  return [...lilyPads, ...lotuses];
 }
 
 // 家具は完全な飾り（当たり判定なし）。ゲームロジックには一切繋がらない。
@@ -242,18 +351,31 @@ function buildFurniture(): Obj[] {
   });
 }
 
+// ジャングル池の角のランドマーク: 水際の「浮き丸太」と、岸の少し手前の「道しるべ」。
+// どちらも 1 個だけの飾りなので、池の楕円に対する角度で直接座標を決め打ちする。
+function buildJungleLandmarks(): Obj[] {
+  const log = pondPoint(215, 1.0, 1.02); // 水と岸の境目＝丸太が半分浸かって見える位置
+  const sign = pondPoint(-15, 1.5, 1.55); // 岸のやや手前、木立の壁と重ならない開けた場所
+  return [
+    { x: log.x, y: log.y, scale: 1.15, solidRadius: 0, sprite: furnBenchLog, baseWidth: 100 },
+    { x: sign.x, y: sign.y, scale: 1.0, solidRadius: 0, sprite: furnSignpost, baseWidth: 52 },
+  ];
+}
+
 export function PiggTestField({ onClose }: { onClose: () => void }) {
   const worldRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<HTMLDivElement | null>(null);
   const stickRef = useRef<HTMLDivElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const groundCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  // palmsRef は「木立の壁」（buildJungleTreeline）を含む。placedSolids に積んでから
+  // rocks/trees を配置したいので、必ずこの順番で呼ぶ。
   const palmsRef = useRef<Obj[]>(buildPalms());
   const rocksRef = useRef<Obj[]>(buildRocks());
   const treesRef = useRef<Obj[]>(buildTrees());
-  const plantsRef = useRef<Obj[]>(buildPlants());
-  const waterPlantsRef = useRef<Obj[]>(buildWaterPlants());
-  const furnitureRef = useRef<Obj[]>(buildFurniture());
+  const plantsRef = useRef<Obj[]>([...buildPlants(), ...buildJungleEdgeFlora()]);
+  const waterPlantsRef = useRef<Obj[]>([...buildWaterPlants(), ...buildJunglePondAccents()]);
+  const furnitureRef = useRef<Obj[]>([...buildFurniture(), ...buildJungleLandmarks()]);
   // 宝箱は飾り 1 個だけ（当たり判定なし）。ワールド中央寄りの分かりやすい位置に置く。
   const chestRef = useRef<{ x: number; y: number }>({ x: WORLD_W / 2 + 160, y: WORLD_H / 2 + 40 });
   // 地面は 1 枚の Canvas へ事前に焼く（piggGround.ts）。焼き終わるまではローディングを出す
@@ -376,14 +498,24 @@ export function PiggTestField({ onClose }: { onClose: () => void }) {
 
       const vw = root.clientWidth;
       const vh = root.clientHeight;
-      const camX = Math.max(0, Math.min(WORLD_W - vw, pos.x - vw / 2));
-      const camY = Math.max(0, Math.min(WORLD_H - vh, pos.y - vh / 2));
-      world.style.transform = `translate(${-camX}px, ${-camY}px)`;
+      // カメラが向く世界座標上の焦点（プレイヤー位置を、ワールドの外が画面に映らないよう
+      // クランプしたもの）。ズームしている分、画面に映る世界の半幅/半高は
+      // viewportSize / (2*ZOOM) に広がるので、素の pos.x/pos.y をそのままクランプするのではなく
+      // その半幅/半高でクランプする。ワールドがその半幅/半高より小さい向きは中央に固定する。
+      const focusX =
+        WORLD_W * ZOOM <= vw ? WORLD_W / 2 : Math.max(vw / (2 * ZOOM), Math.min(WORLD_W - vw / (2 * ZOOM), pos.x));
+      const focusY =
+        WORLD_H * ZOOM <= vh ? WORLD_H / 2 : Math.max(vh / (2 * ZOOM), Math.min(WORLD_H - vh / (2 * ZOOM), pos.y));
+      world.style.transform = `translate(${vw / 2 - focusX * ZOOM}px, ${vh / 2 - focusY * ZOOM}px) scale(${ZOOM})`;
       // 歩きコマがまだ1枚しか無いので、動いている間だけ軽くバウンドさせて
       // 「歩いている感」だけ出す（本格的な歩行アニメは別途）。
+      // プレイヤーは他の物体と同じく .pigg-world 直下の絶対配置（world 座標系）にしたので、
+      // left/top はカメラに関係なく pos.x/pos.y のみで決まる（ズーム・パンは親の world 側の
+      // transform が一括でやってくれる）。
       const bounce = moving ? Math.abs(Math.sin(t / 90)) * 4 : 0;
-      player.style.transform =
-        `translate(${pos.x - camX - PLAYER_W / 2}px, ${pos.y - camY - PLAYER_H * 0.94 - bounce}px)`;
+      player.style.left = `${pos.x}px`;
+      player.style.top = `${pos.y}px`;
+      player.style.transform = `translate(-50%, -94%) translateY(${-bounce}px)`;
     };
     raf = requestAnimationFrame(loop);
 
@@ -457,17 +589,18 @@ export function PiggTestField({ onClose }: { onClose: () => void }) {
         {palmsRef.current.map((p, i) => (
           <img
             key={`palm-${i}`}
-            src={piggPalm}
+            src={p.sprite}
             className="pigg-obj"
             style={{ left: p.x, top: p.y, width: `${p.scale * p.baseWidth}px` }}
             alt=""
           />
         ))}
-      </div>
-
-      {/* 主人公（ChatGPT 生成の正面立ち絵。影は絵に内蔵済みなので別で描かない）。 */}
-      <div className="pigg-player" ref={playerRef} style={{ width: PLAYER_W, height: PLAYER_H }}>
-        <img src={piggPlayerDown0} className="pigg-player-sprite" alt="" />
+        {/* 主人公（ChatGPT 生成の正面立ち絵。影は絵に内蔵済みなので別で描かない）。
+            他の物体と同じ .pigg-world 直下の絶対配置にし、常に最後に描画することで
+            重なり順を保証する（ズーム込みのカメラ transform は親の world 側で一括適用）。 */}
+        <div className="pigg-player" ref={playerRef} style={{ width: PLAYER_W, height: PLAYER_H }}>
+          <img src={piggPlayerDown0} className="pigg-player-sprite" alt="" />
+        </div>
       </div>
 
       <div className="pigg-joystick" ref={stickRef} style={{ display: 'none' }}>

@@ -875,6 +875,10 @@ body {
   position: absolute;
   left: 0;
   top: 0;
+  /* translate(...) scale(ZOOM) はどちらも原点 (0,0) 基準で計算しているので、
+     transform-origin もデフォルトの中心 (50% 50%) ではなく左上に固定する。
+     ここがずれるとズーム時にカメラのパン計算が全部狂う。 */
+  transform-origin: 0 0;
   will-change: transform;
 }
 

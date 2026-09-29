@@ -18,6 +18,11 @@ mkdirSync(OUT, { recursive: true });
 
 const KEY = [255, 0, 255];
 const THRESHOLD = 140; // この色距離までは「マゼンタ寄り」として透明にしていく
+const BINARIZE_THRESHOLD = 128; // 半透明の縁を最終的にどちらへ倒すか（0〜255）
+// 脱汚染後の色が「まだマゼンタ寄り」かどうかの判定。マゼンタは G がほぼ 0 で R・B が高いのが
+// 特徴なので、単純な色距離ではなく G / max(R,B) の比で見る（暗い縁の焦げ茶やグレーの岩は
+// G が R・B に対して低すぎないので誤判定しない）。
+const MAGENTA_G_RATIO = 0.4;
 
 async function dechroma(file) {
   const { data, info } = await sharp(join(root, 'refs', 'gen', 'pigg', file))
@@ -39,6 +44,29 @@ async function dechroma(file) {
       data[o] = Math.max(0, Math.min(255, Math.round((r - (1 - a) * KEY[0]) / a)));
       data[o + 1] = Math.max(0, Math.min(255, Math.round((g - (1 - a) * KEY[1]) / a)));
       data[o + 2] = Math.max(0, Math.min(255, Math.round((b - (1 - a) * KEY[2]) / a)));
+    }
+  }
+  // 最終クリーンアップ: 脱汚染しても半透明の縁ピクセルにはうっすらマゼンタ（紫）の
+  // 色みが残る（合成先の背景色と混ざって初めて見える程度の薄さ）。中間帯のアルファを
+  // 0 か 255 へ二値化して縁のにじみそのものを消す。輪郭が少し硬くなるが、
+  // このスパイクの解像度なら段差（ジャギー）は軽微で、にじみより実害が小さい。
+  //
+  // 注意: 元のアルファだけで 0/255 を決めると、ドロップシャドウのような
+  // 「意図して広い範囲が半透明」な領域まで巻き込んでしまい、脱汚染で色の推定に
+  // 失敗した（低アルファすぎて除算誤差が乗り、色がまだマゼンタに寄ったままの）
+  // ピクセルを不透明側へ倒すと、逆にベタッとしたマゼンタの染みができてしまう
+  // （実際に pigg_rock.png の影で発生した）。なので「脱汚染後の色がまだマゼンタに
+  // 近い＝信頼できない」ピクセルは、アルファ値に関わらず透明側へ倒す。
+  for (let i = 0; i < w * h; i++) {
+    const o = i * 4;
+    const a = data[o + 3];
+    if (a > 40 && a < 220) {
+      const r = data[o];
+      const g = data[o + 1];
+      const b = data[o + 2];
+      const maxRB = Math.max(r, b, 1);
+      const stillMagenta = g / maxRB < MAGENTA_G_RATIO && maxRB > 60;
+      data[o + 3] = !stillMagenta && a >= BINARIZE_THRESHOLD ? 255 : 0;
     }
   }
   return { data, w, h };
@@ -105,12 +133,16 @@ async function cropAndSave(img, box, name, pad = 6) {
 }
 
 // palm.png（1 枚目の試作）は透過縁ににじみが出ていたので使わない。
-// palm-rock.png（マゼンタ背景でやり直したもの）だけを使う。
+// palm-rock.png（マゼンタ背景でやり直したもの）の 1 個目（ヤシ）は、絵柄が参考シート
+// （src/assets/refimg/furn_palm_tree.png）と合わないため使わない（PiggTestField.tsx はそちら
+// に統一済み）。2 個目（岩）だけ pigg_rock として使う。
 const img2 = await dechroma('palm-rock.png');
 const boxes2 = components(img2);
 console.log('palm-rock.png:', boxes2.length, '個', boxes2.map((b) => `${b.x1 - b.x0}x${b.y1 - b.y0}`));
-const names2 = ['pigg_palm', 'pigg_rock'];
-for (let i = 0; i < boxes2.length && i < names2.length; i++) await cropAndSave(img2, boxes2[i], names2[i]);
+const names2 = [null, 'pigg_rock'];
+for (let i = 0; i < boxes2.length && i < names2.length; i++) {
+  if (names2[i]) await cropAndSave(img2, boxes2[i], names2[i]);
+}
 
 // 砂のテクスチャはマゼンタ無し。縮小してそのままコピーするだけ。
 await sharp(join(root, 'refs', 'gen', 'pigg', 'sand.png')).resize(512, 512).png().toFile(join(OUT, 'pigg_sand.png'));
