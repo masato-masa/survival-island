@@ -77,8 +77,9 @@ function components(img) {
       }
       const bw = x1 - x0 + 1;
       const bh = y1 - y0 + 1;
-      // 細長い帯（圧縮ノイズなど）は物体ではないので弾く
-      if (bw * bh >= 400 && bw >= 30 && bh >= 30) boxes.push({ x0, y0, x1, y1 });
+      // 細長い帯（圧縮ノイズなど）や、脱色しきれず縁がつながった「画像全体」は物体ではないので弾く
+      const spansCanvas = bw > w * 0.92 && bh > h * 0.92;
+      if (bw * bh >= 400 && bw >= 30 && bh >= 30 && !spansCanvas) boxes.push({ x0, y0, x1, y1 });
     }
   boxes.sort((a, b) => a.x0 - b.x0);
   return boxes;
@@ -114,6 +115,13 @@ for (let i = 0; i < boxes2.length && i < names2.length; i++) await cropAndSave(i
 // 砂のテクスチャはマゼンタ無し。縮小してそのままコピーするだけ。
 await sharp(join(root, 'refs', 'gen', 'pigg', 'sand.png')).resize(512, 512).png().toFile(join(OUT, 'pigg_sand.png'));
 console.log('pigg_sand: 512×512');
+
+// 主人公（正面立ち）と宝箱。
+const img3 = await dechroma('char-chest.png');
+const boxes3 = components(img3);
+console.log('char-chest.png:', boxes3.length, '個', boxes3.map((b) => `${b.x1 - b.x0}x${b.y1 - b.y0}`));
+const names3 = ['pigg_player_down0', 'pigg_chest'];
+for (let i = 0; i < boxes3.length && i < names3.length; i++) await cropAndSave(img3, boxes3[i], names3[i]);
 
 writeFileSync(
   join(OUT, 'README.md'),

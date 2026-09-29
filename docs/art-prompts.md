@@ -119,3 +119,32 @@
 > transparent 指定で縁ににじみが出て失敗した)。
 
 砂は `docs/art-prompts.md` の別プロンプトで、マゼンタ無しの敷き詰めテクスチャとして生成。
+
+## 主人公（正面立ち）と宝箱 — `refs/gen/pigg/char-chest.png`
+
+> Same soft cel-shaded Pigg-Island cartoon style as before, but two changes: ... (視点を上げる指示は不採用。斜め上からの角度はそのまま)
+> Give me 2 separate objects with plenty of magenta gap between them: (1) a cheerful chibi castaway
+> character, front-facing, big head small body proportions, straw hat, white tank top, small blue neck
+> scarf, rolled-up brown shorts, bare feet, simple friendly smiling face, standing pose, full body
+> visible, about the same scale as the palm tree relative to a real island (so noticeably smaller than
+> the tree). (2) a simple wooden treasure chest, closed, brown wood with metal corner braces, small
+> padlock, same style.
+
+**視点についての決定:** 「もう少し上からの視点に」という指示を、真上に近い角度と誤解して
+`terrain-angle.png` を作ったが、ユーザーの意図はアメーバピグと同じ斜め上からの角度を保つこと
+だった（真上視点は不採用）。`palm-rock.png` や上記のキャラクター・宝箱、ユーザー提供の
+`refs/image0〜4.png`（岩・家具・植物・木）はどれもこの角度で統一されている。**今後の生成は
+すべてこの角度を維持する。**
+
+## ユーザー提供の参考シート — `refs/image0.png`〜`image4.png`
+
+ユーザーが用意した高品質な素材（出どころ不明、本人が用意したものとして扱う）。
+背景は透過ではなく市松模様が焼き込まれているため、`scripts/slice-refimg.mjs` で
+市松模様の位置ベースの色差分によりアルファに変換して切り出す（マゼンタキーではない）。
+
+- image0: 岩・鉱石（大小の岩、鉱石、欠片、洞窟入口など）
+- image1: 家具・小物（作業台、机、椅子、調理器具、柵など）
+- image2: 花・植物（ラベル無し、装飾用）
+- image3: 木（大中小・苗木のサイズ違い、4方向+上から見た図+切り株）
+- image4: 地面タイル（アイソメ〈斜め45度〉投影。今のゲームは真上寄りの見下ろし格子なので
+  そのままは使えない。逆アフィン変換で平面化を試みる、うまくいかなければ見送り）

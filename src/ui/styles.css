@@ -894,40 +894,27 @@ body {
   user-select: none;
 }
 
-/* 仮の主人公（絵が無いのでプレースホルダー）。画面中心に固定し、World 側を動かす。 */
+/* 地面の草花などの飾り。物体ほど大きな影を落とさない（薄め）。 */
+.pigg-obj-flat {
+  filter: drop-shadow(0 2px 2px rgb(0 0 0 / 0.12));
+}
+
+/* 主人公（ChatGPT 生成の正面立ち絵）。画面中心に固定し、World 側を動かす。 */
 .pigg-player {
   position: absolute;
   left: 0;
   top: 0;
-  width: 40px;
-  height: 40px;
   pointer-events: none;
   will-change: transform;
   transition: none;
 }
 
-.pigg-player-shadow {
-  position: absolute;
-  left: 50%;
-  bottom: 2px;
-  width: 26px;
-  height: 10px;
-  background: rgb(0 0 0 / 0.28);
-  border-radius: 50%;
-  transform: translateX(-50%);
-}
-
-.pigg-player-mark {
-  position: absolute;
-  left: 50%;
-  bottom: 8px;
-  width: 26px;
-  height: 26px;
-  background: #ffcf5c;
-  border: 3px solid #3d2b2e;
-  border-radius: 50%;
-  transform: translateX(-50%);
-  box-shadow: 0 2px 0 rgb(0 0 0 / 0.2);
+.pigg-player-sprite {
+  display: block;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+  pointer-events: none;
 }
 
 .pigg-joystick {
