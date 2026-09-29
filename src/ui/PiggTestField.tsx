@@ -12,19 +12,38 @@
 // （scripts/slice-refimg.mjs → src/assets/refimg/）を使い、既存の Pigg 試作素材
 // （ヤシ・岩・砂）と並べて質感・スケール感が合うか確かめる。
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { dragStickAnchor, isDrag, JOYSTICK_DRAG_RADIUS_PX, keyToDir, stickVector, vectorFromKeys } from '@/input/pointer';
 import type { KeyDir } from '@/input/pointer';
+import { groundKindAt, paintPiggGroundAsync } from '@/render/piggGround';
+import type { GroundKind } from '@/render/piggGround';
 
 import piggChest from '@/assets/pigg/pigg_chest.png?url';
 import piggPalm from '@/assets/pigg/pigg_palm.png?url';
 import piggPlayerDown0 from '@/assets/pigg/pigg_player_down0.png?url';
 import piggRock from '@/assets/pigg/pigg_rock.png?url';
-import piggSand from '@/assets/pigg/pigg_sand.png?url';
+import furnBenchLog from '@/assets/refimg/furn_bench_log.png?url';
+import furnCrate from '@/assets/refimg/furn_crate.png?url';
+import furnFlowerBed from '@/assets/refimg/furn_flower_bed.png?url';
+import furnSignpost from '@/assets/refimg/furn_signpost.png?url';
+import furnTorch from '@/assets/refimg/furn_torch.png?url';
+import oreCopper from '@/assets/refimg/ore_copper.png?url';
 import plant01 from '@/assets/refimg/plant_01.png?url';
+import plant05 from '@/assets/refimg/plant_05.png?url';
+import plant12 from '@/assets/refimg/plant_12.png?url';
+import plant18 from '@/assets/refimg/plant_18.png?url';
+import plant22 from '@/assets/refimg/plant_22.png?url';
 import plant29 from '@/assets/refimg/plant_29.png?url';
+import plant33 from '@/assets/refimg/plant_33.png?url';
+import plant40 from '@/assets/refimg/plant_40.png?url';
 import plant45 from '@/assets/refimg/plant_45.png?url';
+import plant47 from '@/assets/refimg/plant_47.png?url';
+import plant51 from '@/assets/refimg/plant_51.png?url';
+import plant53 from '@/assets/refimg/plant_53.png?url';
+import rockFlatGround from '@/assets/refimg/rock_flat_ground.png?url';
+import rockMossy from '@/assets/refimg/rock_mossy.png?url';
+import rockPebble from '@/assets/refimg/rock_pebble.png?url';
 import refRockMedium from '@/assets/refimg/rock_medium.png?url';
 import refRockSmall from '@/assets/refimg/rock_small.png?url';
 import treeMedium from '@/assets/refimg/tree_medium.png?url';
@@ -51,6 +70,47 @@ function pick<T>(arr: readonly T[], t: number): T {
   return arr[Math.min(arr.length - 1, Math.floor(t * arr.length))] as T;
 }
 
+/**
+ * すでに置いた「当たり判定つき」の物体（幹・岩など）。placeOnGround が重ならないように
+ * 参照する。木や岩は見た目も大きいので、地面の種別が合っているだけでは、たまたま同じ場所に
+ * 何本も生えて不自然に重なることがある（実際に発生していた不具合）。
+ */
+const placedSolids: { x: number; y: number; r: number }[] = [];
+
+/**
+ * 指定した地面種別（砂/草/水）の上、かつ既存の物体と重ならない座標になるまで振り直す
+ * （最大 16 回）。焼き込んだ地面（piggGround.ts）と同じ判定式を使うので、必ず見た目と一致する。
+ * 16 回試しても見つからなければ最後の候補で諦める（無限ループにしない＝最終段は必ず成功する）。
+ * solidRadius > 0 のときだけ placedSolids に積んで、以後の配置が避けるようにする。
+ */
+function placeOnGround(
+  seed: number,
+  kinds: readonly GroundKind[],
+  marginX = 50,
+  marginY = 50,
+  solidRadius = 0,
+): { x: number; y: number } {
+  let candidate = { x: WORLD_W / 2, y: WORLD_H / 2 };
+  for (let attempt = 0; attempt < 16; attempt++) {
+    const hx = hash(seed * 7.13 + attempt * 3.71 + 1);
+    const hy = hash(seed * 5.37 + attempt * 2.19 + 2);
+    candidate = {
+      x: marginX + hx * (WORLD_W - marginX * 2),
+      y: marginY + hy * (WORLD_H - marginY * 2),
+    };
+    if (!kinds.includes(groundKindAt(candidate.x, candidate.y, WORLD_W, WORLD_H))) continue;
+    const overlaps = placedSolids.some((s) => {
+      const dx = candidate.x - s.x;
+      const dy = candidate.y - s.y;
+      const min = s.r + solidRadius;
+      return dx * dx + dy * dy < min * min;
+    });
+    if (!overlaps) break;
+  }
+  if (solidRadius > 0) placedSolids.push({ x: candidate.x, y: candidate.y, r: solidRadius });
+  return candidate;
+}
+
 interface Obj {
   x: number;
   y: number;
@@ -60,29 +120,48 @@ interface Obj {
   baseWidth: number; // 表示基準幅（scale 倍する前の px）
 }
 
-// 岩は既存の Pigg 岩に加え、参考シートから切り出した新しい岩 2 種を混ぜて単調さを消す。
-const ROCK_SPRITES = [piggRock, refRockMedium, refRockSmall];
+// 陸（砂・草）に置いてよい物体の地面種別。水辺の池には立たせない。
+const LAND_KINDS: readonly GroundKind[] = ['sand', 'grass'];
+const WATER_KINDS: readonly GroundKind[] = ['water'];
+
+// 岩は既存の Pigg 岩に加え、参考シートから切り出した岩・鉱石を混ぜて単調さを消す。
+const ROCK_SPRITES = [piggRock, refRockMedium, refRockSmall, rockPebble, rockMossy, rockFlatGround, oreCopper];
+
+// 見た目の絵は当たり判定の円よりだいぶ大きい（葉が広がる等）ので、重なり判定には
+// 見た目の半分くらいの余裕（PLACE_PAD）を足す。当たり判定そのもの（solidRadius）は
+// 操作性のために小さく保ちたいので、両者を分けている。
+const PLACE_PAD = 34;
 
 function buildPalms(): Obj[] {
-  return Array.from({ length: 14 }, (_, i) => ({
-    x: 80 + hash(i * 2) * (WORLD_W - 160),
-    y: 60 + hash(i * 2 + 1) * 260,
-    scale: 0.8 + hash(i * 2 + 5) * 0.5,
-    solidRadius: 26,
-    sprite: piggPalm,
-    baseWidth: 170,
-  }));
+  // このモジュール読み込み中は複数回マウントされうる（例: テスト用フィールドを閉じて再度開く）。
+  // placedSolids はモジュール直下の共有配列なので、置く物体の先頭（このあと rocks/trees と続く）
+  // で必ずリセットする。そうしないと前回ぶんが残って、2 回目以降だけ配置がおかしくなる。
+  placedSolids.length = 0;
+  return Array.from({ length: 22 }, (_, i) => {
+    const { x, y } = placeOnGround(i * 11 + 900, LAND_KINDS, 50, 50, 26 + PLACE_PAD);
+    return {
+      x,
+      y,
+      scale: 0.75 + hash(i * 2 + 5) * 0.55,
+      solidRadius: 26,
+      sprite: piggPalm,
+      baseWidth: 170,
+    };
+  });
 }
 
 function buildRocks(): Obj[] {
-  return Array.from({ length: 10 }, (_, i) => ({
-    x: 60 + hash(i * 3 + 100) * (WORLD_W - 120),
-    y: 340 + hash(i * 3 + 101) * (WORLD_H - 400),
-    scale: 0.5 + hash(i * 3 + 105) * 0.5,
-    solidRadius: 20,
-    sprite: pick(ROCK_SPRITES, hash(i * 3 + 102)),
-    baseWidth: 70,
-  }));
+  return Array.from({ length: 20 }, (_, i) => {
+    const { x, y } = placeOnGround(i * 13 + 1100, LAND_KINDS, 50, 50, 20 + PLACE_PAD * 0.6);
+    return {
+      x,
+      y,
+      scale: 0.5 + hash(i * 3 + 105) * 0.6,
+      solidRadius: 20,
+      sprite: pick(ROCK_SPRITES, hash(i * 3 + 102)),
+      baseWidth: 70,
+    };
+  });
 }
 
 // 新しい木（参考シート由来）。斜め見下ろし視点のゲームなので、正面/横向きの木は
@@ -90,28 +169,77 @@ function buildRocks(): Obj[] {
 const TREE_SPRITES = [treeMedium, treeMedium, treeSmall, treeTopDown];
 
 function buildTrees(): Obj[] {
-  return Array.from({ length: 8 }, (_, i) => ({
-    x: 120 + hash(i * 5 + 200) * (WORLD_W - 240),
-    y: 420 + hash(i * 5 + 201) * (WORLD_H - 520),
-    scale: 0.75 + hash(i * 5 + 205) * 0.45,
-    solidRadius: 24,
-    sprite: pick(TREE_SPRITES, hash(i * 5 + 207)),
-    baseWidth: 150,
-  }));
+  return Array.from({ length: 16 }, (_, i) => {
+    const { x, y } = placeOnGround(i * 17 + 1300, LAND_KINDS, 50, 50, 24 + PLACE_PAD);
+    return {
+      x,
+      y,
+      scale: 0.75 + hash(i * 5 + 205) * 0.45,
+      solidRadius: 24,
+      sprite: pick(TREE_SPRITES, hash(i * 5 + 207)),
+      baseWidth: 150,
+    };
+  });
 }
 
-// 草花はただの地面の飾り（当たり判定なし）。scatter して賑やかさを見る。
-const PLANT_SPRITES = [plant01, plant29, plant45];
+// 草花はただの地面の飾り（当たり判定なし）。参考シートの色違いを多く混ぜて賑やかさを出す。
+// plant_10/16/54/59 は市松模様の抜き残りがわずかに出るため、意図して外している。
+const PLANT_SPRITES_LAND = [plant01, plant05, plant12, plant18, plant22, plant29, plant33, plant40];
 
 function buildPlants(): Obj[] {
-  return Array.from({ length: 22 }, (_, i) => ({
-    x: 40 + hash(i * 7 + 300) * (WORLD_W - 80),
-    y: 40 + hash(i * 7 + 301) * (WORLD_H - 80),
-    scale: 0.6 + hash(i * 7 + 305) * 0.5,
-    solidRadius: 0,
-    sprite: pick(PLANT_SPRITES, hash(i * 7 + 309)),
-    baseWidth: 46,
-  }));
+  return Array.from({ length: 55 }, (_, i) => {
+    const { x, y } = placeOnGround(i * 19 + 1700, LAND_KINDS, 30, 30);
+    return {
+      x,
+      y,
+      scale: 0.55 + hash(i * 7 + 305) * 0.55,
+      solidRadius: 0,
+      sprite: pick(PLANT_SPRITES_LAND, hash(i * 7 + 309)),
+      baseWidth: 46,
+    };
+  });
+}
+
+// 睡蓮っぽい草花は池（水）の上だけに置く。地面の焼き込み（piggGround.ts）と
+// 同じ groundKindAt() で判定するので、常に水面の上に乗る。
+const PLANT_SPRITES_WATER = [plant45, plant47, plant51, plant53];
+
+function buildWaterPlants(): Obj[] {
+  return Array.from({ length: 12 }, (_, i) => {
+    const { x, y } = placeOnGround(i * 23 + 2100, WATER_KINDS, 20, 20);
+    return {
+      x,
+      y,
+      scale: 0.6 + hash(i * 9 + 405) * 0.5,
+      solidRadius: 0,
+      sprite: pick(PLANT_SPRITES_WATER, hash(i * 9 + 409)),
+      baseWidth: 52,
+    };
+  });
+}
+
+// 家具は完全な飾り（当たり判定なし）。ゲームロジックには一切繋がらない。
+const FURNITURE_SPRITES: { sprite: string; baseWidth: number }[] = [
+  { sprite: furnCrate, baseWidth: 46 },
+  { sprite: furnBenchLog, baseWidth: 64 },
+  { sprite: furnTorch, baseWidth: 30 },
+  { sprite: furnSignpost, baseWidth: 34 },
+  { sprite: furnFlowerBed, baseWidth: 52 },
+];
+
+function buildFurniture(): Obj[] {
+  return Array.from({ length: 12 }, (_, i) => {
+    const { x, y } = placeOnGround(i * 29 + 2500, LAND_KINDS);
+    const f = FURNITURE_SPRITES[i % FURNITURE_SPRITES.length]!;
+    return {
+      x,
+      y,
+      scale: 0.8 + hash(i * 11 + 505) * 0.3,
+      solidRadius: 0,
+      sprite: f.sprite,
+      baseWidth: f.baseWidth,
+    };
+  });
 }
 
 export function PiggTestField({ onClose }: { onClose: () => void }) {
@@ -119,12 +247,30 @@ export function PiggTestField({ onClose }: { onClose: () => void }) {
   const playerRef = useRef<HTMLDivElement | null>(null);
   const stickRef = useRef<HTMLDivElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const groundCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const palmsRef = useRef<Obj[]>(buildPalms());
   const rocksRef = useRef<Obj[]>(buildRocks());
   const treesRef = useRef<Obj[]>(buildTrees());
   const plantsRef = useRef<Obj[]>(buildPlants());
+  const waterPlantsRef = useRef<Obj[]>(buildWaterPlants());
+  const furnitureRef = useRef<Obj[]>(buildFurniture());
   // 宝箱は飾り 1 個だけ（当たり判定なし）。ワールド中央寄りの分かりやすい位置に置く。
   const chestRef = useRef<{ x: number; y: number }>({ x: WORLD_W / 2 + 160, y: WORLD_H / 2 + 40 });
+  // 地面は 1 枚の Canvas へ事前に焼く（piggGround.ts）。焼き終わるまではローディングを出す
+  // （CLAUDE.md: 「無言で固まる 1 秒は許容しない」）。
+  const [groundReady, setGroundReady] = useState(false);
+
+  useEffect(() => {
+    const canvas = groundCanvasRef.current;
+    if (!canvas) return;
+    let cancelled = false;
+    paintPiggGroundAsync(canvas).then(() => {
+      if (!cancelled) setGroundReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -255,16 +401,32 @@ export function PiggTestField({ onClose }: { onClose: () => void }) {
   return (
     <div className="pigg-field" ref={rootRef}>
       <div className="pigg-world" ref={worldRef} style={{ width: WORLD_W, height: WORLD_H }}>
-        <div
-          className="pigg-field-ground"
-          style={{ backgroundImage: `url(${piggSand})`, width: WORLD_W, height: WORLD_H }}
-        />
+        {/* 地面は piggGround.ts が焼いた 1 枚の Canvas（砂・草・水をなめらかにブレンド）。 */}
+        <canvas ref={groundCanvasRef} className="pigg-field-ground" width={WORLD_W} height={WORLD_H} />
+        {waterPlantsRef.current.map((p, i) => (
+          <img
+            key={`waterplant-${i}`}
+            src={p.sprite}
+            className="pigg-obj pigg-obj-flat"
+            style={{ left: p.x, top: p.y, width: `${p.scale * p.baseWidth}px` }}
+            alt=""
+          />
+        ))}
         {plantsRef.current.map((p, i) => (
           <img
             key={`plant-${i}`}
             src={p.sprite}
             className="pigg-obj pigg-obj-flat"
             style={{ left: p.x, top: p.y, width: `${p.scale * p.baseWidth}px` }}
+            alt=""
+          />
+        ))}
+        {furnitureRef.current.map((f, i) => (
+          <img
+            key={`furn-${i}`}
+            src={f.sprite}
+            className="pigg-obj"
+            style={{ left: f.x, top: f.y, width: `${f.scale * f.baseWidth}px` }}
             alt=""
           />
         ))}
@@ -319,6 +481,13 @@ export function PiggTestField({ onClose }: { onClose: () => void }) {
       <button className="pigg-field-close" onClick={onClose}>
         もどる
       </button>
+
+      {/* 地面の Canvas を焼いている間だけ出す（無言で固まらせない）。 */}
+      {!groundReady && (
+        <div className="pigg-loading">
+          <span>島を準備中…</span>
+        </div>
+      )}
     </div>
   );
 }
