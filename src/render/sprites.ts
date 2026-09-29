@@ -181,6 +181,10 @@ export function loadArt(): Promise<void> {
 interface SheetSpec {
   src: string;
   worldW: number;
+  /** 指定すると高さで大きさを決める（向きごとに余白がちがう絵の大きさをそろえる用。worldW は無視）。 */
+  worldH?: number;
+  /** 左右反転（右向き 1 枚から左向きを作る）。 */
+  flip?: boolean;
   tint?: string; // 乗算合成で色違いを作る
 }
 
@@ -247,19 +251,20 @@ const SHEET_TARGET: Partial<Record<SpriteName, SheetSpec>> = {
   deco_pebble: { src: 'rock_pebble', worldW: 14 },
   deco_mossy: { src: 'rock_mossy', worldW: 22 },
 
-  // 主人公は正面立ち絵 1 枚。向き・歩きコマは描画側の揺れ（renderer.ts）で表す。
-  player_down0: { src: 'pigg_player_down0', worldW: 30 },
-  player_down1: { src: 'pigg_player_down0', worldW: 30 },
-  player_down2: { src: 'pigg_player_down0', worldW: 30 },
-  player_up0: { src: 'pigg_player_down0', worldW: 30 },
-  player_up1: { src: 'pigg_player_down0', worldW: 30 },
-  player_up2: { src: 'pigg_player_down0', worldW: 30 },
-  player_left0: { src: 'pigg_player_down0', worldW: 30 },
-  player_left1: { src: 'pigg_player_down0', worldW: 30 },
-  player_left2: { src: 'pigg_player_down0', worldW: 30 },
-  player_right0: { src: 'pigg_player_down0', worldW: 30 },
-  player_right1: { src: 'pigg_player_down0', worldW: 30 },
-  player_right2: { src: 'pigg_player_down0', worldW: 30 },
+  // 主人公: 正面・背面・右向き（左向きは右向きの反転）。歩行は描画側のはずみ・傾きで表すので、
+  // 3 コマとも同じ絵。向きごとに余白がちがうので、高さでそろえる。
+  player_down0: { src: 'pigg_player_down0', worldW: 30, worldH: 41 },
+  player_down1: { src: 'pigg_player_down0', worldW: 30, worldH: 41 },
+  player_down2: { src: 'pigg_player_down0', worldW: 30, worldH: 41 },
+  player_up0: { src: 'pigg_player_up0', worldW: 30, worldH: 41 },
+  player_up1: { src: 'pigg_player_up0', worldW: 30, worldH: 41 },
+  player_up2: { src: 'pigg_player_up0', worldW: 30, worldH: 41 },
+  player_right0: { src: 'pigg_player_right0', worldW: 30, worldH: 41 },
+  player_right1: { src: 'pigg_player_right0', worldW: 30, worldH: 41 },
+  player_right2: { src: 'pigg_player_right0', worldW: 30, worldH: 41 },
+  player_left0: { src: 'pigg_player_right0', worldW: 30, worldH: 41, flip: true },
+  player_left1: { src: 'pigg_player_right0', worldW: 30, worldH: 41, flip: true },
+  player_left2: { src: 'pigg_player_right0', worldW: 30, worldH: 41, flip: true },
 };
 
 // ---------------------------------------------------------------------------
@@ -843,16 +848,27 @@ function bakeTinted(img: HTMLImageElement, tint: string): HTMLCanvasElement | Of
   return canvas;
 }
 
+function bakeFlipped(img: HTMLImageElement): HTMLCanvasElement | OffscreenCanvas {
+  const canvas = makeCanvas(img.naturalWidth, img.naturalHeight);
+  const ctx = canvas.getContext('2d') as Ctx2D | null;
+  if (ctx) {
+    ctx.translate(img.naturalWidth, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(img, 0, 0);
+  }
+  return canvas;
+}
+
 function bakeFromSheet(name: SpriteName): BakedSprite | null {
   const spec = SHEET_TARGET[name];
   if (!spec) return null;
   const img = sheetImages.get(spec.src);
   if (!img) return null;
-  return {
-    canvas: spec.tint ? bakeTinted(img, spec.tint) : img,
-    w: spec.worldW,
-    h: spec.worldW * (img.naturalHeight / img.naturalWidth),
-  };
+  const aspect = img.naturalHeight / img.naturalWidth;
+  const w = spec.worldH ? spec.worldH / aspect : spec.worldW;
+  const h = spec.worldH ?? spec.worldW * aspect;
+  const canvas = spec.tint ? bakeTinted(img, spec.tint) : spec.flip ? bakeFlipped(img) : img;
+  return { canvas, w, h };
 }
 
 const EMPTY: BakedSprite = { canvas: makeEmpty(), w: 1, h: 1 };
