@@ -311,8 +311,8 @@ function drawWaterAnimated(
 // 見た目だけの置物（ゲームロジック上は存在しない）。座標はタイル単位、スプライトの
 // 下辺中央がここに来る。遺跡入口のアーチは西の通路をまたぐ位置、かがり火は広場の
 // 作業台のそばに置く。
-const RUINS_ARCH = { x: 7.75, y: 14.2 };
-const PLAZA_CAMPFIRE = { x: 15.25, y: 17.35 };
+const RUINS_ARCH = { x: 7.5, y: 15 };
+const PLAZA_CAMPFIRE = { x: 15.5, y: 18 };
 
 const SLOT_COLORS: Record<SlotAttr, string> = {
   bench: '#c97b4a',

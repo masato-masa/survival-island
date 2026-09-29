@@ -45,38 +45,12 @@ function valueNoise2D(x: number, y: number, seed: number, wavelength: number): n
   return a + (b - a) * fy;
 }
 
-const STEP_X = 1.2;
-const STEP_Y = 0.8;
-const PINE_CLUSTER_WAVELEN = 3.2; // タイル単位。この波長のノイズが低い場所を「松のかたまり」にする
-const PINE_CLUSTER_THRESHOLD = 0.32; // ~30% がクラスタになるよう調整
-
 function isForest(world: World, tx: number, ty: number): boolean {
-  if (tx < 0 || ty < 0 || tx >= world.width || ty >= world.height) return false;
-  return world.ground[ty * world.width + tx] === 'forest';
+  return world.ground[ty * world.width + tx] === 'forest' && tx >= 0 && ty >= 0 && tx < world.width && ty < world.height;
 }
 
-/** そのタイルが森の「縁」（4 近傍のどれかが森でない）かどうか。 */
-function isForestEdge(world: World, tx: number, ty: number): boolean {
-  if (!isForest(world, tx, ty)) return false;
-  return (
-    !isForest(world, tx - 1, ty) ||
-    !isForest(world, tx + 1, ty) ||
-    !isForest(world, tx, ty - 1) ||
-    !isForest(world, tx, ty + 1)
-  );
-}
-
-/** 森の南の縁（南隣が森でない）かどうか。トランクを開けた地面側へ見せるための判定。 */
-function isSouthEdge(world: World, tx: number, ty: number): boolean {
-  return isForest(world, tx, ty) && !isForest(world, tx, ty + 1);
-}
-
-/** 森の北の縁（北隣が森でない＝開けた地面のすぐ南）かどうか。
- *  木の見上げ高さは ~4.4 マスあるので、ここに幹を置くと梢が開けた地面（広場・遺跡など）
- *  に大きくかぶってしまう。1 列奥（南）の木の梢がここを覆うので、この列には幹を置かない。 */
-function isNorthEdge(world: World, tx: number, ty: number): boolean {
-  return isForest(world, tx, ty) && !isForest(world, tx, ty - 1);
-}
+const PINE_CLUSTER_WAVELEN = 3.2; // タイル単位。この波長のノイズが低い場所を「小ぶりの木のかたまり」にする
+const PINE_CLUSTER_THRESHOLD = 0.32;
 
 function pickSpecies(tx: number, ty: number): SpriteName {
   const n = valueNoise2D(tx, ty, 501, PINE_CLUSTER_WAVELEN);
@@ -84,52 +58,22 @@ function pickSpecies(tx: number, ty: number): SpriteName {
 }
 
 /**
- * 森タイル全体に木のインスタンスを撒く。ジッタ付きグリッド（横 ~1.6 マス・縦 ~1.1 マス間隔）
- * に加えて、縁のタイルには必ず 1 本置いて隙間ができないようにする。
+ * 森のマス 1 つにつき木を 1 本、マスの中心（下辺）にぴったり置く。マスに沿って並ぶので格子状に見える。
+ * 周りが全部森のマスは他の木に隠れて見えないので省く。
  */
 export function buildForestTrees(world: World): TreeInstance[] {
-  const instances: TreeInstance[] = [];
-  const seen = new Set<string>();
-
-  const push = (fx: number, fy: number, tx: number, ty: number) => {
-    const key = `${Math.round(fx * 100)},${Math.round(fy * 100)}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    instances.push({ x: fx, y: fy, sprite: pickSpecies(tx, ty) });
-  };
-
-  // 1) ジッタ付きグリッド
-  let row = 0;
-  for (let gy = 0.5; gy < world.height; gy += STEP_Y, row++) {
-    let col = 0;
-    for (let gx = 0.5; gx < world.width; gx += STEP_X, col++) {
-      const jx = (hash2i(col, row, 601) - 0.5) * 0.9;
-      const jy = (hash2i(col, row, 602) - 0.5) * 0.7;
-      const fx = gx + jx;
-      const fy = gy + jy;
-      const tx = Math.floor(fx);
-      const ty = Math.floor(fy);
-      if (!isForest(world, tx, ty)) continue;
-      if (isNorthEdge(world, tx, ty)) continue; // 開けた地面のすぐ南＝ここには幹を置かない
-      // 南の縁に近いインスタンスは、幹が開けた地面側から見えるよう少し南へ寄せる。
-      const southBias = isSouthEdge(world, tx, ty) ? 0.28 : 0;
-      push(fx, Math.min(ty + 0.92, fy + southBias), tx, ty);
-    }
-  }
-
-  // 2) 縁のタイルは必ず 1 本（グリッドが薄く当たって隙間になるのを防ぐ）
+  const out: TreeInstance[] = [];
   for (let ty = 0; ty < world.height; ty++) {
     for (let tx = 0; tx < world.width; tx++) {
-      if (!isForestEdge(world, tx, ty)) continue;
-      if (isNorthEdge(world, tx, ty)) continue; // 開けた地面のすぐ南＝ここには幹を置かない
-      const jx = (hash2i(tx, ty, 611) - 0.5) * 0.5;
-      const southEdge = isSouthEdge(world, tx, ty);
-      const fy = southEdge ? ty + 0.85 : ty + 0.5 + (hash2i(tx, ty, 612) - 0.5) * 0.4;
-      push(tx + 0.5 + jx, fy, tx, ty);
+      if (!isForest(world, tx, ty)) continue;
+      let inner = true;
+      for (let dy = -1; dy <= 1 && inner; dy++)
+        for (let dx = -1; dx <= 1; dx++) if (!isForest(world, tx + dx, ty + dy)) { inner = false; break; }
+      if (inner) continue;
+      out.push({ x: tx + 0.5, y: ty + 1, sprite: pickSpecies(tx, ty) });
     }
   }
-
-  return instances;
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -137,9 +81,8 @@ export function buildForestTrees(world: World): TreeInstance[] {
 // 参考画像は「開けた草地に花や草がほどよく散っている」ので、草・砂タイルの一部に
 // 決定的なハッシュで散らす。ノード・設備・畑・配置スペース・置物の上とそのすぐ隣には置かない。
 
-const DECO_DENSITY_GRASS = 0.17;
-const DECO_DENSITY_SAND = 0.07;
-const DECO_DENSITY_TUFT = 0.55; // 草タイルの何割に葉先を置くか（花・草が乗らないタイルだけ）
+const DECO_DENSITY_GRASS = 0.3;
+const DECO_DENSITY_TUFT = 0.8; // 草タイルの何割に葉先を置くか（花・草が乗らないタイルだけ）
 const DECO_PLANTS: SpriteName[] = ['deco_0', 'deco_1', 'deco_2', 'deco_3', 'deco_4', 'deco_5', 'deco_6', 'deco_7'];
 
 // renderer.ts の見た目だけの置物（アーチ・かがり火）の位置。ここを避ける。
@@ -147,6 +90,11 @@ const KEEP_CLEAR: { x: number; y: number }[] = [
   { x: 7, y: 14 },
   { x: 15, y: 17 },
 ];
+
+/** 草原として塗られる地面（砂・道・石畳・家の跡地も今は草原）。 */
+function isOpenGround(g: string | undefined): boolean {
+  return g === 'grass' || g === 'sand' || g === 'dirt' || g === 'paving' || g === 'foundation';
+}
 
 export function buildGroundDecor(world: World): TreeInstance[] {
   const blocked = new Set<number>();
@@ -177,19 +125,14 @@ export function buildGroundDecor(world: World): TreeInstance[] {
       const g = world.ground[idx];
       const r = hash2i(tx, ty, 701);
       let sprite: SpriteName;
-      if (g === 'grass' && hash2i(tx, ty, 711) < DECO_DENSITY_TUFT && r >= DECO_DENSITY_GRASS) {
+      if (isOpenGround(g) && hash2i(tx, ty, 711) < DECO_DENSITY_TUFT && r >= DECO_DENSITY_GRASS) {
         sprite = hash2i(tx, ty, 712) < 0.5 ? 'deco_tuft0' : 'deco_tuft1';
-      } else if (g === 'grass' && r < DECO_DENSITY_GRASS) {
+      } else if (isOpenGround(g) && r < DECO_DENSITY_GRASS) {
         const pick = hash2i(tx, ty, 702);
         sprite = pick < 0.08 ? 'deco_mossy' : pick < 0.2 ? 'deco_pebble' : DECO_PLANTS[Math.floor(hash2i(tx, ty, 703) * DECO_PLANTS.length)]!;
-      } else if (g === 'sand' && r < DECO_DENSITY_SAND) {
-        sprite = 'deco_pebble';
       } else continue;
-      out.push({
-        x: tx + 0.2 + hash2i(tx, ty, 704) * 0.6,
-        y: ty + 0.55 + hash2i(tx, ty, 705) * 0.4,
-        sprite,
-      });
+      // マスの中心にぴったり置く（マスに沿った配置）
+      out.push({ x: tx + 0.5, y: ty + 0.8, sprite });
     }
   }
   return out;

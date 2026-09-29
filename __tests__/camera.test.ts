@@ -8,25 +8,18 @@ import {
   screenToWorld,
   stepCamera,
   TILE,
-  TILES_ACROSS_SHORT_SIDE,
+  TILES_ACROSS_WIDTH,
   worldToScreen,
   type CameraState,
   type Viewport,
 } from '../src/render/camera';
 
 describe('baseScaleFor', () => {
-  it('縦持ち（幅が短辺）では、幅に TILES_ACROSS_SHORT_SIDE マスが収まるスケールを返す', () => {
-    const s = baseScaleFor(390, 844);
-    expect(s).toBeCloseTo(390 / (TILES_ACROSS_SHORT_SIDE * TILE));
-    const tilesAcross = 390 / s / TILE;
-    expect(tilesAcross).toBeCloseTo(TILES_ACROSS_SHORT_SIDE);
-  });
-
-  it('横持ち・PC（高さが短辺）では、高さに TILES_ACROSS_SHORT_SIDE マスが収まるスケールを返す', () => {
-    const s = baseScaleFor(1100, 700);
-    expect(s).toBeCloseTo(700 / (TILES_ACROSS_SHORT_SIDE * TILE));
-    const tilesTall = 700 / s / TILE;
-    expect(tilesTall).toBeCloseTo(TILES_ACROSS_SHORT_SIDE);
+  it('向きによらず、横幅に TILES_ACROSS_WIDTH マスが収まるスケールを返す', () => {
+    for (const [w, h] of [[390, 844], [1100, 700]] as const) {
+      const s = baseScaleFor(w, h);
+      expect(w / s / TILE).toBeCloseTo(TILES_ACROSS_WIDTH);
+    }
   });
 });
 

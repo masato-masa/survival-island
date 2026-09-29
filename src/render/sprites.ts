@@ -194,14 +194,14 @@ const STONE_TINT = '#a7afba'; // 石材家具用（暖色の木目を寒色の�
 const COPPER_TINT = '#e59a58'; // 銅ランプ
 
 const SHEET_TARGET: Partial<Record<SpriteName, SheetSpec>> = {
-  tree: { src: 'tree_medium', worldW: 46 },
-  bigTree: { src: 'tree_big', worldW: 66 },
-  palm: { src: 'furn_palm_tree', worldW: 48 },
+  tree: { src: 'tree_medium', worldW: 40 },
+  bigTree: { src: 'tree_big', worldW: 56 },
+  palm: { src: 'furn_palm_tree', worldW: 40 },
   rock: { src: 'rock_medium', worldW: 32 },
   hardRock: { src: 'rock_medium', worldW: 34, tint: '#8b97a3' },
-  wallOak: { src: 'tree_medium', worldW: 54, tint: WALL_TINT },
-  wallPine: { src: 'tree_small', worldW: 50, tint: WALL_TINT },
-  borderTree: { src: 'tree_medium', worldW: 48, tint: BORDER_TINT },
+  wallOak: { src: 'tree_medium', worldW: 44, tint: WALL_TINT },
+  wallPine: { src: 'tree_small', worldW: 40, tint: WALL_TINT },
+  borderTree: { src: 'tree_medium', worldW: 40, tint: BORDER_TINT },
   borderRock: { src: 'rock_medium', worldW: 34, tint: BORDER_TINT },
 
   stump: { src: 'tree_stump', worldW: 30 },
@@ -253,18 +253,18 @@ const SHEET_TARGET: Partial<Record<SpriteName, SheetSpec>> = {
 
   // 主人公: 正面・背面・右向き（左向きは右向きの反転）。歩行は描画側のはずみ・傾きで表すので、
   // 3 コマとも同じ絵。向きごとに余白がちがうので、高さでそろえる。
-  player_down0: { src: 'pigg_player_down0', worldW: 30, worldH: 18 },
-  player_down1: { src: 'pigg_player_down0', worldW: 30, worldH: 18 },
-  player_down2: { src: 'pigg_player_down0', worldW: 30, worldH: 18 },
-  player_up0: { src: 'pigg_player_up0', worldW: 30, worldH: 18 },
-  player_up1: { src: 'pigg_player_up0', worldW: 30, worldH: 18 },
-  player_up2: { src: 'pigg_player_up0', worldW: 30, worldH: 18 },
-  player_right0: { src: 'pigg_player_right0', worldW: 30, worldH: 18 },
-  player_right1: { src: 'pigg_player_right0', worldW: 30, worldH: 18 },
-  player_right2: { src: 'pigg_player_right0', worldW: 30, worldH: 18 },
-  player_left0: { src: 'pigg_player_right0', worldW: 30, worldH: 18, flip: true },
-  player_left1: { src: 'pigg_player_right0', worldW: 30, worldH: 18, flip: true },
-  player_left2: { src: 'pigg_player_right0', worldW: 30, worldH: 18, flip: true },
+  player_down0: { src: 'pigg_player_down0', worldW: 30, worldH: 32 },
+  player_down1: { src: 'pigg_player_down0', worldW: 30, worldH: 32 },
+  player_down2: { src: 'pigg_player_down0', worldW: 30, worldH: 32 },
+  player_up0: { src: 'pigg_player_up0', worldW: 30, worldH: 32 },
+  player_up1: { src: 'pigg_player_up0', worldW: 30, worldH: 32 },
+  player_up2: { src: 'pigg_player_up0', worldW: 30, worldH: 32 },
+  player_right0: { src: 'pigg_player_right0', worldW: 30, worldH: 32 },
+  player_right1: { src: 'pigg_player_right0', worldW: 30, worldH: 32 },
+  player_right2: { src: 'pigg_player_right0', worldW: 30, worldH: 32 },
+  player_left0: { src: 'pigg_player_right0', worldW: 30, worldH: 32, flip: true },
+  player_left1: { src: 'pigg_player_right0', worldW: 30, worldH: 32, flip: true },
+  player_left2: { src: 'pigg_player_right0', worldW: 30, worldH: 32, flip: true },
 };
 
 // ---------------------------------------------------------------------------

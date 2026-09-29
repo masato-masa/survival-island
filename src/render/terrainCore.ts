@@ -117,28 +117,15 @@ const WOOD_TONES: RGB[] = [
 
 export function classify(width: number, height: number, ground: readonly string[]): Uint8Array {
   const out = new Uint8Array(width * height);
-  const isFoundation = (x: number, y: number) => ground[y * width + x] === 'foundation';
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const g = ground[y * width + x];
+      // 地面は今のところ「草原・水・桟橋・畑」だけ。砂・土の道・石畳・家の跡地・森の下草はすべて草原として塗る。
       let k: number;
       switch (g) {
         case 'water': k = K.Water; break;
-        case 'grass': k = K.Grass; break;
-        case 'forest': k = K.Forest; break;
-        case 'sand': k = K.Sand; break;
-        case 'dirt': k = K.Dirt; break;
-        case 'paving': k = K.Paving; break;
         case 'dock': k = K.Dock; break;
         case 'soil': k = K.Soil; break;
-        case 'foundation': {
-          // 家の跡地: ふちだけ石畳、中は土
-          const edge =
-            x === 0 || y === 0 || x === width - 1 || y === height - 1 ||
-            !isFoundation(x - 1, y) || !isFoundation(x + 1, y) || !isFoundation(x, y - 1) || !isFoundation(x, y + 1);
-          k = edge ? K.Paving : K.Dirt;
-          break;
-        }
         default: k = K.Grass;
       }
       out[y * width + x] = k;
