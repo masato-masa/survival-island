@@ -699,7 +699,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
   // --- 地面の飾り（花・草・小石。影なし・見え隠れなし。可視範囲だけ描く） ---
   for (const d of state.groundDecor) {
     if (d.x < minTx - 1 || d.x > maxTx + 2 || d.y < minTy - 1 || d.y > maxTy + 2) continue;
-    drawables.push({ y: d.y - 0.6, draw: () => drawSpriteAtWorld(d.sprite, d.x * TILE, d.y * TILE, true, false) });
+    drawables.push({ y: d.flat ? -1000 : d.y - 0.6, draw: () => drawSpriteAtWorld(d.sprite, d.x * TILE, d.y * TILE, true, false) });
   }
 
   // --- 遺跡入口のアーチ・広場のかがり火（見た目だけの置物。ゲームロジックには存在しない）。 ---

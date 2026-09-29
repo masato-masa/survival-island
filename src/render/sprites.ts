@@ -106,6 +106,15 @@ export type SpriteName =
   | 'deco_7'
   | 'deco_pebble'
   | 'deco_mossy'
+  | 'deco_lily0'
+  | 'deco_lily1'
+  | 'deco_lily2'
+  | 'deco_lily3'
+  | 'deco_lily4'
+  | 'deco_reed0'
+  | 'deco_reed1'
+  | 'deco_reed2'
+  | 'deco_log'
   | 'deco_tuft0'
   | 'deco_tuft1';
 
@@ -183,6 +192,8 @@ interface SheetSpec {
   worldW: number;
   /** 指定すると高さで大きさを決める（向きごとに余白がちがう絵の大きさをそろえる用。worldW は無視）。 */
   worldH?: number;
+  /** worldW と worldH の両方をそのまま使う（縦に伸ばした木など。既定は worldH から幅を出す）。 */
+  stretch?: boolean;
   /** 左右反転（右向き 1 枚から左向きを作る）。 */
   flip?: boolean;
   tint?: string; // 乗算合成で色違いを作る
@@ -194,15 +205,15 @@ const STONE_TINT = '#a7afba'; // 石材家具用（暖色の木目を寒色の�
 const COPPER_TINT = '#e59a58'; // 銅ランプ
 
 const SHEET_TARGET: Partial<Record<SpriteName, SheetSpec>> = {
-  tree: { src: 'tree_medium', worldW: 40 },
-  bigTree: { src: 'tree_big', worldW: 56 },
+  tree: { src: 'tree_medium', worldW: 44, worldH: 74, stretch: true },
+  bigTree: { src: 'tree_big', worldW: 54, worldH: 92, stretch: true },
   palm: { src: 'furn_palm_tree', worldW: 40 },
-  rock: { src: 'rock_medium', worldW: 32 },
-  hardRock: { src: 'rock_medium', worldW: 34, tint: '#8b97a3' },
-  wallOak: { src: 'tree_medium', worldW: 44, tint: WALL_TINT },
-  wallPine: { src: 'tree_small', worldW: 40, tint: WALL_TINT },
-  borderTree: { src: 'tree_medium', worldW: 40, tint: BORDER_TINT },
-  borderRock: { src: 'rock_medium', worldW: 34, tint: BORDER_TINT },
+  rock: { src: 'rock_medium', worldW: 34 },
+  hardRock: { src: 'rock_medium', worldW: 36, tint: '#8b97a3' },
+  wallOak: { src: 'tree_medium', worldW: 46, worldH: 76, stretch: true, tint: WALL_TINT },
+  wallPine: { src: 'tree_small', worldW: 42, worldH: 68, stretch: true, tint: WALL_TINT },
+  borderTree: { src: 'tree_medium', worldW: 46, worldH: 76, stretch: true, tint: BORDER_TINT },
+  borderRock: { src: 'rock_medium', worldW: 36, tint: BORDER_TINT },
 
   stump: { src: 'tree_stump', worldW: 30 },
   rubble: { src: 'rock_pebble', worldW: 26 },
@@ -210,7 +221,7 @@ const SHEET_TARGET: Partial<Record<SpriteName, SheetSpec>> = {
   chestOpen: { src: 'furn_chest', worldW: 34 },
 
   decor_campfire: { src: 'furn_campfire', worldW: 36 },
-  decor_rubble: { src: 'rock_pile', worldW: 36 },
+  decor_rubble: { src: 'rock_pile', worldW: 38 },
   decor_brokenStone: { src: 'rock_collapsed', worldW: 40 },
   decor_arch: { src: 'cave_entrance', worldW: 50 },
   decor_pillar: { src: 'rock_cliff', worldW: 42 },
@@ -218,8 +229,8 @@ const SHEET_TARGET: Partial<Record<SpriteName, SheetSpec>> = {
   decor_ship: { src: 'pigg_ship', worldW: 84 },
   f_woodTower: { src: 'pigg_tower', worldW: 84 },
   f_flowerArch: { src: 'pigg_arch', worldW: 84 },
-  station_ruins: { src: 'rock_fossil', worldW: 44 },
-  station_workbench: { src: 'furn_workbench_blueprint', worldW: 46 },
+  station_ruins: { src: 'rock_fossil', worldW: 46 },
+  station_workbench: { src: 'furn_workbench_blueprint', worldW: 48 },
 
   f_woodFence: { src: 'furn_fence_wood', worldW: 40 },
   f_woodSign: { src: 'furn_signpost', worldW: 30 },
@@ -240,31 +251,41 @@ const SHEET_TARGET: Partial<Record<SpriteName, SheetSpec>> = {
 
   // 地面の飾り（当たり判定なし）。参考シートの花・草を色違いで混ぜる。
   // plant_10/16/54/59 は市松模様の抜き残りが出るので使わない。
-  deco_0: { src: 'plant_01', worldW: 24 },
-  deco_1: { src: 'plant_05', worldW: 24 },
-  deco_2: { src: 'plant_12', worldW: 22 },
-  deco_3: { src: 'plant_18', worldW: 24 },
-  deco_4: { src: 'plant_22', worldW: 22 },
-  deco_5: { src: 'plant_29', worldW: 24 },
-  deco_6: { src: 'plant_33', worldW: 22 },
-  deco_7: { src: 'plant_40', worldW: 24 },
+  deco_0: { src: 'plant_01', worldW: 26 },
+  deco_1: { src: 'plant_05', worldW: 26 },
+  deco_2: { src: 'plant_12', worldW: 24 },
+  deco_3: { src: 'plant_18', worldW: 26 },
+  deco_4: { src: 'plant_22', worldW: 24 },
+  deco_5: { src: 'plant_29', worldW: 26 },
+  deco_6: { src: 'plant_33', worldW: 24 },
+  deco_7: { src: 'plant_40', worldW: 26 },
+  // 水面と岸の飾り（睡蓮・葦・丸太）
+  deco_lily0: { src: 'plant_45', worldW: 58 },
+  deco_lily1: { src: 'plant_47', worldW: 64 },
+  deco_lily2: { src: 'plant_48', worldW: 52 },
+  deco_lily3: { src: 'plant_52', worldW: 58 },
+  deco_lily4: { src: 'plant_46', worldW: 50 },
+  deco_reed0: { src: 'plant_49', worldW: 36 },
+  deco_reed1: { src: 'plant_50', worldW: 38 },
+  deco_reed2: { src: 'plant_38', worldW: 32 },
+  deco_log: { src: 'plant_57', worldW: 44 },
   deco_pebble: { src: 'rock_pebble', worldW: 14 },
   deco_mossy: { src: 'rock_mossy', worldW: 22 },
 
   // 主人公: 正面・背面・右向き（左向きは右向きの反転）。歩行は描画側のはずみ・傾きで表すので、
   // 3 コマとも同じ絵。向きごとに余白がちがうので、高さでそろえる。
-  player_down0: { src: 'pigg_player_down0', worldW: 30, worldH: 32 },
-  player_down1: { src: 'pigg_player_down0', worldW: 30, worldH: 32 },
-  player_down2: { src: 'pigg_player_down0', worldW: 30, worldH: 32 },
-  player_up0: { src: 'pigg_player_up0', worldW: 30, worldH: 32 },
-  player_up1: { src: 'pigg_player_up0', worldW: 30, worldH: 32 },
-  player_up2: { src: 'pigg_player_up0', worldW: 30, worldH: 32 },
-  player_right0: { src: 'pigg_player_right0', worldW: 30, worldH: 32 },
-  player_right1: { src: 'pigg_player_right0', worldW: 30, worldH: 32 },
-  player_right2: { src: 'pigg_player_right0', worldW: 30, worldH: 32 },
-  player_left0: { src: 'pigg_player_right0', worldW: 30, worldH: 32, flip: true },
-  player_left1: { src: 'pigg_player_right0', worldW: 30, worldH: 32, flip: true },
-  player_left2: { src: 'pigg_player_right0', worldW: 30, worldH: 32, flip: true },
+  player_down0: { src: 'pigg_player_down0', worldW: 30, worldH: 34 },
+  player_down1: { src: 'pigg_player_down0', worldW: 30, worldH: 34 },
+  player_down2: { src: 'pigg_player_down0', worldW: 30, worldH: 34 },
+  player_up0: { src: 'pigg_player_up0', worldW: 30, worldH: 34 },
+  player_up1: { src: 'pigg_player_up0', worldW: 30, worldH: 34 },
+  player_up2: { src: 'pigg_player_up0', worldW: 30, worldH: 34 },
+  player_right0: { src: 'pigg_player_right0', worldW: 30, worldH: 34 },
+  player_right1: { src: 'pigg_player_right0', worldW: 30, worldH: 34 },
+  player_right2: { src: 'pigg_player_right0', worldW: 30, worldH: 34 },
+  player_left0: { src: 'pigg_player_right0', worldW: 30, worldH: 34, flip: true },
+  player_left1: { src: 'pigg_player_right0', worldW: 30, worldH: 34, flip: true },
+  player_left2: { src: 'pigg_player_right0', worldW: 30, worldH: 34, flip: true },
 };
 
 // ---------------------------------------------------------------------------
@@ -782,8 +803,8 @@ function paintTuft(variant: 0 | 1): Painter {
 }
 
 const PAINTERS: Partial<Record<SpriteName, PainterSpec>> = {
-  deco_tuft0: { w: 16, h: 11, paint: paintTuft(0) },
-  deco_tuft1: { w: 16, h: 11, paint: paintTuft(1) },
+  deco_tuft0: { w: 18, h: 12, paint: paintTuft(0) },
+  deco_tuft1: { w: 18, h: 12, paint: paintTuft(1) },
   turnip0: { w: 32, h: 32, paint: paintTurnip(0) },
   turnip1: { w: 32, h: 32, paint: paintTurnip(1) },
   turnip2: { w: 32, h: 32, paint: paintTurnip(2) },
@@ -865,7 +886,7 @@ function bakeFromSheet(name: SpriteName): BakedSprite | null {
   const img = sheetImages.get(spec.src);
   if (!img) return null;
   const aspect = img.naturalHeight / img.naturalWidth;
-  const w = spec.worldH ? spec.worldH / aspect : spec.worldW;
+  const w = spec.worldH && !spec.stretch ? spec.worldH / aspect : spec.worldW;
   const h = spec.worldH ?? spec.worldW * aspect;
   const canvas = spec.tint ? bakeTinted(img, spec.tint) : spec.flip ? bakeFlipped(img) : img;
   return { canvas, w, h };

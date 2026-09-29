@@ -88,22 +88,23 @@ const isPathLike = (k: number): boolean => k === K.Dirt || k === K.Paving || k =
 const isSoft = (k: number): boolean => k === K.Grass || k === K.Forest || k === K.Sand;
 
 // 色（参考画像から実測した値を基準にしたやわらかい配色）
-const GRASS_A: RGB = [147, 204, 111];
-const GRASS_B: RGB = [128, 191, 92];
-const GRASS_C: RGB = [160, 212, 122];
+const GRASS_A: RGB = [126, 190, 80];
+const GRASS_B: RGB = [104, 166, 62];
+const GRASS_C: RGB = [148, 206, 96];
 const FOREST_A: RGB = [136, 197, 102];
 const FOREST_B: RGB = [122, 185, 90];
 const SAND_A: RGB = [240, 224, 172];
 const SAND_B: RGB = [229, 208, 152];
-const SAND_WET: RGB = [214, 192, 140];
 const DIRT_A: RGB = [228, 193, 142];
 const DIRT_B: RGB = [216, 178, 126];
 const PAVE_A: RGB = [214, 210, 200];
 const PAVE_MORTAR: RGB = [176, 171, 158];
 const SOIL_A: RGB = [122, 80, 54];
 const SOIL_B: RGB = [158, 110, 76];
-const WATER_SHALLOW: RGB = [128, 214, 228];
-const WATER_DEEP: RGB = [84, 176, 210];
+const WATER_SHALLOW: RGB = [92, 190, 196];
+const WATER_DEEP: RGB = [24, 92, 120];
+const CLIFF_TOP: RGB = [156, 112, 66];
+const CLIFF_BOTTOM: RGB = [86, 56, 36];
 const FOAM: RGB = [246, 253, 252];
 const WOOD_TONES: RGB[] = [
   [214, 172, 116],
@@ -348,9 +349,19 @@ export function paintRows(st: TerrainState, fromY: number, toY: number, data: Ui
         if (best === K.Water && secondW > 0 && second !== K.Water) {
           const foam = 1 - smoothstep(margin / 0.3);
           mix(rgbA, FOAM, foam * 0.9, rgbA);
-        } else if (second === K.Water && best !== K.Water && secondW > 0 && margin < 0.36) {
-          if (best === K.Sand) mix(rgbA, SAND_WET, (1 - margin / 0.36) * 0.55, rgbA);
-          else {
+        } else if (second === K.Water && best !== K.Water && secondW > 0) {
+          // 水が陸の南側にあるときは、岸を茶色の崖の壁として見せる（アメーバピグの島の縁）。
+          const wSouth = (cls[t01] === K.Water ? w01 : 0) + (cls[t11] === K.Water ? w11 : 0);
+          const wNorth = (cls[t00] === K.Water ? w00 : 0) + (cls[t10] === K.Water ? w10 : 0);
+          if (wSouth - wNorth > 0.2) {
+            const t = smoothstep(margin / (EDGE_SOFT * 2.4));
+            mix(CLIFF_BOTTOM, CLIFF_TOP, t, rgbB);
+            // ざらつき（縦のすじ）
+            const streak = (valueNoise2D(px * 3, py, 97, 0.6 * TERRAIN_PX) - 0.5) * 22;
+            rgbA[0] = rgbB[0] + streak;
+            rgbA[1] = rgbB[1] + streak * 0.7;
+            rgbA[2] = rgbB[2] + streak * 0.5;
+          } else {
             rgbA[0] *= 0.94;
             rgbA[1] *= 0.95;
             rgbA[2] *= 0.95;

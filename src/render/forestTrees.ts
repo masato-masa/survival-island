@@ -15,7 +15,9 @@ import type { SpriteName } from './sprites';
 export interface TreeInstance {
   x: number; // タイル単位（幹の位置＝スプライトの下辺中央を置く場所）
   y: number;
-  sprite: SpriteName; // 'wallOak' | 'wallPine'。森の壁＝進入不可・非対話であることが分かるよう、
+  sprite: SpriteName;
+  /** 水面に浮くもの（睡蓮など）。他の物より必ず下に描く。 */
+  flat?: boolean; // 'wallOak' | 'wallPine'。森の壁＝進入不可・非対話であることが分かるよう、
   // 資源ノードの tree/bigTree とは別の（暗く冷たい色調の）スプライト名を使う。
 }
 
@@ -118,11 +120,29 @@ export function buildGroundDecor(world: World): TreeInstance[] {
   block(world.start.x, world.start.y, 1, 1, 1);
 
   const out: TreeInstance[] = [];
+  const isWater = (x: number, y: number) => world.ground[y * world.width + x] === 'water' && x >= 0 && y >= 0 && x < world.width && y < world.height;
   for (let ty = 0; ty < world.height; ty++) {
     for (let tx = 0; tx < world.width; tx++) {
       const idx = ty * world.width + tx;
       if (blocked.has(idx)) continue;
       const g = world.ground[idx];
+      // 水面: 岸に近いところに睡蓮、ときどき丸太
+      if (g === 'water') {
+        const shore = !isWater(tx - 1, ty) || !isWater(tx + 1, ty) || !isWater(tx, ty - 1) || !isWater(tx, ty + 1) ||
+          !isWater(tx - 1, ty - 1) || !isWater(tx + 1, ty + 1) || !isWater(tx - 2, ty) || !isWater(tx + 2, ty) || !isWater(tx, ty + 2) || !isWater(tx, ty - 2);
+        const lr = hash2i(tx, ty, 731);
+        if (shore && lr < 0.3) {
+          const pick = hash2i(tx, ty, 732);
+          const lily = (['deco_lily0', 'deco_lily1', 'deco_lily2', 'deco_lily3', 'deco_lily4'] as const)[Math.floor(pick * 5)]!;
+          out.push({ x: tx + 0.5, y: ty + 0.75, sprite: lr < 0.015 ? 'deco_log' : lily, flat: true });
+        }
+        continue;
+      }
+      // 岸の草地: 水に接するマスに葦・草むら
+      if (isOpenGround(g) && (isWater(tx - 1, ty) || isWater(tx + 1, ty) || isWater(tx, ty - 1) || isWater(tx, ty + 1)) && hash2i(tx, ty, 741) < 0.6) {
+        out.push({ x: tx + 0.5, y: ty + 0.95, sprite: (['deco_reed0', 'deco_reed1', 'deco_reed2'] as const)[Math.floor(hash2i(tx, ty, 742) * 3)]! });
+        continue;
+      }
       const r = hash2i(tx, ty, 701);
       let sprite: SpriteName;
       if (isOpenGround(g) && hash2i(tx, ty, 711) < DECO_DENSITY_TUFT && r >= DECO_DENSITY_GRASS) {

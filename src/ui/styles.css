@@ -67,6 +67,20 @@ body {
   width: 100vw;
   overflow: hidden;
   touch-action: none;
+  background: #0d2b25; /* 画面比率を合わせたときに余る帯の色 */
+}
+
+/* 盤面と HUD は、参考（アメーバピグ）と同じ横長の比率（約 2.1:1）の「舞台」の中に収める。
+   窓がもっと縦長なら上下に、もっと横長なら左右に帯が出る。 */
+.field-stage {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(100vw, calc(100dvh * 2.1));
+  aspect-ratio: 2.1 / 1;
+  transform: translate(-50%, -50%);
+  overflow: hidden;
+  container-type: inline-size;
 }
 
 .field-map {
@@ -145,120 +159,6 @@ body {
 
 /* ---------------------------------------------------------------------
    左上: スタミナ・島レベル */
-
-.hud-topleft.panel {
-  background: rgb(60 45 40 / 0.55);
-  backdrop-filter: blur(4px);
-  border: 0;
-  border-radius: 18px;
-  box-shadow: none;
-  color: #fff;
-}
-
-.hud-topleft .hud-num,
-.hud-topleft .hud-level-label {
-  color: #fff;
-}
-
-.hud-topleft .hud-countdown,
-.hud-topleft .hud-xp {
-  color: rgb(255 255 255 / 0.75);
-}
-
-.hud-topleft .hud-bar-track {
-  border: 0;
-  background: rgb(255 255 255 / 0.28);
-}
-
-.hud-topleft .hud-icon {
-  color: #ffd66b;
-}
-
-.hud-topleft {
-  position: absolute;
-  top: calc(10px + env(safe-area-inset-top));
-  left: calc(10px + env(safe-area-inset-left));
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-  min-width: 148px;
-}
-
-.hud-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.hud-icon {
-  width: 14px;
-  height: 14px;
-  flex: none;
-  color: var(--good);
-}
-
-.hud-bar-track {
-  position: relative;
-  flex: 1 1 auto;
-  height: 10px;
-  min-width: 60px;
-  border: 1px solid var(--ink);
-  border-radius: 999px;
-  background: var(--panel-2);
-  overflow: hidden;
-}
-
-.hud-bar-fill {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: var(--good);
-  transition: width 0.25s ease;
-}
-
-.hud-bar-fill.is-level {
-  background: var(--accent);
-}
-
-.hud-num {
-  font-size: 12px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink);
-  white-space: nowrap;
-}
-
-/* スタミナの次回回復までのカウントダウン。満タンでも幅を空けておく
-  （CLAUDE.md: レイアウトが 1px も動かないこと）。 */
-.hud-countdown {
-  display: inline-block;
-  min-width: 30px;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--muted);
-  white-space: nowrap;
-  text-align: right;
-}
-
-.hud-level-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-}
-
-.hud-level-label {
-  font-weight: 700;
-  color: var(--ink);
-  white-space: nowrap;
-}
-
-.hud-xp {
-  font-size: 10px;
-  color: var(--muted);
-  white-space: nowrap;
-}
 
 /* ---------------------------------------------------------------------
    右上: 設定・ヘルプ */
@@ -359,22 +259,6 @@ body {
 
 /* ---------------------------------------------------------------------
    エリア名バナー（中央上部・出入りだけ一瞬） */
-
-.area-banner {
-  position: absolute;
-  top: calc(64px + env(safe-area-inset-top));
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 7px 18px;
-  border: 0;
-  border-radius: 999px;
-  background: rgb(60 45 40 / 0.55);
-  backdrop-filter: blur(4px);
-  font-size: 14px;
-  font-weight: 700;
-  color: #fff;
-  white-space: nowrap;
-}
 
 /* ---------------------------------------------------------------------
    失敗トースト・レベルアップ案内 */
@@ -883,4 +767,151 @@ body {
     transition-duration: 1ms !important;
     animation-duration: 1ms !important;
   }
+}
+
+/* ---------------------------------------------------------------------
+   上部の HUD（アメーバピグの上バーを参考に）：左に顔+エリア名、右にスタミナ・島レベル・設定 */
+
+.hud-topleft-pill {
+  position: absolute;
+  top: 1.6cqw;
+  left: 1.4cqw;
+  display: flex;
+  align-items: center;
+  gap: 0.6cqw;
+}
+
+.hud-avatar {
+  width: 5cqw;
+  height: 5cqw;
+  min-width: 36px;
+  min-height: 36px;
+  border-radius: 50%;
+  background: #f4d9a8;
+  border: 0.35cqw solid #fff;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.3);
+  overflow: hidden;
+  display: block;
+}
+
+.hud-avatar img {
+  width: 100%;
+  height: 170%;
+  object-fit: cover;
+  object-position: top;
+  display: block;
+}
+
+.hud-area-name {
+  background: rgb(0 0 0 / 0.45);
+  color: #fff;
+  font-weight: 700;
+  font-size: clamp(11px, 1.5cqw, 18px);
+  padding: 0.5cqw 1.4cqw;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.hud-topright {
+  align-items: flex-start;
+  gap: 0.8cqw;
+  top: 1.2cqw;
+  right: 1.2cqw;
+}
+
+.hud-stat {
+  display: flex;
+  align-items: center;
+  gap: 0.5cqw;
+  background: rgb(0 0 0 / 0.5);
+  border-radius: 999px;
+  padding: 0.35cqw 1.4cqw 0.35cqw 0.35cqw;
+}
+
+.hud-stat-icon {
+  width: 3.6cqw;
+  height: 3.6cqw;
+  min-width: 26px;
+  min-height: 26px;
+  border-radius: 50%;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.hud-stat-icon svg {
+  width: 72%;
+  height: 72%;
+}
+
+.hud-stat-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 9cqw;
+}
+
+.hud-stat-label {
+  color: #fff;
+  font-size: clamp(8px, 1cqw, 12px);
+  line-height: 1.1;
+  text-align: right;
+}
+
+.hud-stat-bar {
+  position: relative;
+  height: clamp(11px, 1.6cqw, 20px);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.85);
+  overflow: hidden;
+}
+
+.hud-stat-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+
+.hud-stat-fill.is-stamina {
+  background: linear-gradient(#ffb04a, #ff8a1e);
+}
+
+.hud-stat-fill.is-level {
+  background: linear-gradient(#8be05a, #55b83a);
+}
+
+.hud-stat-num {
+  position: relative;
+  display: block;
+  text-align: right;
+  padding-right: 0.8cqw;
+  color: #fff;
+  font-size: clamp(9px, 1.2cqw, 15px);
+  line-height: clamp(11px, 1.6cqw, 20px);
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
+}
+
+.hud-stat-sub {
+  color: rgb(255 255 255 / 0.85);
+  font-size: clamp(8px, 0.95cqw, 11px);
+  line-height: 1.1;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* 下辺右: もちもの・もくひょう・模様替えを横に並べる（ピグの下バーの位置） */
+.hud-rightcol {
+  top: auto;
+  bottom: 1.6cqw;
+  right: 1.4cqw;
+  transform: none;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 1cqw;
+}
+
+.dev-pill {
+  bottom: 1.2cqw;
 }

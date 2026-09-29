@@ -6,10 +6,10 @@ export const TILE = 32; // 1 マス = 32 ワールドピクセル
 export const MIN_ZOOM = 0.6;
 export const MAX_ZOOM = 2.0;
 
-/** 基準の見え方：画面の横幅にちょうど 15 マス収まる大きさ（向きによらず横幅が基準）。 */
-export const TILES_ACROSS_WIDTH = 15;
+/** 基準の見え方：画面の横幅にちょうど 10 マス収まる大きさ（向きによらず横幅が基準）。 */
+export const TILES_ACROSS_WIDTH = 10;
 
-/** 基準スケール：画面の横幅に 15 マスが収まる大きさ。 */
+/** 基準スケール：画面の横幅に 10 マスが収まる大きさ。 */
 export function baseScaleFor(viewportWidthCssPx: number, _viewportHeightCssPx: number): number {
   return viewportWidthCssPx / (TILES_ACROSS_WIDTH * TILE);
 }

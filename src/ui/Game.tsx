@@ -2,11 +2,12 @@
 // 画面全体が盤面（フルブリード）で、HUD はすべて盤面の上に固定位置で浮かせる
 // （CLAUDE.md: 操作でレイアウトが 1px も動かないこと）。
 
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence } from 'motion/react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { AREAS, CROPS, FURNITURE, ISLAND_LEVEL_POINTS, NODES } from '@/game/data';
 import { store } from '@/game/store';
+import { spriteDataUrl } from '@/render/sprites';
 import type { CropId, Fail, FurnitureId, GameEvent, SkillId, StationKind } from '@/game/types';
 import { WorldView } from '@/render/WorldView';
 
@@ -72,8 +73,6 @@ function collectUnlocks(level: number): string[] {
   return unlocks;
 }
 
-const BANNER_SPRING = { type: 'spring', stiffness: 380, damping: 26 } as const;
-
 export function Game() {
   // store の版数を購読し、行動のたびに再描画する。
   useSyncExternalStore(store.subscribe, store.version, store.version);
@@ -82,12 +81,11 @@ export function Game() {
   const [decorate, setDecorate] = useState(false);
   const [failMsg, setFailMsg] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
-  const [areaBanner, setAreaBanner] = useState<string | null>(null);
+  const [areaName, setAreaName] = useState('');
   const [soundOn, setSoundOn] = useState(isSoundEnabled);
   const [hapticsOn, setHapticsOn] = useState(isHapticsEnabled);
   const failTimer = useRef<number | undefined>(undefined);
   const bannerTimer = useRef<number | undefined>(undefined);
-  const areaBannerTimer = useRef<number | undefined>(undefined);
   const lastAreaRef = useRef<string | null>(null);
 
   // スタミナ回復・作物の成長を反映するため、1 秒ごとに時計を進めて再描画する。
@@ -169,7 +167,6 @@ export function Game() {
       offFail();
       window.clearTimeout(failTimer.current);
       window.clearTimeout(bannerTimer.current);
-      window.clearTimeout(areaBannerTimer.current);
     };
   }, []);
 
@@ -195,9 +192,7 @@ export function Game() {
       const name = aId ? AREAS[aId].name : '';
       if (!name || name === lastAreaRef.current) return;
       lastAreaRef.current = name;
-      window.clearTimeout(areaBannerTimer.current);
-      setAreaBanner(name);
-      areaBannerTimer.current = window.setTimeout(() => setAreaBanner(null), 2000);
+      setAreaName(name);
     };
     checkArea();
     const id = window.setInterval(checkArea, 100);
@@ -229,6 +224,7 @@ export function Game() {
 
   return (
     <div className="field-app">
+      <div className="field-stage">
       <div className="field-map">
         <WorldView
           decorate={decorate}
@@ -240,37 +236,51 @@ export function Game() {
       </div>
 
       <div className="hud-layer">
-        {/* 左上: スタミナ・島レベル */}
-        <div className="hud-topleft panel">
-          <div className="hud-row" aria-label={`スタミナ ${stamina.value}/${stamina.max}`}>
-            <svg className="hud-icon" viewBox="0 0 12 12" aria-hidden="true">
-              <path d="M7 1 2.5 7H6l-1 4 4.5-6H6z" fill="currentColor" />
-            </svg>
-            <span className="hud-bar-track">
-              <span className="hud-bar-fill" style={{ width: `${staminaPct}%` }} />
-            </span>
-            <span className="hud-num">
-              {stamina.value}/{stamina.max}
-            </span>
-          </div>
-          <div className="hud-row">
-            <span style={{ width: 14 }} />
-            {/* 満タンでも場所は取っておく（行の高さ・幅が数値で動かないように）。 */}
-            <span className="hud-countdown" style={{ visibility: stamina.value < stamina.max ? 'visible' : 'hidden' }}>
-              {formatCountdown(stamina.value < stamina.max ? stamina.nextInMs : 0)}
-            </span>
-          </div>
-          <div className="hud-level-row">
-            <span className="hud-level-label">島Lv {islandLevel}</span>
-            <span className="hud-bar-track">
-              <span className="hud-bar-fill is-level" style={{ width: `${levelProgress * 100}%` }} />
-            </span>
-          </div>
-          <div className="hud-xp">経験値 {save.xp}</div>
+        {/* 左上: 顔アイコン + いるエリアの名前 */}
+        <div className="hud-topleft-pill">
+          <span className="hud-avatar">
+            <img src={spriteDataUrl('player_down0')} alt="" />
+          </span>
+          <span className="hud-area-name">{areaName}</span>
         </div>
 
-        {/* 右上: 設定・ヘルプ */}
+        {/* 右上: スタミナ・島レベル・設定・ヘルプ */}
         <div className="hud-topright">
+          <div className="hud-stat" aria-label={`スタミナ ${stamina.value}/${stamina.max}`}>
+            <span className="hud-stat-icon is-heart">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 21s-8-5.2-8-11a4.6 4.6 0 0 1 8-3 4.6 4.6 0 0 1 8 3c0 5.8-8 11-8 11z" fill="#ff6a3d" stroke="#fff" strokeWidth="1.6" />
+              </svg>
+            </span>
+            <span className="hud-stat-body">
+              <span className="hud-stat-label">スタミナ</span>
+              <span className="hud-stat-bar">
+                <span className="hud-stat-fill is-stamina" style={{ width: `${staminaPct}%` }} />
+                <span className="hud-stat-num">
+                  {stamina.value} / {stamina.max}
+                </span>
+              </span>
+              <span className="hud-stat-sub" style={{ visibility: stamina.value < stamina.max ? 'visible' : 'hidden' }}>
+                スタミナ回復まで {formatCountdown(stamina.value < stamina.max ? stamina.nextInMs : 0)}
+              </span>
+            </span>
+          </div>
+          <div className="hud-stat">
+            <span className="hud-stat-icon is-palm">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 22V11" stroke="#a8743c" strokeWidth="2.4" strokeLinecap="round" />
+                <path d="M12 11C8 11 4 9 3 5c4-1 7 1 9 6zm0 0c4 0 8-2 9-6-4-1-7 1-9 6zm0 0c-1-4 0-7 3-9 1 4 0 7-3 9zm0 0c1-4 0-7-3-9-1 4 0 7 3 9z" fill="#5cc44a" stroke="#2f7a2c" strokeWidth="0.8" />
+              </svg>
+            </span>
+            <span className="hud-stat-body">
+              <span className="hud-stat-label">島レベル</span>
+              <span className="hud-stat-bar">
+                <span className="hud-stat-fill is-level" style={{ width: `${levelProgress * 100}%` }} />
+                <span className="hud-stat-num">Lv {islandLevel}</span>
+              </span>
+              <span className="hud-stat-sub">経験値 {save.xp}</span>
+            </span>
+          </div>
           <button className="icon-btn" aria-label="あそびかた" onClick={() => setSheet({ kind: 'help' })}>
             <HelpIcon />
           </button>
@@ -311,20 +321,6 @@ export function Game() {
           テスト用
         </button>
 
-        <AnimatePresence>
-          {areaBanner ? (
-            <motion.div
-              key={areaBanner}
-              className="area-banner"
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0, transition: BANNER_SPRING }}
-              exit={{ opacity: 0, transition: { duration: 0.25 } }}
-            >
-              {areaBanner}
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
-
         {failMsg ? <div className="fail-toast">{failMsg}</div> : null}
         {banner ? (
           <div className="levelup-banner">
@@ -333,6 +329,8 @@ export function Game() {
             ))}
           </div>
         ) : null}
+      </div>
+
       </div>
 
       <AnimatePresence>
