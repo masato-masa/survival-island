@@ -33,15 +33,15 @@ describe('terrainCore', () => {
     for (let i = 3; i < data.length; i += 4) expect(data[i]).toBe(255);
   });
 
-  it('水は青系・草は緑系に塗られ、砂も草原になる', () => {
+  it('水は青系・草は緑系・砂は黄系に塗られる（水に接する陸は砂浜）', () => {
     const [wr, , wb] = pixel(data, 2, 0);
     expect(wb).toBeGreaterThan(wr);
-    const [gr, gg, gb] = pixel(data, 3, 3);
+    const [gr, gg, gb] = pixel(data, 3, 3); // 水から 2 マス以上離れた草
     expect(gg).toBeGreaterThan(gr);
     expect(gg).toBeGreaterThan(gb);
     const [sr, sg, sb] = pixel(data, 0, 2);
-    expect(sg).toBeGreaterThan(sr);
-    expect(sg).toBeGreaterThan(sb);
+    expect(sr).toBeGreaterThan(sb + 40);
+    expect(sg).toBeGreaterThan(sb + 30);
   });
 
   it('同じ入力からは同じ絵が出る（決定的）', () => {
