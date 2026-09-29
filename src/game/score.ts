@@ -17,15 +17,17 @@ export function islandPoints(world: World, save: SaveState): IslandPoints {
   const seriesCounts = new Map<AreaId, Partial<Record<SeriesId, number>>>();
   let base = 0;
 
-  for (const [slotId, furnitureId] of Object.entries(save.placements)) {
-    const slot = world.slots.find((s) => s.id === slotId);
+  for (const [anchor, furnitureId] of Object.entries(save.placements)) {
     const def = furnitureId ? FURNITURE_BY_ID[furnitureId] : undefined;
-    if (!slot || !def) continue;
+    if (!def) continue;
+    const [xs, ys] = anchor.split(',');
+    const area = world.area[Number(ys) * world.width + Number(xs)];
+    if (!area) continue;
     base += def.points;
-    byArea[slot.area] = (byArea[slot.area] ?? 0) + def.points;
-    const counts = seriesCounts.get(slot.area) ?? {};
+    byArea[area] = (byArea[area] ?? 0) + def.points;
+    const counts = seriesCounts.get(area) ?? {};
     counts[def.series] = (counts[def.series] ?? 0) + 1;
-    seriesCounts.set(slot.area, counts);
+    seriesCounts.set(area, counts);
   }
 
   let bonus = 0;

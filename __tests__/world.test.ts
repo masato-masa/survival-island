@@ -39,18 +39,8 @@ describe('buildWorld', () => {
     }
   });
 
-  it('ランドマークの配置スペースは 2x2 が開けた土地に 1 つだけ', () => {
-    const landmarks = world.slots.filter((s) => s.attr === 'landmark' && s.w === 2 && s.h === 2);
-    expect(landmarks.length).toBe(1);
-    expect(landmarks[0]?.area).toBe('plaza');
-    expect(landmarks[0]?.h).toBe(2);
-  });
-
-  it('配置スペースがエリアごとに数えられる', () => {
-    expect(world.slots.length).toBeGreaterThan(0);
-    for (const slot of world.slots) {
-      expect(AREA_ORDER).toContain(slot.area);
-    }
+  it('配置スペースは無い（家具は歩ける全マスに自由に置く）', () => {
+    expect((world as unknown as { slots?: unknown }).slots).toBeUndefined();
   });
 
   it('水以外のすべてのマスがどこかのエリアに属する', () => {

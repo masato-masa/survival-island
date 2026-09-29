@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
 
 import { store } from '@/game/store';
-import { slotAt } from '@/game/world';
+import { isBuildable, placementAt } from '@/game/rules';
 import type { Fail, GameEvent, StationKind, Target } from '@/game/types';
 
 import {
@@ -27,7 +27,7 @@ import { PointerController } from '@/input/pointer';
 export interface WorldViewProps {
   decorate: boolean;
   onSignTap: (plotId: string) => void;
-  onSlotTap: (slotId: string) => void;
+  onSlotTap: (x: number, y: number) => void;
   onStationTap: (kind: StationKind) => void;
   paused: boolean;
 }
@@ -106,10 +106,9 @@ export function WorldView(props: WorldViewProps): JSX.Element {
       const decorate = propsRef.current.decorate;
       if (decorate) {
         const w = screenToWorld(screenX, screenY, camera, viewport);
-        // slotAt は複数マスにまたがるスロット（4×4 のランドマークなど）にも対応した
-        // マルチタイル検索（世界の再構築側が提供する）。
-        const slot = slotAt(store.world, Math.floor(w.x / TILE), Math.floor(w.y / TILE));
-        if (slot) propsRef.current.onSlotTap(slot.id);
+        const tx = Math.floor(w.x / TILE);
+        const ty = Math.floor(w.y / TILE);
+        if (isBuildable(store.world, store.get(), tx, ty) || placementAt(store.get(), tx, ty)) propsRef.current.onSlotTap(tx, ty);
         return;
       }
       const target = store.target();

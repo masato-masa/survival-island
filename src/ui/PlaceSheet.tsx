@@ -1,7 +1,8 @@
-// 配置（模様替えモードでスペースをタップしたときのシート）:
-// 現在置いている家具のしまう操作と、同じ属性の持っている家具の一覧。
+// 配置（模様替えモードでマスをタップしたときのシート）:
+// そのマスの家具をしまう操作と、持っている家具の一覧。家具はどの種類でも、置けるマスなら自由に置ける。
 
-import { FURNITURE_BY_ID, SLOT_ATTRS } from '@/game/data';
+import { FURNITURE_BY_ID } from '@/game/data';
+import { canPlaceAt, placementAt } from '@/game/rules';
 import type { FurnitureId, SaveState, World } from '@/game/types';
 
 import { Sheet } from './Sheets';
@@ -9,27 +10,25 @@ import { Sheet } from './Sheets';
 export function PlaceSheet({
   world,
   save,
-  slotId,
+  x,
+  y,
   onPlace,
   onClose,
 }: {
   world: World;
   save: SaveState;
-  slotId: string;
+  x: number;
+  y: number;
   onPlace: (furnitureId: FurnitureId | null) => void;
   onClose: () => void;
 }) {
-  const slot = world.slots.find((s) => s.id === slotId);
-  if (!slot) return null;
-
-  const placedId = save.placements[slotId] ?? null;
+  const anchor = placementAt(save, x, y);
+  const placedId = anchor ? save.placements[anchor] ?? null : null;
   const placedDef = placedId ? FURNITURE_BY_ID[placedId] : null;
-  const owned = Object.entries(save.furniture).filter(
-    ([id, count]) => count > 0 && FURNITURE_BY_ID[id]?.attr === slot.attr,
-  );
+  const owned = Object.entries(save.furniture).filter(([id, count]) => count > 0 && FURNITURE_BY_ID[id]);
 
   return (
-    <Sheet title="配置" subtitle={SLOT_ATTRS[slot.attr]} onClose={onClose}>
+    <Sheet title="配置" subtitle="このマスに置く家具を選ぶ" onClose={onClose}>
       {placedDef ? (
         <div className="sheet-row static place-current">
           <span>{placedDef.name}</span>
@@ -42,16 +41,18 @@ export function PlaceSheet({
       )}
 
       {owned.length === 0 ? (
-        <p className="sheet-text">この属性の家具を持っていません。クラフトで作れます。</p>
+        <p className="sheet-text">持っている家具がありません。クラフトで作れます。</p>
       ) : (
         <div className="sheet-list">
           {owned.map(([id, count]) => {
             const def = FURNITURE_BY_ID[id];
             if (!def) return null;
+            // 2×2 のランドマークは、このマスを左上にして 4 マス空いているときだけ置ける
+            const ok = canPlaceAt(world, save, anchor ? Number(anchor.split(',')[0]) : x, anchor ? Number(anchor.split(',')[1]) : y, id);
             return (
-              <button key={id} className="sheet-row" onClick={() => onPlace(id)}>
+              <button key={id} className="sheet-row" disabled={!ok} onClick={() => onPlace(id)}>
                 <span>{def.name}</span>
-                <span className="place-owned-count">×{count}</span>
+                <span className="place-owned-count">{ok ? `×${count}` : `×${count}（ここには置けません）`}</span>
               </button>
             );
           })}

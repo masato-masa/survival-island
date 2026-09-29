@@ -14,14 +14,13 @@ import type {
   MapNode,
   NodeKind,
   SaveState,
-  SlotAttr,
   StationKind,
   Target,
   World,
 } from '@/game/types';
 import { CROPS, FURNITURE_BY_ID, FURNITURE_DISPLAY_SIZE, ITEMS, NODES, STATIONS } from '@/game/data';
 import { cropProgress } from '@/game/time';
-import { nodeAlive } from '@/game/rules';
+import { isBuildable, nodeAlive, placementRect } from '@/game/rules';
 import { store } from '@/game/store';
 
 import { followFactor, screenToWorld, TILE, TILT_DEG, type CameraState, type Viewport, worldToScreen } from './camera';
@@ -223,17 +222,6 @@ const GRID_LINE = 'rgba(221, 237, 201, 0.85)';
 // 見た目だけの置物（ゲームロジック上は存在しない）。座標はタイル単位、スプライトの下辺中央がここに来る。
 const RUINS_ARCH = { x: 7.5, y: 15 };
 const PLAZA_CAMPFIRE = { x: 15.5, y: 18 };
-
-const SLOT_COLORS: Record<SlotAttr, string> = {
-  bench: '#c97b4a',
-  landmark: '#d64550',
-  path: '#b8a06a',
-  workbench: '#5d8fc9',
-  kitchen: '#e0a72e',
-  desk: '#7a5ac9',
-  decor: '#3fae7a',
-  fence: '#7a8a3f',
-};
 
 const NODE_TO_STUMP: Partial<Record<NodeKind, SpriteName>> = {
   tree: 'stump' as SpriteName,
@@ -446,14 +434,13 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
   }
 
   if (state.terrain && state.decorate) {
-    // 模様替え中：歩ける地面に、斜め視点で台形になるマス目を敷く（水の上には敷かない）
+    // 模様替え中：家具を置けるマス（歩ける地面。水・畑・資源の上は除く）に、斜め視点で台形になるマス目を敷く
     ctx.save();
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = GRID_LINE;
     for (let ty = minTy; ty <= maxTy; ty++) {
       for (let tx = minTx; tx <= maxTx; tx++) {
-        const g = world.ground[ty * world.width + tx];
-        if (g === undefined || g === 'water') continue;
+        if (!isBuildable(world, save, tx, ty)) continue;
         const rgb = (tx + ty) % 2 === 0 ? DIAMOND_LIGHT : DIAMOND_DARK;
         ctx.fillStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.92)`;
         polygonPath(ctx, tileQuad(tx, ty, 1, 1, camera, viewport));
@@ -500,30 +487,6 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     }
   }
 
-  // --- decorate: スロット枠（台形）とアイコン ---
-  if (state.decorate) {
-    for (const slot of world.slots) {
-      const sw = slot.w ?? 1;
-      const sh = slot.h ?? 1;
-      const quad = tileQuad(slot.x, slot.y, sw, sh, camera, viewport);
-      ctx.save();
-      ctx.lineWidth = 2.5;
-      ctx.strokeStyle = SLOT_COLORS[slot.attr];
-      polygonPath(ctx, quad, 0.06);
-      ctx.stroke();
-      ctx.restore();
-      const placed = save.placements[slot.id];
-      if (!placed) {
-        const c = worldToScreen((slot.x + sw / 2) * TILE, (slot.y + sh / 2) * TILE, camera, viewport);
-        const spr = getSprite(`slot_${slot.attr}` as SpriteName);
-        const k = sw > 1 ? 0.9 : 0.55;
-        const w = spr.w * c.k * k;
-        const h = spr.h * c.k * k;
-        ctx.drawImage(spr.canvas, c.x - w / 2, c.y - h / 2, w, h);
-      }
-    }
-  }
-
   // --- y ソート対象（資源・宝箱・置いた家具・飾り・プレイヤー）。sortY は足元のタイル y。 ---
   type Drawable = { y: number; draw: () => void };
   const drawables: Drawable[] = [];
@@ -531,7 +494,9 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
   for (const node of world.nodes) {
     if (node.x < minTx - 1 || node.x > maxTx + 1 || node.y < minTy - 3 || node.y > maxTy + 1) continue;
     const alive = nodeAlive(save, node, now);
-    if (alive) {
+    if (alive && save.nodes[node.id]?.stump) {
+      drawables.push({ y: node.y + 1, draw: () => drawAtTile('stump' as SpriteName, node.x, node.y) });
+    } else if (alive) {
       drawables.push({
         y: node.y + 1,
         draw: () => drawNode(node, now, state, drawOccludable, drawAtTile),
@@ -574,30 +539,27 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     });
   }
 
-  if (!state.decorate) {
-    for (const [slotId, furnitureId] of Object.entries(save.placements)) {
-      const slot = world.slots.find((s) => s.id === slotId);
-      if (!slot) continue;
-      const sw = slot.w ?? 1;
-      const sh = slot.h ?? 1;
-      if (furnitureId === 'woodPath' || furnitureId === 'stonePath') {
-        // 道の家具は地面にぴったり敷く 1 マスの絵（台形に貼る）
-        drawables.push({
-          y: slot.y - 100, // 地面と同じ高さ。他のすべての物の下
-          draw: () => {
-            const spr = getGroundFurnitureSprite(furnitureId, slot.x, slot.y);
-            const iw = (spr.canvas as { width: number }).width || spr.w;
-            const ih = (spr.canvas as { height: number }).height || spr.h;
-            drawGroundImage(ctx, spr.canvas, iw, ih, slot.x * TILE, slot.y * TILE, (slot.x + 1) * TILE, (slot.y + 1) * TILE, camera, viewport);
-          },
-        });
-        continue;
-      }
+  // --- 置いた家具（左上のマス "x,y" から size×size を占める） ---
+  for (const [anchor, furnitureId] of Object.entries(save.placements)) {
+    const r = placementRect(anchor, furnitureId);
+    if (r.x < minTx - 2 || r.x > maxTx + 2 || r.y < minTy - 3 || r.y > maxTy + 2) continue;
+    if (furnitureId === 'woodPath' || furnitureId === 'stonePath') {
+      // 道の家具は地面にぴったり敷く 1 マスの絵（台形に貼る）
       drawables.push({
-        y: slot.y + sh,
-        draw: () => drawFurnitureAtWorld(furnitureId, (slot.x + sw / 2) * TILE, (slot.y + sh) * TILE),
+        y: r.y - 100, // 地面と同じ高さ。他のすべての物の下
+        draw: () => {
+          const spr = getGroundFurnitureSprite(furnitureId, r.x, r.y);
+          const iw = (spr.canvas as { width: number }).width || spr.w;
+          const ih = (spr.canvas as { height: number }).height || spr.h;
+          drawGroundImage(ctx, spr.canvas, iw, ih, r.x * TILE, r.y * TILE, (r.x + 1) * TILE, (r.y + 1) * TILE, camera, viewport);
+        },
       });
+      continue;
     }
+    drawables.push({
+      y: r.y + r.size,
+      draw: () => drawFurnitureAtWorld(furnitureId, (r.x + r.size / 2) * TILE, (r.y + r.size) * TILE),
+    });
   }
 
   // --- 地面の飾り（花・草・睡蓮・葦。可視範囲だけ描く） ---

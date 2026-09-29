@@ -24,7 +24,7 @@ export type SkillId =
 
 export type SkillBranch = 'axe' | 'pick' | 'farm' | 'common';
 
-/** 配置スペースの属性。家具はどれか 1 つの属性を持ち、同じ属性のスペースにだけ置ける。 */
+/** 家具の種類（表示・分類用）。置ける場所の制限には使わない（どのマスにも自由に置ける）。 */
 export type SlotAttr =
   | 'bench' // ベンチ
   | 'landmark' // ランドマーク
@@ -130,17 +130,6 @@ export interface Decor {
   solid: boolean;
 }
 
-export interface Slot {
-  id: string; // "x,y"
-  x: number;
-  y: number;
-  attr: SlotAttr;
-  area: AreaId;
-  /** 占めるマス数。ふつうは 1×1、中央のランドマークは 4×4。id と x,y は左上。 */
-  w: number;
-  h: number;
-}
-
 export interface Plot {
   id: string; // 看板の "x,y"
   sign: { x: number; y: number };
@@ -182,7 +171,6 @@ export interface World {
   ground: Ground[]; // index = y * width + x
   area: (AreaId | null)[]; // 水は null
   nodes: MapNode[];
-  slots: Slot[];
   plots: Plot[];
   chests: Chest[];
   stations: Station[];
@@ -196,6 +184,8 @@ export interface World {
 export interface NodeState {
   hp: number; // 残り体力
   destroyedAt: number | null; // 壊れた時刻。null なら立っている
+  /** 木を切り倒して幹（切り株）になっている。幹を切ると木は消える。 */
+  stump?: boolean;
 }
 
 export interface CropTile {
@@ -226,7 +216,7 @@ export interface SaveState {
   learnedRecipes: FurnitureId[]; // 宝箱などで覚えたもの（島レベルで覚えるものは含めない）
   nodes: Record<string, NodeState>; // 叩かれた・壊れた資源だけ入れる
   plots: Record<string, PlotState>;
-  placements: Record<string, FurnitureId>; // slotId → 家具
+  placements: Record<string, FurnitureId>; // "x,y"（家具の左上のマス）→ 家具
   maxPoints: number; // 島ポイントの過去最大
   chestsOpened: string[];
   seenIntro: boolean;
@@ -260,7 +250,7 @@ export type Fail =
   | 'levelCap' // 島レベルの上限
   | 'maxLevel'
   | 'noXp'
-  | 'wrongAttr';
+  | 'cannotPlace';
 
 export type Result =
   | { ok: true; events: GameEvent[] }

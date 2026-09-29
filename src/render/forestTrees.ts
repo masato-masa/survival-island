@@ -49,7 +49,6 @@ export function buildGroundDecor(world: World): TreeInstance[] {
     }
   };
   for (const n of world.nodes) block(n.x, n.y, 1, 1, 0);
-  for (const s of world.slots) block(s.x, s.y, s.w ?? 1, s.h ?? 1, 1);
   for (const p of world.plots) {
     block(p.sign.x, p.sign.y);
     for (const t of p.tiles) block(t.x, t.y);

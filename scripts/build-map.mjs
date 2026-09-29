@@ -338,7 +338,8 @@ const TERRAIN_ORDER = [':', '=', 'D', 'F', '.', ',', 'S', '#', '~'];
 
 function coarsen() {
   // 岩（R H）と崩れた石・瓦礫（B r）はフィールドに置かない（岩は今後追加する洞窟で出す）。
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if ('RHBr'.includes(tile[y][x])) tile[y][x] = '.';
+  // 配置スペース（b o d e k w p）とランドマーク用地（L）は廃止した（家具は歩ける全マスに自由に置く）。
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if ('RHBrbodekwpL'.includes(tile[y][x])) tile[y][x] = '.';
   const cw = W / 2;
   const ch = H / 2;
   const ct = Array.from({ length: ch }, () => Array(cw).fill('~'));

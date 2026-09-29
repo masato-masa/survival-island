@@ -1,7 +1,7 @@
 // クラフト: 覚えているレシピを先に並べる。未取得は「島Lv N で覚える」または
 // 「どこかの宝箱で見つかる」を添えてグレーにする。素材の過不足は色で示す。
 
-import { FURNITURE, SERIES, SLOT_ATTRS } from '@/game/data';
+import { FURNITURE, SERIES } from '@/game/data';
 import { knownRecipes } from '@/game/rules';
 import type { FurnitureId, ItemId, SaveState } from '@/game/types';
 import { spriteDataUrl, type SpriteName } from '@/render/sprites';
@@ -37,7 +37,7 @@ export function CraftSheet({
               <div className="craft-info">
                 <div className="craft-name">{f.name}</div>
                 <div className="craft-meta">
-                  {SLOT_ATTRS[f.attr]} ・ {SERIES[f.series]} ・ {f.points}pt
+                  {SERIES[f.series]} ・ {f.points}pt
                 </div>
                 {isKnown ? (
                   <div className="cost-chips">

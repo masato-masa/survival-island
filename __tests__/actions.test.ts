@@ -10,8 +10,8 @@ import {
   openChest,
   place,
 } from '../src/game/actions';
-import { isAreaOpen } from '../src/game/rules';
-import { freshSave, world } from './helpers';
+import { isAreaOpen, isBuildable } from '../src/game/rules';
+import { freeTiles, freshSave, world } from './helpers';
 
 function findCenterWithNeighbour(tiles: { x: number; y: number }[]): { x: number; y: number } | undefined {
   const keys = new Set(tiles.map((t) => `${t.x},${t.y}`));
@@ -37,10 +37,11 @@ describe('hitNode: 木を叩く', () => {
     expect(save.xp).toBe(1);
     expect(save.nodes[tree.id]?.hp).toBe(NODES.tree.hp - damageForLevel(0));
 
-    // 2 発目で壊れる（hp=2, ダメージ1ずつ）
+    // 2 発目で切り倒れて幹になる（hp=2, ダメージ1ずつ）。木材が出て、木はまだ消えない
     const r2 = hitNode(world, save, tree, 0);
     expect(r2.ok).toBe(true);
-    expect(save.nodes[tree.id]?.destroyedAt).toBe(0);
+    expect(save.nodes[tree.id]?.stump).toBe(true);
+    expect(save.nodes[tree.id]?.destroyedAt).toBeNull();
     expect(save.inventory.wood).toBe(NODES.tree.drops.wood);
     if (r2.ok) {
       expect(r2.events.some((e) => e.type === 'broke')).toBe(true);
@@ -81,8 +82,8 @@ describe('境界を壊すとエリアが開く', () => {
     let now = 0;
     let openedEventSeen = false;
     for (const border of borders) {
-      // hp=3, ダメージ 1（axePower Lv1）なので 3 発必要
-      for (let i = 0; i < 3; i++) {
+      // hp=3, ダメージ 1（axePower Lv1）なので木が倒れるまで 3 発、幹を切るのに 2 発
+      for (let i = 0; i < 5; i++) {
         const r = hitNode(world, save, border, now);
         expect(r.ok).toBe(true);
         if (r.ok && r.events.some((e) => e.type === 'areaOpened')) openedEventSeen = true;
@@ -152,63 +153,79 @@ describe('クラフト', () => {
 });
 
 describe('配置', () => {
-  it('属性が違うと置けない', () => {
+  it('水の上・資源の上には置けない', () => {
     const save = freshSave(0);
-    save.furniture.woodFence = 1;
-    const benchSlot = world.slots.find((s) => s.attr === 'bench');
-    if (!benchSlot) throw new Error('no bench slot');
-    const r = place(world, save, benchSlot.id, 'woodFence');
+    save.furniture.woodFence = 2;
+    const waterIdx = world.ground.indexOf('water');
+    const r = place(world, save, waterIdx % world.width, Math.floor(waterIdx / world.width), 'woodFence');
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toBe('wrongAttr');
+    if (!r.ok) expect(r.reason).toBe('cannotPlace');
+    const node = world.nodes[0];
+    if (!node) throw new Error('no node');
+    expect(place(world, save, node.x, node.y, 'woodFence').ok).toBe(false);
+  });
+
+  it('どの種類の家具も、空いている歩けるマスなら自由に置ける', () => {
+    const save = freshSave(0);
+    save.furniture.woodBench = 1;
+    save.furniture.woodDesk = 1;
+    const [a, b] = freeTiles(save, 2);
+    if (!a || !b) throw new Error('no free tiles');
+    expect(place(world, save, a.x, a.y, 'woodBench').ok).toBe(true);
+    expect(place(world, save, b.x, b.y, 'woodDesk').ok).toBe(true);
   });
 
   it('置く・入れ替える・しまう', () => {
     const save = freshSave(0);
     save.furniture.woodFence = 1;
     save.furniture.stoneFence = 1;
-    const fenceSlot = world.slots.find((s) => s.attr === 'fence');
-    if (!fenceSlot) throw new Error('no fence slot');
+    const [t] = freeTiles(save, 1);
+    if (!t) throw new Error('no free tile');
 
-    const r1 = place(world, save, fenceSlot.id, 'woodFence');
-    expect(r1.ok).toBe(true);
-    expect(save.placements[fenceSlot.id]).toBe('woodFence');
+    expect(place(world, save, t.x, t.y, 'woodFence').ok).toBe(true);
+    expect(save.placements[t.id]).toBe('woodFence');
     expect(save.furniture.woodFence).toBe(0);
 
     // 入れ替え：元の家具は持ち物に戻る
-    const r2 = place(world, save, fenceSlot.id, 'stoneFence');
-    expect(r2.ok).toBe(true);
-    expect(save.placements[fenceSlot.id]).toBe('stoneFence');
+    expect(place(world, save, t.x, t.y, 'stoneFence').ok).toBe(true);
+    expect(save.placements[t.id]).toBe('stoneFence');
     expect(save.furniture.woodFence).toBe(1);
     expect(save.furniture.stoneFence).toBe(0);
 
     // しまう
-    const r3 = place(world, save, fenceSlot.id, null);
-    expect(r3.ok).toBe(true);
-    expect(save.placements[fenceSlot.id]).toBeUndefined();
+    expect(place(world, save, t.x, t.y, null).ok).toBe(true);
+    expect(save.placements[t.id]).toBeUndefined();
     expect(save.furniture.stoneFence).toBe(1);
+  });
+
+  it('ランドマークは 2x2 を占め、重なる場所には置けない', () => {
+    const save = freshSave(0);
+    save.furniture.woodTower = 1;
+    save.furniture.woodFence = 1;
+    let anchor: { x: number; y: number } | null = null;
+    for (let y = 0; y < world.height - 1 && !anchor; y++) {
+      for (let x = 0; x < world.width - 1 && !anchor; x++) {
+        if ([[0, 0], [1, 0], [0, 1], [1, 1]].every(([dx, dy]) => isBuildable(world, save, x + dx!, y + dy!))) anchor = { x, y };
+      }
+    }
+    if (!anchor) throw new Error('no 2x2 space');
+    expect(place(world, save, anchor.x, anchor.y, 'woodTower').ok).toBe(true);
+    expect(place(world, save, anchor.x + 1, anchor.y + 1, 'woodFence').ok).toBe(false);
+    // 塔の右下のマスをタップして「しまう」と塔がしまわれる
+    expect(place(world, save, anchor.x + 1, anchor.y + 1, null).ok).toBe(true);
+    expect(save.placements[`${anchor.x},${anchor.y}`]).toBeUndefined();
   });
 
   it('統一ボーナスと maxPoints は下がらない', () => {
     const save = freshSave(0);
-    const fenceArea = world.slots.find((s) => s.attr === 'fence')?.area;
-    const fenceSlots = world.slots.filter((s) => s.attr === 'fence' && s.area === fenceArea);
-    expect(fenceSlots.length).toBeGreaterThanOrEqual(3);
+    const tiles = freeTiles(save, 3);
+    expect(tiles.length).toBe(3);
     save.furniture.woodFence = 3;
-
-    for (let i = 0; i < 3; i++) {
-      const slot = fenceSlots[i];
-      if (!slot) throw new Error('missing slot');
-      const r = place(world, save, slot.id, 'woodFence');
-      expect(r.ok).toBe(true);
-    }
+    for (const t of tiles) expect(place(world, save, t.x, t.y, 'woodFence').ok).toBe(true);
     // 3 個で wood シリーズのボーナス +2 が入る（1個1点 x3 + ボーナス2 = 5）
     expect(save.maxPoints).toBeGreaterThanOrEqual(5);
     const afterPlacing = save.maxPoints;
-
-    // 1 つしまうとボーナスが消えて現在の得点は下がるが、maxPoints は下がらない
-    const firstSlot = fenceSlots[0];
-    if (!firstSlot) throw new Error('missing slot');
-    place(world, save, firstSlot.id, null);
+    place(world, save, tiles[0]!.x, tiles[0]!.y, null);
     expect(save.maxPoints).toBe(afterPlacing);
   });
 });
@@ -297,5 +314,45 @@ describe('畑: 植える → 育成中 → 収穫', () => {
       expect(planted && planted.type === 'planted' ? planted.tiles.length : 0).toBe(2);
     }
     expect(save.stamina.value).toBe(0);
+  });
+});
+
+describe('木は 切る → 幹 → 消える', () => {
+  it('木を切ると幹になり、幹を切ると消える', () => {
+    const save = freshSave(0);
+    const node = world.nodes.find((n) => n.kind === 'tree');
+    if (!node) throw new Error('no tree');
+    let now = 0;
+    const hit = () => {
+      const r = hitNode(world, save, node, now);
+      now += 60_000; // クールダウン・スタミナ回復ぶん進める
+      save.stamina = { value: 30, updatedAt: now };
+      return r;
+    };
+    // 幹になるまで
+    while (!save.nodes[node.id]?.stump) expect(hit().ok).toBe(true);
+    expect(save.nodes[node.id]?.destroyedAt).toBeNull();
+    expect(save.inventory.wood ?? 0).toBeGreaterThan(0);
+    // 幹を切ると消える
+    while (save.nodes[node.id]?.destroyedAt == null) expect(hit().ok).toBe(true);
+    expect(save.nodes[node.id]?.destroyedAt).not.toBeNull();
+  });
+
+  it('森の木は最高段階の斧でしか切れず、消えた跡地には家具を置ける', () => {
+    const save = freshSave(0);
+    const node = world.nodes.find((n) => n.kind === 'forestTree' && n.x > 0);
+    if (!node) throw new Error('no forest tree');
+    const r = hitNode(world, save, node, 0);
+    expect(r.ok).toBe(false);
+    save.skills.axePower = 5;
+    let now = 0;
+    while (save.nodes[node.id]?.destroyedAt == null) {
+      const hr = hitNode(world, save, node, now);
+      expect(hr.ok).toBe(true);
+      now += 60_000;
+      save.stamina = { value: 30, updatedAt: now };
+    }
+    expect(isBuildable(world, save, node.x, node.y)).toBe(true);
+    expect(isAreaOpen(world, save, 'plaza')).toBe(true);
   });
 });

@@ -28,7 +28,7 @@ export interface GameStore {
   chooseCrop(plotId: string, crop: CropId | null): Result;
   buySkill(id: SkillId): Result;
   craft(id: FurnitureId): Result;
-  place(slotId: string, furnitureId: FurnitureId | null): Result;
+  place(x: number, y: number, furnitureId: FurnitureId | null): Result;
   markIntroSeen(): void;
   stamina(): { value: number; max: number; nextInMs: number };
   islandLevel(): number;
@@ -229,8 +229,8 @@ export function createStore(opts: CreateStoreOptions = {}): GameStore {
       return runAction(Actions.craft(save, id, now()));
     },
 
-    place(slotId, furnitureId) {
-      return runAction(Actions.place(world, save, slotId, furnitureId));
+    place(x, y, furnitureId) {
+      return runAction(Actions.place(world, save, x, y, furnitureId));
     },
 
     markIntroSeen() {

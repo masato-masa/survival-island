@@ -149,7 +149,7 @@ export function effectiveScale(cam: CameraState, baseScale: number): number {
 // 立っている物（木・家具・人）は、足元の投影点に「まっすぐ立てた板」として、その地点の倍率 k で描く。
 
 /** カメラの傾き（真上から手前へ）。0 で真上、90° で真横。 */
-export const TILT_DEG = 30;
+export const TILT_DEG = 38;
 const TILT_SIN = Math.sin((TILT_DEG * Math.PI) / 180);
 const TILT_COS = Math.cos((TILT_DEG * Math.PI) / 180);
 /** カメラから焦点までの距離（ワールド px）。小さいほど遠近が強い。 */

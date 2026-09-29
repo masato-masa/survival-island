@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { AREAS, CROPS, FURNITURE, ISLAND_LEVEL_POINTS, NODES } from '@/game/data';
 import { store } from '@/game/store';
+import { placementAt } from '@/game/rules';
 import { spriteDataUrl } from '@/render/sprites';
 import type { CropId, Fail, FurnitureId, GameEvent, SkillId, StationKind } from '@/game/types';
 import { WorldView } from '@/render/WorldView';
@@ -34,7 +35,7 @@ type SheetState =
   | { kind: 'craft' }
   | { kind: 'goal' }
   | { kind: 'sign'; plotId: string }
-  | { kind: 'place'; slotId: string }
+  | { kind: 'place'; x: number; y: number }
   | { kind: 'stationInfo'; station: StationKind }
   | { kind: 'help' }
   | { kind: 'settings' }
@@ -57,7 +58,7 @@ const FAIL_MESSAGES: Record<Fail, string> = {
   levelCap: '島レベルの上限です',
   maxLevel: 'もう最大まで上げています',
   noXp: '経験値が足りません',
-  wrongAttr: 'この場所には置けません',
+  cannotPlace: 'この場所には置けません',
 };
 
 /** 島レベルが上がったときに何が増えたかを一言でまとめる。 */
@@ -207,8 +208,11 @@ export function Game() {
     store.chooseCrop(plotId, crop);
     closeSheet();
   };
-  const place = (slotId: string, furnitureId: FurnitureId | null) => {
-    store.place(slotId, furnitureId);
+  const place = (x: number, y: number, furnitureId: FurnitureId | null) => {
+    // すでに家具が載っているマスなら、その家具の左上マスを基準に入れ替える
+    const anchor = placementAt(store.get(), x, y);
+    const [ax, ay] = anchor ? anchor.split(',').map(Number) : [x, y];
+    store.place(ax ?? x, ay ?? y, furnitureId);
     closeSheet();
   };
 
@@ -230,7 +234,7 @@ export function Game() {
           decorate={decorate}
           paused={sheet !== null}
           onSignTap={(plotId) => setSheet({ kind: 'sign', plotId })}
-          onSlotTap={(slotId) => setSheet({ kind: 'place', slotId })}
+          onSlotTap={(x, y) => setSheet({ kind: 'place', x, y })}
           onStationTap={onStationTap}
         />
       </div>
@@ -369,8 +373,9 @@ export function Game() {
             key="place"
             world={world}
             save={save}
-            slotId={sheet.slotId}
-            onPlace={(furnitureId) => place(sheet.slotId, furnitureId)}
+            x={sheet.x}
+            y={sheet.y}
+            onPlace={(furnitureId) => place(sheet.x, sheet.y, furnitureId)}
             onClose={closeSheet}
           />
         ) : null}

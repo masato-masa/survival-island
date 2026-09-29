@@ -2,9 +2,9 @@
 // マップの記号の意味は data.ts の MAP_LEGEND を見る。
 // マップと AREA_MAP そのものは map.ts（scripts/build-map.mjs の生成物）から来る。
 
-import { AREAS, CHEST_RECIPES, SLOT_CHARS, STATION_CHARS } from './data';
+import { AREAS, CHEST_RECIPES, STATION_CHARS } from './data';
 import { AREA_MAP, MAP } from './map';
-import type { AreaId, Chest, Decor, DecorKind, Ground, MapNode, NodeKind, Plot, Slot, Station, World } from './types';
+import type { AreaId, Chest, Decor, DecorKind, Ground, MapNode, NodeKind, Plot, Station, World } from './types';
 
 /** "x,y" 形式のキーを作る。 */
 export const key = (x: number, y: number): string => `${x},${y}`;
@@ -255,35 +255,6 @@ function buildFrom(map: string[], areaMap: string[]): World {
     stations.push({ id: key(x, y), x, y, kind: 'housePlot', area: a });
   }
 
-  // --- 配置スペース ---
-  const slots: Slot[] = [];
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const ch = at(x, y);
-      const attr = SLOT_CHARS[ch];
-      if (!attr) continue;
-      const a = getArea(x, y);
-      if (!a) continue;
-      slots.push({ id: key(x, y), x, y, attr, area: a, w: 1, h: 1 });
-    }
-  }
-  // ランドマーク（4x4）：'L' の連結成分ごとに 1 つ
-  const landmarkComps = connectedComponents(width, height, at, (ch) => ch === 'L');
-  for (const comp of landmarkComps) {
-    const { minX, minY, maxX, maxY } = bboxOf(comp);
-    const a = getArea(minX, minY);
-    if (!a) continue;
-    slots.push({
-      id: key(minX, minY),
-      x: minX,
-      y: minY,
-      attr: 'landmark',
-      area: a,
-      w: maxX - minX + 1,
-      h: maxY - minY + 1,
-    });
-  }
-
   // --- 飾り（歩けない瓦礫・柱、歩ける瓦礫、商船） ---
   const decor: Decor[] = [];
   const pushDecor = (x: number, y: number, w: number, h: number, kind: DecorKind, solid: boolean): void => {
@@ -304,7 +275,7 @@ function buildFrom(map: string[], areaMap: string[]): World {
     pushDecor(minX, minY, maxX - minX + 1, maxY - minY + 1, 'ship', true);
   }
 
-  return { width, height, ground: resolvedGround, area, nodes, slots, plots, chests, stations, decor, start };
+  return { width, height, ground: resolvedGround, area, nodes, plots, chests, stations, decor, start };
 }
 
 /** テスト用に小さな独立マップを渡すとき、area は省略できる（全マス beach 扱いにする）。 */
@@ -323,9 +294,4 @@ let cached: World | null = null;
 export function getWorld(): World {
   if (!cached) cached = buildWorld();
   return cached;
-}
-
-/** そのマス (x, y) を占める配置スペースを返す（w×h の多マス対応）。render/UI から使う。 */
-export function slotAt(world: World, x: number, y: number): Slot | undefined {
-  return world.slots.find((s) => x >= s.x && x < s.x + s.w && y >= s.y && y < s.y + s.h);
 }

@@ -88,7 +88,7 @@ export const NODES: Record<NodeKind, NodeDef> = {
   },
   borderTree: { kind: 'borderTree', name: '境界の大木', hp: 3, drops: { wood: 4 }, respawnMs: null, tool: 'axe' },
   borderRock: { kind: 'borderRock', name: '境界の大岩', hp: 3, drops: { stone: 4 }, respawnMs: null, tool: 'pick' },
-  forestTree: { kind: 'forestTree', name: '森の木', hp: 4, drops: { wood: 3 }, respawnMs: 30 * 60 * 1000, tool: 'axe' },
+  forestTree: { kind: 'forestTree', name: '森の木', hp: 4, drops: { wood: 3 }, respawnMs: null, tool: 'axe' },
 };
 
 /** 太い木・硬い岩を叩くのに必要な段階。境界は AREAS 側で決める。 */
@@ -182,6 +182,13 @@ export const SERIES: Record<SeriesId, string> = {
   stone: '石造りシリーズ',
   garden: 'ガーデンシリーズ',
 };
+
+/** 幹（切り株）の体力と、切り取ったときの木材。木は切ると幹になり、幹を切ると消える。 */
+export const STUMP_HP = 2;
+export const STUMP_DROPS = { wood: 1 } as const;
+
+/** 家具が占めるマス数（1 辺）。ランドマークだけ 2×2、ほかは 1×1。 */
+export const furnitureSize = (attr: SlotAttr): number => (attr === 'landmark' ? 2 : 1);
 
 export const SLOT_ATTRS: Record<SlotAttr, string> = {
   bench: 'ベンチ',
@@ -310,16 +317,5 @@ export const STATIONS: Record<StationKind, { name: string; hint: string }> = {
   workbench: { name: '作業台', hint: '家具を作る' },
   housePlot: { name: '家の跡地', hint: 'いつか ここに家を建てられそうだ' },
   dock: { name: '船着き場', hint: 'ときどき商船が来るらしい（交易は準備中）' },
-};
-
-export const SLOT_CHARS: Record<string, SlotAttr> = {
-  b: 'bench',
-  l: 'landmark',
-  p: 'path',
-  w: 'workbench',
-  k: 'kitchen',
-  d: 'desk',
-  o: 'decor',
-  e: 'fence',
 };
 

@@ -5,7 +5,7 @@ import { buySkill, craft, hitNode, place } from '../src/game/actions';
 import { canHit, isAreaOpen, islandLevel, nodeAlive } from '../src/game/rules';
 import { applyRespawns } from '../src/game/time';
 import { newSave } from '../src/game/save';
-import { world } from './helpers';
+import { freeTiles, world } from './helpers';
 import type { ItemId, MapNode, NodeKind, Result, SaveState } from '../src/game/types';
 
 /**
@@ -108,9 +108,9 @@ describe('進行シミュレーション: 4 エリア開放 + 島レベル3', ()
         if (kinds.length > 0) ensureItem(item, amount, kinds);
       }
       act((n) => craft(save, def.id, n));
-      const slot = world.slots.find((s) => s.attr === def.attr && !save.placements[s.id]);
-      if (!slot) throw new Error(`空きスペースが無い: ${def.attr}`);
-      const r = place(world, save, slot.id, def.id);
+      const [slot] = freeTiles(save, 1);
+      if (!slot) throw new Error('空きマスが無い');
+      const r = place(world, save, slot.x, slot.y, def.id);
       if (!r.ok) throw new Error(`配置に失敗: ${r.reason}`);
     }
     expect(islandLevel(save)).toBeGreaterThanOrEqual(2);
@@ -132,9 +132,9 @@ describe('進行シミュレーション: 4 エリア開放 + 島レベル3', ()
         if (kinds.length > 0) ensureItem(item, amount, kinds);
       }
       act((n) => craft(save, def.id, n));
-      const slot = world.slots.find((s) => s.attr === def.attr && !save.placements[s.id]);
-      if (!slot) throw new Error(`空きスペースが無い: ${def.attr}`);
-      const r = place(world, save, slot.id, def.id);
+      const [slot] = freeTiles(save, 1);
+      if (!slot) throw new Error('空きマスが無い');
+      const r = place(world, save, slot.x, slot.y, def.id);
       if (!r.ok) throw new Error(`配置に失敗: ${r.reason}`);
     }
 

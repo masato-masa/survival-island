@@ -1,7 +1,7 @@
 // プレイヤー位置からアクション対象を選ぶ。歩けるかの当たり判定もここ。
 
 import { FURNITURE_BY_ID, TARGET_ORIGIN_UP, TARGET_RADIUS } from './data';
-import { canHit, nodeAlive } from './rules';
+import { canHit, nodeAlive, placementAt } from './rules';
 import { isReady } from './time';
 import { key, worldIndex } from './world';
 import type { Dir, Fail, SaveState, Target, World } from './types';
@@ -151,11 +151,10 @@ export function isSolidTile(world: World, save: SaveState, x: number, y: number,
     if (!d.solid) continue;
     if (x >= d.x && x < d.x + d.w && y >= d.y && y < d.y + d.h) return true;
   }
-  for (const slot of world.slots) {
-    if (x < slot.x || x >= slot.x + slot.w || y < slot.y || y >= slot.y + slot.h) continue;
-    const furnitureId = save.placements[slot.id];
-    if (!furnitureId) continue;
-    const def = FURNITURE_BY_ID[furnitureId];
+  const anchor = placementAt(save, x, y);
+  if (anchor) {
+    const furnitureId = save.placements[anchor];
+    const def = furnitureId ? FURNITURE_BY_ID[furnitureId] : undefined;
     if (def && def.attr !== 'path') return true;
   }
   return false;
