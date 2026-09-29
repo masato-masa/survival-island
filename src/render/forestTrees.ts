@@ -1,13 +1,5 @@
-// 森（forest 地形）に立つ「本物の木」のインスタンスを生成する。
-//
-// 前は terrain.ts がクラウン（円）を地面レイヤーに直接焼いていたが、それだと
-// プレイヤーが森のすぐ北を歩いても常に木の下に隠れてしまう（y ソートできない）。
-// ここでは木を renderer.ts の y ソート対象と同じ「スプライト」として扱えるように、
-// タイル単位ではなく tile 単位の浮動小数座標を持つインスタンス配列を作るだけにする。
-// 実際の描画（gen_oak / gen_pine の baked sprite を貼る）は renderer.ts が行う。
-//
-// 決定的な乱数（ワールドから作るシード）でジッタさせるので、同じ World からは
-// 何度呼んでも同じ配置になる。
+// 地面の飾り（花・草・睡蓮・葦）を散らす。ゲームロジックには存在しない見た目だけの物体で、当たり判定は無い。
+// 森の木は資源（ノード）として world に入っているので、ここでは扱わない。
 
 import type { World } from '@/game/types';
 import type { SpriteName } from './sprites';
@@ -25,57 +17,6 @@ function hash2i(x: number, y: number, seed: number): number {
   let h = (x * 374761393 + y * 668265263 + seed * 2147483647) | 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
-
-function smoothstep(t: number): number {
-  return t * t * (3 - 2 * t);
-}
-
-function valueNoise2D(x: number, y: number, seed: number, wavelength: number): number {
-  const gx = x / wavelength;
-  const gy = y / wavelength;
-  const ix = Math.floor(gx);
-  const iy = Math.floor(gy);
-  const fx = smoothstep(gx - ix);
-  const fy = smoothstep(gy - iy);
-  const v00 = hash2i(ix, iy, seed);
-  const v10 = hash2i(ix + 1, iy, seed);
-  const v01 = hash2i(ix, iy + 1, seed);
-  const v11 = hash2i(ix + 1, iy + 1, seed);
-  const a = v00 + (v10 - v00) * fx;
-  const b = v01 + (v11 - v01) * fx;
-  return a + (b - a) * fy;
-}
-
-function isForest(world: World, tx: number, ty: number): boolean {
-  return world.ground[ty * world.width + tx] === 'forest' && tx >= 0 && ty >= 0 && tx < world.width && ty < world.height;
-}
-
-const PINE_CLUSTER_WAVELEN = 3.2; // タイル単位。この波長のノイズが低い場所を「小ぶりの木のかたまり」にする
-const PINE_CLUSTER_THRESHOLD = 0.32;
-
-function pickSpecies(tx: number, ty: number): SpriteName {
-  const n = valueNoise2D(tx, ty, 501, PINE_CLUSTER_WAVELEN);
-  return (n < PINE_CLUSTER_THRESHOLD ? 'wallPine' : 'wallOak') as SpriteName;
-}
-
-/**
- * 森のマス 1 つにつき木を 1 本、マスの中心（下辺）にぴったり置く。マスに沿って並ぶので格子状に見える。
- * 周りが全部森のマスは他の木に隠れて見えないので省く。
- */
-export function buildForestTrees(world: World): TreeInstance[] {
-  const out: TreeInstance[] = [];
-  for (let ty = 0; ty < world.height; ty++) {
-    for (let tx = 0; tx < world.width; tx++) {
-      if (!isForest(world, tx, ty)) continue;
-      let inner = true;
-      for (let dy = -1; dy <= 1 && inner; dy++)
-        for (let dx = -1; dx <= 1; dx++) if (!isForest(world, tx + dx, ty + dy)) { inner = false; break; }
-      if (inner) continue;
-      out.push({ x: tx + 0.5, y: ty + 1, sprite: pickSpecies(tx, ty) });
-    }
-  }
-  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -148,8 +89,7 @@ export function buildGroundDecor(world: World): TreeInstance[] {
       if (isOpenGround(g) && hash2i(tx, ty, 711) < DECO_DENSITY_TUFT && r >= DECO_DENSITY_GRASS) {
         sprite = hash2i(tx, ty, 712) < 0.5 ? 'deco_tuft0' : 'deco_tuft1';
       } else if (isOpenGround(g) && r < DECO_DENSITY_GRASS) {
-        const pick = hash2i(tx, ty, 702);
-        sprite = pick < 0.08 ? 'deco_mossy' : pick < 0.2 ? 'deco_pebble' : DECO_PLANTS[Math.floor(hash2i(tx, ty, 703) * DECO_PLANTS.length)]!;
+        sprite = DECO_PLANTS[Math.floor(hash2i(tx, ty, 703) * DECO_PLANTS.length)]!;
       } else continue;
       // マスの中心にぴったり置く（マスに沿った配置）
       out.push({ x: tx + 0.5, y: ty + 0.8, sprite });

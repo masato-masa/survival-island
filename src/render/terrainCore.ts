@@ -93,8 +93,9 @@ const GRASS_B: RGB = [104, 166, 62];
 const GRASS_C: RGB = [148, 206, 96];
 const FOREST_A: RGB = [136, 197, 102];
 const FOREST_B: RGB = [122, 185, 90];
-const SAND_A: RGB = [240, 224, 172];
-const SAND_B: RGB = [229, 208, 152];
+const SAND_A: RGB = [242, 226, 172];
+const SAND_B: RGB = [230, 210, 152];
+const SAND_WET: RGB = [206, 184, 132];
 const DIRT_A: RGB = [228, 193, 142];
 const DIRT_B: RGB = [216, 178, 126];
 const PAVE_A: RGB = [214, 210, 200];
@@ -103,8 +104,6 @@ const SOIL_A: RGB = [122, 80, 54];
 const SOIL_B: RGB = [158, 110, 76];
 const WATER_SHALLOW: RGB = [92, 190, 196];
 const WATER_DEEP: RGB = [24, 92, 120];
-const CLIFF_TOP: RGB = [156, 112, 66];
-const CLIFF_BOTTOM: RGB = [86, 56, 36];
 const FOAM: RGB = [246, 253, 252];
 const WOOD_TONES: RGB[] = [
   [214, 172, 116],
@@ -118,16 +117,27 @@ const WOOD_TONES: RGB[] = [
 
 export function classify(width: number, height: number, ground: readonly string[]): Uint8Array {
   const out = new Uint8Array(width * height);
+  const nearWater = (x: number, y: number): boolean => {
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx >= 0 && ny >= 0 && nx < width && ny < height && ground[ny * width + nx] === 'water') return true;
+      }
+    return false;
+  };
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const g = ground[y * width + x];
-      // 地面は今のところ「草原・水・桟橋・畑」だけ。砂・土の道・石畳・家の跡地・森の下草はすべて草原として塗る。
+      // 地面は「草原・砂浜・水・桟橋・畑」。土の道・石畳・家の跡地・森の下草は草原として塗る。
+      // 水に接する陸（8 近傍に水がある）は砂浜にする。
       let k: number;
       switch (g) {
         case 'water': k = K.Water; break;
         case 'dock': k = K.Dock; break;
         case 'soil': k = K.Soil; break;
-        default: k = K.Grass;
+        case 'sand': k = K.Sand; break;
+        default: k = nearWater(x, y) ? K.Sand : K.Grass;
       }
       out[y * width + x] = k;
     }
@@ -350,22 +360,8 @@ export function paintRows(st: TerrainState, fromY: number, toY: number, data: Ui
           const foam = 1 - smoothstep(margin / 0.3);
           mix(rgbA, FOAM, foam * 0.9, rgbA);
         } else if (second === K.Water && best !== K.Water && secondW > 0) {
-          // 水が陸の南側にあるときは、岸を茶色の崖の壁として見せる（アメーバピグの島の縁）。
-          const wSouth = (cls[t01] === K.Water ? w01 : 0) + (cls[t11] === K.Water ? w11 : 0);
-          const wNorth = (cls[t00] === K.Water ? w00 : 0) + (cls[t10] === K.Water ? w10 : 0);
-          if (wSouth - wNorth > 0.2) {
-            const t = smoothstep(margin / (EDGE_SOFT * 2.4));
-            mix(CLIFF_BOTTOM, CLIFF_TOP, t, rgbB);
-            // ざらつき（縦のすじ）
-            const streak = (valueNoise2D(px * 3, py, 97, 0.6 * TERRAIN_PX) - 0.5) * 22;
-            rgbA[0] = rgbB[0] + streak;
-            rgbA[1] = rgbB[1] + streak * 0.7;
-            rgbA[2] = rgbB[2] + streak * 0.5;
-          } else {
-            rgbA[0] *= 0.94;
-            rgbA[1] *= 0.95;
-            rgbA[2] *= 0.95;
-          }
+          // 波打ち際の濡れ砂
+          mix(rgbA, SAND_WET, (1 - smoothstep(margin / 0.24)) * 0.6, rgbA);
         }
 
         // --- 道の縁: 内側に細い濃い縁取り ---

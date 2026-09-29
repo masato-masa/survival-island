@@ -88,12 +88,15 @@ export const NODES: Record<NodeKind, NodeDef> = {
   },
   borderTree: { kind: 'borderTree', name: '境界の大木', hp: 3, drops: { wood: 4 }, respawnMs: null, tool: 'axe' },
   borderRock: { kind: 'borderRock', name: '境界の大岩', hp: 3, drops: { stone: 4 }, respawnMs: null, tool: 'pick' },
+  forestTree: { kind: 'forestTree', name: '森の木', hp: 4, drops: { wood: 3 }, respawnMs: 30 * 60 * 1000, tool: 'axe' },
 };
 
 /** 太い木・硬い岩を叩くのに必要な段階。境界は AREAS 側で決める。 */
 export const NODE_REQUIRES: Partial<Record<NodeKind, { skill: SkillId; level: number }>> = {
   bigTree: { skill: 'axePower', level: 1 },
   hardRock: { skill: 'pickHard', level: 1 },
+  // 森の木は、いちばん高い段階の斧（パワーアップの最大）でしか切れない。
+  forestTree: { skill: 'axePower', level: 5 },
 };
 
 /** 1 回叩いたときに減る体力。パワー系スキル 2 段階ごとに +1。 */

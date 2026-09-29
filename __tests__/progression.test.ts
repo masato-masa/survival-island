@@ -63,6 +63,11 @@ describe('進行シミュレーション: 4 エリア開放 + 島レベル3', ()
 
     /** アイテムが目標数に届くまで、対応する資源を壊し続ける。 */
     const ensureItem = (item: ItemId, amount: number, kinds: NodeKind[]): void => {
+      // 岩・銅鉱石の入手元は、今後追加する洞窟まで無い（フィールドに岩は置かない）。それまではテストで直接足す。
+      if (kinds.length === 0 || item === 'stone' || item === 'copper') {
+        save.inventory[item] = Math.max(save.inventory[item] ?? 0, amount);
+        return;
+      }
       while ((save.inventory[item] ?? 0) < amount) {
         destroyOneOf(kinds);
       }

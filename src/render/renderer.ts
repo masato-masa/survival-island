@@ -1,6 +1,10 @@
 // Canvas 描画。draw(ctx, state) を毎フレーム呼ぶだけで盤面全体を描く。
 // トースト・パーティクルは時間で消えるアニメーションなので、モジュール内の
 // effects オブジェクトが state を持つ（store.onEvents から push してもらう）。
+//
+// 視点は「斜めから見下ろす」遠近法（camera.ts）。地面は画面の横線 1 本ぶんずつの帯に切って
+// 奥ほど細く貼る（＝マスが台形になる）。立っている物は足元の投影点にまっすぐ立てて、
+// その地点の倍率 k で描く。y（足元の奥行き）順に並べるので、背の高い物は後ろのマスを隠す。
 
 import type {
   DecorKind,
@@ -20,11 +24,13 @@ import { cropProgress } from '@/game/time';
 import { nodeAlive } from '@/game/rules';
 import { store } from '@/game/store';
 
-import { followFactor, TILE, type CameraState, type Viewport, worldToScreen } from './camera';
+import { followFactor, screenToWorld, TILE, TILT_DEG, type CameraState, type Viewport, worldToScreen } from './camera';
 import { getGroundFurnitureSprite, getSprite, type SpriteName } from './sprites';
 import type { PaintedTerrain } from './terrain';
 import { TERRAIN_PX } from './terrainCore';
 import type { TreeInstance } from './forestTrees';
+
+const TILT_COS = Math.cos((TILT_DEG * Math.PI) / 180);
 
 // ---------------------------------------------------------------------------
 // 描画に渡す状態
@@ -47,9 +53,7 @@ export interface RenderState {
   stick: { anchor: Vec2; finger: Vec2 } | null;
   /** 事前描画した地面レイヤー（WorldView がロード時に焼いて渡す）。まだ無ければ null。 */
   terrain: PaintedTerrain | null;
-  /** 森タイルに撒いた木のインスタンス（WorldView が一度だけ生成して渡す）。 */
-  forestTrees: TreeInstance[];
-  /** 草地に散らした花・草・小石（見た目だけ。WorldView が一度だけ生成して渡す）。 */
+  /** 草地・水面・岸に置く花・草・睡蓮など（見た目だけ。WorldView が一度だけ生成して渡す）。 */
   groundDecor: TreeInstance[];
 }
 
@@ -76,6 +80,8 @@ interface Toast {
 
 const PARTICLE_LIFE_MS = 500;
 const TOAST_LIFE_MS = 900;
+
+const isStoneKind = (k: NodeKind) => k === 'rock' || k === 'hardRock' || k === 'borderRock';
 
 class Effects {
   particles: Particle[] = [];
@@ -105,13 +111,11 @@ class Effects {
     for (const ev of events) {
       switch (ev.type) {
         case 'hit': {
-          const isStone = ev.kind === 'rock' || ev.kind === 'hardRock' || ev.kind === 'borderRock';
-          this.spawnParticles((ev.x + 0.5) * TILE, (ev.y + 0.5) * TILE, (isStone ? 'fx_dust' : 'fx_leaf') as SpriteName, now, 4);
+          this.spawnParticles((ev.x + 0.5) * TILE, (ev.y + 0.6) * TILE, (isStoneKind(ev.kind) ? 'fx_dust' : 'fx_leaf') as SpriteName, now, 4);
           break;
         }
         case 'broke': {
-          const isStone = ev.kind === 'rock' || ev.kind === 'hardRock' || ev.kind === 'borderRock';
-          this.spawnParticles((ev.x + 0.5) * TILE, (ev.y + 0.5) * TILE, (isStone ? 'fx_dust' : 'fx_leaf') as SpriteName, now, 6);
+          this.spawnParticles((ev.x + 0.5) * TILE, (ev.y + 0.6) * TILE, (isStoneKind(ev.kind) ? 'fx_dust' : 'fx_leaf') as SpriteName, now, 6);
           const parts = Object.entries(ev.drops)
             .filter(([, n]) => (n ?? 0) > 0)
             .map(([id, n]) => `${ITEMS[id as ItemId]?.name ?? id} +${n}`);
@@ -127,12 +131,11 @@ class Effects {
           break;
         }
         case 'xp': {
-          this.pushToast(`+${ev.amount} EXP`, store.world.start.x * TILE, store.world.start.y * TILE, now);
+          this.pushToast(`+${ev.amount} EXP`, store.get().player.x * TILE, store.get().player.y * TILE, now);
           break;
         }
         case 'areaOpened': {
-          const areaName = ev.area;
-          this.pushToast(`${areaName} がひらけた！`, -1, -1, now, true);
+          this.pushToast(`${ev.area} がひらけた！`, -1, -1, now, true);
           break;
         }
         case 'chest': {
@@ -155,12 +158,11 @@ class Effects {
 export const effects = new Effects();
 
 // ---------------------------------------------------------------------------
-// Stardew 風の「見え隠れ」：プレイヤーが木の梢の後ろ（北側）に重なったら半透明にする。
-// 木・柱・モノリスのような背の高いオブジェクトは、プレイヤーが幹より奥（北）にいて
-// かつスプライト同士の矩形が重なるときだけ対象。個体ごとに現在の透明度を持ち、
-// 目標値へ 150ms のイージングで近づける（対象を跨いでも key で状態を引き継ぐ）。
+// 見え隠れ：プレイヤーが背の高い物（木・柱）の後ろに隠れたら、その物を半透明にする。
+// 判定は画面上の矩形の重なり（斜めの視点では、奥にいる人が手前の木の梢に隠れる）。
+// 個体ごとに現在の透明度を持ち、150ms のイージングで目標値へ近づける。
 
-const OCCLUSION_ALPHA = 0.45;
+const OCCLUSION_ALPHA = 0.42;
 const OCCLUSION_HALF_LIFE_SEC = 0.15;
 const occlusionAlpha = new Map<string, number>();
 let lastFrameNow: number | null = null;
@@ -176,22 +178,11 @@ function rectsOverlap(a: Rect, b: Rect): boolean {
   return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 }
 
-/** key ごとの現在の透明度を更新して返す。anchorX/anchorY はスプライトの下辺中央（ワールド px）。 */
-function updateOcclusionAlpha(
-  key: string,
-  sprite: SpriteName,
-  anchorX: number,
-  anchorY: number,
-  playerRect: Rect,
-  playerBaseY: number,
-  easeFactor: number,
-): number {
-  const spr = getSprite(sprite);
-  const rect: Rect = { left: anchorX - spr.w / 2, right: anchorX + spr.w / 2, top: anchorY - spr.h, bottom: anchorY };
-  const behind = playerBaseY < anchorY; // プレイヤーの足元が対象の根元より奥（北）
+function occlusionFor(key: string, rect: Rect, footWorldY: number, playerWorldY: number, playerRect: Rect, ease: number): number {
+  const behind = playerWorldY < footWorldY; // プレイヤーの足元が対象の根元より奥（北）
   const target = behind && rectsOverlap(playerRect, rect) ? OCCLUSION_ALPHA : 1;
   const prev = occlusionAlpha.get(key) ?? 1;
-  const next = prev + (target - prev) * easeFactor;
+  const next = prev + (target - prev) * ease;
   occlusionAlpha.set(key, next);
   return next;
 }
@@ -205,21 +196,7 @@ function hash2(x: number, y: number): number {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
 }
 
-function round(n: number): number {
-  return Math.round(n);
-}
-
-const FALLBACK_COLOR: Record<string, string> = {
-  water: '#6cc3dc',
-  grass: '#93cc6f',
-  sand: '#f0e0ac',
-  soil: '#7a5036',
-  dirt: '#e4c18e',
-  paving: '#d6d2c8',
-  forest: '#74b454',
-  dock: '#d6ac74',
-  foundation: '#e4c18e',
-};
+const OCEAN = '#1b5f7c'; // 地図の外（海）
 
 const DECOR_SPRITE: Record<DecorKind, SpriteName> = {
   rubble: 'decor_rubble' as SpriteName,
@@ -234,83 +211,11 @@ const STATION_SPRITE: Partial<Record<StationKind, SpriteName>> = {
   dock: 'station_dock' as SpriteName,
 };
 
-// ---------------------------------------------------------------------------
-// 模様替え（配置）モードの床：参考画像（pigg 風の家の庭）を実測したダイヤ格子。
-// 「もようがえ」中だけ、地面の代わりにこの格子を敷く（このゲームは斜めではなく縦横なので、格子も正方形）（水面は敷かず、下の地面テクスチャを
-// そのまま見せる＝池には置けないのが一目で分かる）。マス目 1 つ＝タイル 1 個に対応させ、
-// 4 辺の中点を結んだ菱形を並べるので、隣同士は角で接し継ぎ目のない格子になる。
-
 const DIAMOND_LIGHT: readonly [number, number, number] = [147, 204, 111];
 const DIAMOND_DARK: readonly [number, number, number] = [119, 184, 81];
-const DIAMOND_LINE = 'rgba(221, 237, 201, 0.85)';
+const GRID_LINE = 'rgba(221, 237, 201, 0.85)';
 
-function drawDecorateFloorGrid(
-  ctx: CanvasRenderingContext2D,
-  world: World,
-  camera: CameraState,
-  viewport: Viewport,
-  scale: number,
-  minTx: number,
-  minTy: number,
-  maxTx: number,
-  maxTy: number
-): void {
-  ctx.save();
-  ctx.lineWidth = Math.max(1, scale * 0.9);
-  ctx.strokeStyle = DIAMOND_LINE;
-  for (let ty = minTy; ty <= maxTy; ty++) {
-    for (let tx = minTx; tx <= maxTx; tx++) {
-      const g = world.ground[ty * world.width + tx];
-      if (g === undefined || g === 'water') continue;
-      const tl = worldToScreen(tx * TILE, ty * TILE, camera, viewport);
-      const size = TILE * scale;
-      const light = (tx + ty) % 2 === 0;
-      const rgb = light ? DIAMOND_LIGHT : DIAMOND_DARK;
-      ctx.fillStyle = `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
-      ctx.fillRect(tl.x, tl.y, size, size);
-      ctx.strokeRect(tl.x, tl.y, size, size);
-    }
-  }
-  ctx.restore();
-}
-
-/** 水面の動く演出（やわらかいきらめき）。可視範囲の水タイルだけを軽く処理する。渚の泡は地面レイヤーに焼いてある。 */
-function drawWaterAnimated(
-  ctx: CanvasRenderingContext2D,
-  world: World,
-  camera: CameraState,
-  viewport: Viewport,
-  scale: number,
-  now: number,
-  minTx: number,
-  minTy: number,
-  maxTx: number,
-  maxTy: number,
-  _isLand: (x: number, y: number) => boolean
-): void {
-  for (let ty = minTy; ty <= maxTy; ty++) {
-    for (let tx = minTx; tx <= maxTx; tx++) {
-      if (world.ground[ty * world.width + tx] !== 'water') continue;
-      const seed = hash2(tx, ty);
-      if (seed > 0.45) continue; // 水面の半分弱のタイルにだけ
-      const s = worldToScreen(tx * TILE, ty * TILE, camera, viewport);
-      const size = TILE * scale;
-      const t1 = (now / 2600 + seed * 3) % 1;
-      const glow = Math.max(0, Math.sin(t1 * Math.PI * 2));
-      if (glow < 0.08) continue;
-      const gx = s.x + (0.2 + 0.6 * ((seed * 7) % 1)) * size;
-      const gy = s.y + (0.2 + 0.6 * ((seed * 13) % 1)) * size;
-      ctx.fillStyle = `rgba(255,255,255,${(glow * 0.5).toFixed(2)})`;
-      ctx.beginPath();
-      ctx.ellipse(gx, gy, size * 0.16 * (0.6 + glow * 0.4), size * 0.045 * (0.6 + glow * 0.4), 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-}
-
-// 見た目だけの置物（ゲームロジック上は存在しない）。座標はタイル単位、スプライトの
-// 下辺中央がここに来る。遺跡入口のアーチは西の通路をまたぐ位置、かがり火は広場の
-// 作業台のそばに置く。
+// 見た目だけの置物（ゲームロジック上は存在しない）。座標はタイル単位、スプライトの下辺中央がここに来る。
 const RUINS_ARCH = { x: 7.5, y: 15 };
 const PLAZA_CAMPFIRE = { x: 15.5, y: 18 };
 
@@ -328,6 +233,7 @@ const SLOT_COLORS: Record<SlotAttr, string> = {
 const NODE_TO_STUMP: Partial<Record<NodeKind, SpriteName>> = {
   tree: 'stump' as SpriteName,
   bigTree: 'stump' as SpriteName,
+  forestTree: 'stump' as SpriteName,
   rock: 'rubble' as SpriteName,
   hardRock: 'rubble' as SpriteName,
 };
@@ -336,10 +242,91 @@ const NODE_TOOL: Record<NodeKind, 'axe' | 'pick'> = {
   tree: 'axe',
   bigTree: 'axe',
   borderTree: 'axe',
+  forestTree: 'axe',
   rock: 'pick',
   hardRock: 'pick',
   borderRock: 'pick',
 };
+
+/** 背が高く、後ろに人が隠れる物。 */
+const TALL_NODES = new Set<NodeKind>(['tree', 'bigTree', 'borderTree', 'forestTree']);
+
+// ---------------------------------------------------------------------------
+// 地面（平らな画像）を斜め視点に貼る。画面の横線 BAND px ぶんの帯ごとに、その高さの地面を切り出して
+// 奥ほど細く（倍率 k に合わせて）描く。terrain 全体でも、1 マスぶんの道タイルでも同じ関数で貼る。
+
+const BAND = 2;
+
+function drawGroundImage(
+  ctx: CanvasRenderingContext2D,
+  image: CanvasImageSource,
+  imgW: number,
+  imgH: number,
+  wx0: number,
+  wy0: number,
+  wx1: number,
+  wy1: number,
+  camera: CameraState,
+  viewport: Viewport,
+): void {
+  // この矩形が画面のどの高さに映るか
+  const yTopScreen = worldToScreen(wx0, wy0, camera, viewport).y;
+  const yBotScreen = worldToScreen(wx0, wy1, camera, viewport).y;
+  const from = Math.max(0, Math.floor(Math.min(yTopScreen, yBotScreen)));
+  const to = Math.min(viewport.heightCssPx, Math.ceil(Math.max(yTopScreen, yBotScreen)));
+  const ww = wx1 - wx0;
+  const wh = wy1 - wy0;
+  for (let y = from; y < to; y += BAND) {
+    const yb = Math.min(to, y + BAND);
+    const top = screenToWorld(0, y, camera, viewport).y;
+    const bot = screenToWorld(0, yb, camera, viewport).y;
+    const sy0w = Math.max(wy0, top);
+    const sy1w = Math.min(wy1, bot);
+    if (sy1w <= sy0w) continue;
+    const left = screenToWorld(0, (y + yb) / 2, camera, viewport).x;
+    const right = screenToWorld(viewport.widthCssPx, (y + yb) / 2, camera, viewport).x;
+    const sx0w = Math.max(wx0, left);
+    const sx1w = Math.min(wx1, right);
+    if (sx1w <= sx0w) continue;
+    const a = worldToScreen(sx0w, sy0w, camera, viewport);
+    const b = worldToScreen(sx1w, sy1w, camera, viewport);
+    ctx.drawImage(
+      image,
+      ((sx0w - wx0) / ww) * imgW,
+      ((sy0w - wy0) / wh) * imgH,
+      ((sx1w - sx0w) / ww) * imgW,
+      ((sy1w - sy0w) / wh) * imgH,
+      a.x,
+      a.y,
+      b.x - a.x,
+      b.y - a.y + 0.6,
+    );
+  }
+}
+
+/** タイル (tx,ty) の四隅を画面へ投影した台形。 */
+function tileQuad(tx: number, ty: number, w: number, h: number, camera: CameraState, viewport: Viewport): Vec2[] {
+  return [
+    worldToScreen(tx * TILE, ty * TILE, camera, viewport),
+    worldToScreen((tx + w) * TILE, ty * TILE, camera, viewport),
+    worldToScreen((tx + w) * TILE, (ty + h) * TILE, camera, viewport),
+    worldToScreen(tx * TILE, (ty + h) * TILE, camera, viewport),
+  ];
+}
+
+function polygonPath(ctx: CanvasRenderingContext2D, pts: Vec2[], inset = 0): void {
+  // inset: 中心へ寄せる割合（0〜0.5）
+  const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+  const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+  ctx.beginPath();
+  pts.forEach((p, i) => {
+    const x = p.x + (cx - p.x) * inset;
+    const y = p.y + (cy - p.y) * inset;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.closePath();
+}
 
 // ---------------------------------------------------------------------------
 // メイン描画
@@ -348,56 +335,37 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
   const { world, save, now, camera, viewport, dpr } = state;
   currentCtx = ctx;
 
-  // 見え隠れイージング用の dt（フレーム間の壁時計時間）。
   const occlusionDtSec = lastFrameNow == null ? 0 : Math.max(0, Math.min(0.2, (now - lastFrameNow) / 1000));
   lastFrameNow = now;
   const occlusionEase = followFactor(occlusionDtSec, OCCLUSION_HALF_LIFE_SEC);
 
-  // プレイヤーのスプライト矩形（見え隠れ判定用）。歩行フレームで縦横は大きく変わらないので
-  // frame=0 の絵で近似してよい。
-  const playerSpr0 = getSprite(`player_${save.player.dir}0` as SpriteName);
-  const playerRect: Rect = {
-    left: save.player.x * TILE - playerSpr0.w / 2,
-    right: save.player.x * TILE + playerSpr0.w / 2,
-    top: save.player.y * TILE - playerSpr0.h,
-    bottom: save.player.y * TILE,
-  };
+  const W = viewport.widthCssPx;
+  const H = viewport.heightCssPx;
 
   ctx.save();
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, viewport.widthCssPx, viewport.heightCssPx);
+  ctx.fillStyle = OCEAN;
+  ctx.fillRect(0, 0, W, H);
 
-  const scale = camera.zoom * viewport.baseScale;
+  // 見えるマスの範囲：画面の四隅を地面へ逆投影して囲む（奥の左右の隅がいちばん広い）
+  const corners = [screenToWorld(0, 0, camera, viewport), screenToWorld(W, 0, camera, viewport), screenToWorld(0, H, camera, viewport), screenToWorld(W, H, camera, viewport)];
+  const minTx = Math.max(0, Math.floor(Math.min(...corners.map((c) => c.x)) / TILE) - 1);
+  const maxTx = Math.min(world.width - 1, Math.ceil(Math.max(...corners.map((c) => c.x)) / TILE) + 1);
+  const minTy = Math.max(0, Math.floor(Math.min(...corners.map((c) => c.y)) / TILE) - 1);
+  const maxTy = Math.min(world.height - 1, Math.ceil(Math.max(...corners.map((c) => c.y)) / TILE) + 3);
 
-  // 見えるマスの範囲だけ計算する。anchorX/anchorY（既定 0.5）でカメラ中心が画面の
-  // どこに固定されているかが変わるので、左右・上下で画面端までの距離が非対称になりうる
-  // （pigg 風の低いカメラは anchorY > 0.5 でキャラを画面下寄りに置く）。中央対称決め打ちだと
-  // 実際に見えている側の端の物体が描画対象から漏れる（ちらつき・消失）ので、worldToScreen と
-  // 同じ anchor を使って計算する。
-  const anchorX = viewport.anchorX ?? 0.5;
-  const anchorY = viewport.anchorY ?? 0.5;
-  const topLeft = {
-    x: camera.x - (viewport.widthCssPx * anchorX) / scale,
-    y: camera.y - (viewport.heightCssPx * anchorY) / scale,
-  };
-  const bottomRight = {
-    x: camera.x + (viewport.widthCssPx * (1 - anchorX)) / scale,
-    y: camera.y + (viewport.heightCssPx * (1 - anchorY)) / scale,
-  };
-  const minTx = Math.max(0, Math.floor(topLeft.x / TILE) - 1);
-  const minTy = Math.max(0, Math.floor(topLeft.y / TILE) - 1);
-  const maxTx = Math.min(world.width - 1, Math.ceil(bottomRight.x / TILE) + 1);
-  const maxTy = Math.min(world.height - 1, Math.ceil(bottomRight.y / TILE) + 1);
+  const inView = (sx: number, sy: number, padX: number, padTop: number): boolean =>
+    sx > -padX && sx < W + padX && sy > -20 && sy < H + padTop;
 
-  // 足元のやわらかい影（pigg 風の「地面に立っている」感じ）。sx,sy は足元の画面座標、w は絵の幅（画面 px）。
+  // 足元のやわらかい影。sx,sy は足元の画面座標、w は絵の幅（画面 px）。
   const drawShadow = (sx: number, sy: number, w: number, strength = 1) => {
     const rx = w * 0.42;
     const ry = rx * 0.3;
     const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, rx);
-    g.addColorStop(0, `rgba(40,70,35,${(0.26 * strength).toFixed(3)})`);
-    g.addColorStop(1, 'rgba(40,70,35,0)');
+    g.addColorStop(0, `rgba(30,55,30,${(0.28 * strength).toFixed(3)})`);
+    g.addColorStop(1, 'rgba(30,55,30,0)');
     ctx.save();
     ctx.translate(0, sy);
     ctx.scale(1, ry / rx);
@@ -409,81 +377,86 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     ctx.restore();
   };
 
-  const drawSpriteAtTile = (name: SpriteName, tx: number, ty: number, anchorBottom = true, shadow = true) => {
+  /** スプライトを足元 (wx,wy)（ワールド px）にまっすぐ立てて描く。 */
+  const drawUpright = (name: SpriteName, wx: number, wy: number, shadow = true, alpha = 1) => {
     const spr = getSprite(name);
-    const feetX = (tx + 0.5) * TILE;
-    const feetY = anchorBottom ? (ty + 1) * TILE : (ty + 0.5) * TILE;
-    const s = worldToScreen(feetX, feetY, camera, viewport);
-    const w = spr.w * scale;
-    const h = spr.h * scale;
-    if (shadow) drawShadow(s.x, s.y - h * 0.03, w * 0.9);
-    ctx.drawImage(spr.canvas, s.x - w / 2, s.y - h, w, h);
+    const p = worldToScreen(wx, wy, camera, viewport);
+    const w = spr.w * p.k;
+    const h = spr.h * p.k;
+    if (p.x + w / 2 < 0 || p.x - w / 2 > W || p.y - h > H || p.y < 0) return;
+    if (shadow) drawShadow(p.x, p.y - h * 0.02, w * 0.9);
+    if (alpha < 0.999) ctx.globalAlpha = alpha;
+    ctx.drawImage(spr.canvas, p.x - w / 2, p.y - h, w, h);
+    if (alpha < 0.999) ctx.globalAlpha = 1;
   };
 
-  const drawSpriteAtWorld = (name: SpriteName, worldX: number, worldY: number, anchorBottom = true, shadow = true) => {
+  const drawAtTile = (name: SpriteName, tx: number, ty: number, shadow = true, alpha = 1) =>
+    drawUpright(name, (tx + 0.5) * TILE, (ty + 1) * TILE, shadow, alpha);
+
+  /** 見え隠れつきで描く（プレイヤーが後ろに重なれば半透明）。 */
+  const drawOccludable = (key: string, name: SpriteName, wx: number, wy: number, shadow = true) => {
     const spr = getSprite(name);
-    const s = worldToScreen(worldX, worldY, camera, viewport);
-    const w = spr.w * scale;
-    const h = spr.h * scale;
-    const top = anchorBottom ? s.y - h : s.y - h / 2;
-    if (shadow && anchorBottom) drawShadow(s.x, s.y - h * 0.03, w * 0.9);
-    ctx.drawImage(spr.canvas, s.x - w / 2, top, w, h);
+    const p = worldToScreen(wx, wy, camera, viewport);
+    const rect: Rect = { left: p.x - (spr.w * p.k) / 2, right: p.x + (spr.w * p.k) / 2, top: p.y - spr.h * p.k, bottom: p.y };
+    const alpha = occlusionFor(key, rect, wy, save.player.y * TILE, playerRect, occlusionEase);
+    drawUpright(name, wx, wy, shadow, alpha);
   };
 
-  // 家具を「デザインで決めた表示サイズ」に contain-fit（アスペクト比を保って矩形へ収める）
-  // して描く。ChatGPT 生成素材は品目ごとにドット密度がバラバラで、素の art px のまま
-  // 貼ると柵・見張り台・像が無関係な大きさになってしまうため（CLAUDE.md 参照の必要なし、
-  // FURNITURE_DISPLAY_SIZE がそのままデザイン値）。footprint の下辺中央を worldX,worldY に
-  // 合わせる（drawSpriteAtWorld の anchorBottom と同じ流儀）。
-  const drawFurnitureAtWorld = (furnitureId: string, worldX: number, worldY: number) => {
+  /** 家具を「デザインで決めた表示サイズ」に contain-fit して、footprint の下辺中央 (wx,wy) に立てる。 */
+  const drawFurnitureAtWorld = (furnitureId: string, wx: number, wy: number) => {
     const spr = getSprite(`f_${furnitureId}` as SpriteName);
     const size = FURNITURE_DISPLAY_SIZE[furnitureId] ?? { w: 1, h: 1 };
-    const boxW = size.w * TILE * scale;
-    const boxH = size.h * TILE * scale;
+    const p = worldToScreen(wx, wy, camera, viewport);
+    const boxW = size.w * TILE * p.k;
+    const boxH = size.h * TILE * p.k * 1.15; // 立てて見るぶん縦を少し高く取る
     const artAspect = spr.w / spr.h || 1;
-    const boxAspect = boxW / boxH;
     let drawW: number;
     let drawH: number;
-    if (artAspect > boxAspect) {
+    if (artAspect > boxW / boxH) {
       drawW = boxW;
       drawH = boxW / artAspect;
     } else {
       drawH = boxH;
       drawW = boxH * artAspect;
     }
-    const s = worldToScreen(worldX, worldY, camera, viewport);
-    drawShadow(s.x, s.y - drawH * 0.03, drawW * 0.85);
-    ctx.drawImage(spr.canvas, s.x - drawW / 2, s.y - drawH, drawW, drawH);
+    drawShadow(p.x, p.y - drawH * 0.03, drawW * 0.85);
+    ctx.drawImage(spr.canvas, p.x - drawW / 2, p.y - drawH, drawW, drawH);
   };
 
-  // --- 地面（事前描画したレイヤーを可視範囲だけ貼る。無ければ焼き上がるまで簡易フォールバック） ---
-  const isLand = (x: number, y: number) => {
-    const g = world.ground[y * world.width + x];
-    return g !== undefined && g !== 'water';
+  // プレイヤーの画面上の矩形（見え隠れ判定用）
+  const playerSpr = getSprite(`player_${save.player.dir}0` as SpriteName);
+  const pp = worldToScreen(save.player.x * TILE, save.player.y * TILE, camera, viewport);
+  const playerRect: Rect = {
+    left: pp.x - (playerSpr.w * pp.k) / 2,
+    right: pp.x + (playerSpr.w * pp.k) / 2,
+    top: pp.y - playerSpr.h * pp.k,
+    bottom: pp.y,
   };
 
+  // --- 地面 ---
   if (state.terrain) {
-    const srcX = minTx * TERRAIN_PX;
-    const srcY = minTy * TERRAIN_PX;
-    const srcW = (maxTx - minTx + 1) * TERRAIN_PX;
-    const srcH = (maxTy - minTy + 1) * TERRAIN_PX;
-    const dst = worldToScreen(minTx * TILE, minTy * TILE, camera, viewport);
-    const destW = (maxTx - minTx + 1) * TILE * scale;
-    const destH = (maxTy - minTy + 1) * TILE * scale;
-    ctx.drawImage(state.terrain.canvas, srcX, srcY, srcW, srcH, dst.x, dst.y, destW, destH);
-    drawWaterAnimated(ctx, world, camera, viewport, scale, now, minTx, minTy, maxTx, maxTy, isLand);
-    if (state.decorate) drawDecorateFloorGrid(ctx, world, camera, viewport, scale, minTx, minTy, maxTx, maxTy);
-  } else {
-    // フォールバック（焼いている最中）：ベタ塗りだけで地面種別が分かるようにする
+    const t = state.terrain;
+    drawGroundImage(ctx, t.canvas, t.width * TERRAIN_PX, t.height * TERRAIN_PX, 0, 0, t.width * TILE, t.height * TILE, camera, viewport);
+    drawWaterSparkles(ctx, world, camera, viewport, now, minTx, minTy, maxTx, maxTy);
+  }
+
+  if (state.terrain && state.decorate) {
+    // 模様替え中：歩ける地面に、斜め視点で台形になるマス目を敷く（水の上には敷かない）
+    ctx.save();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = GRID_LINE;
     for (let ty = minTy; ty <= maxTy; ty++) {
       for (let tx = minTx; tx <= maxTx; tx++) {
         const g = world.ground[ty * world.width + tx];
-        if (g === undefined) continue;
-        const s = worldToScreen(tx * TILE, ty * TILE, camera, viewport);
-        ctx.fillStyle = FALLBACK_COLOR[g] ?? '#8bc36a';
-        ctx.fillRect(round(s.x), round(s.y), round(TILE * scale) + 1, round(TILE * scale) + 1);
+        if (g === undefined || g === 'water') continue;
+        const rgb = (tx + ty) % 2 === 0 ? DIAMOND_LIGHT : DIAMOND_DARK;
+        ctx.fillStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.92)`;
+        polygonPath(ctx, tileQuad(tx, ty, 1, 1, camera, viewport));
+        ctx.fill();
+        ctx.stroke();
       }
     }
+    ctx.restore();
   }
 
   // --- 畑の作物 ---
@@ -495,17 +468,15 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
       if (!tile) continue;
       const progress = cropProgress(tile, now);
       const stage = progress < 0.34 ? 0 : progress < 1 ? 1 : 2;
-      const name = `${tile.crop}${stage}` as SpriteName;
-      drawSpriteAtTile(name, t.x, t.y, true, false);
+      drawAtTile(`${tile.crop}${stage}` as SpriteName, t.x, t.y, false);
       if (stage === 2) {
-        // 収穫可能：控えめなスパークル（gen_fx_sparkle。無ければコード版の星形にフォールバック）
-        const s = worldToScreen((t.x + 0.5) * TILE, t.y * TILE, camera, viewport);
+        const s = worldToScreen((t.x + 0.5) * TILE, (t.y + 0.4) * TILE, camera, viewport);
         const twinkle = 0.4 + 0.4 * Math.sin(now / 180 + hash2(t.x, t.y) * 10);
         const spr = getSprite('fx_sparkle' as SpriteName);
-        const w = spr.w * scale * 0.6;
-        const h = spr.h * scale * 0.6;
+        const w = spr.w * s.k * 0.7;
+        const h = spr.h * s.k * 0.7;
         ctx.globalAlpha = twinkle;
-        ctx.drawImage(spr.canvas, round(s.x - w / 2), round(s.y - h / 2), round(w), round(h));
+        ctx.drawImage(spr.canvas, s.x - w / 2, s.y - h / 2, w, h);
         ctx.globalAlpha = 1;
       }
     }
@@ -513,123 +484,87 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
 
   // --- 看板（選んでいる作物のアイコンを小さく載せる） ---
   for (const plot of world.plots) {
-    drawSpriteAtTile('sign' as SpriteName, plot.sign.x, plot.sign.y, true, true);
+    drawAtTile('sign' as SpriteName, plot.sign.x, plot.sign.y);
     const ps = save.plots[plot.id];
     if (ps?.selected) {
-      const s = worldToScreen((plot.sign.x + 0.5) * TILE, plot.sign.y * TILE + TILE * 0.35, camera, viewport);
+      const s = worldToScreen((plot.sign.x + 0.5) * TILE, (plot.sign.y + 0.55) * TILE, camera, viewport);
       const spr = getSprite(`item_${ps.selected}` as SpriteName);
-      const w = spr.w * scale * 0.5;
-      const h = spr.h * scale * 0.5;
-      ctx.drawImage(spr.canvas, round(s.x - w / 2), round(s.y - h / 2), round(w), round(h));
+      const w = spr.w * s.k * 0.5;
+      const h = spr.h * s.k * 0.5;
+      ctx.drawImage(spr.canvas, s.x - w / 2, s.y - h / 2 - 0.6 * TILE * s.k * 0.6, w, h);
     }
   }
 
-  // --- decorate: スロット枠（w×h に対応。ランドマークの 4×4 は 1 枚の大きな枠になる） ---
+  // --- decorate: スロット枠（台形）とアイコン ---
   if (state.decorate) {
     for (const slot of world.slots) {
       const sw = slot.w ?? 1;
       const sh = slot.h ?? 1;
-      const placed = save.placements[slot.id];
-      if (placed) {
-        drawFurnitureAtWorld(placed, (slot.x + sw / 2) * TILE, (slot.y + sh) * TILE);
-      }
-      const s = worldToScreen(slot.x * TILE, slot.y * TILE, camera, viewport);
-      const boxW = TILE * scale * sw;
-      const boxH = TILE * scale * sh;
+      const quad = tileQuad(slot.x, slot.y, sw, sh, camera, viewport);
+      ctx.save();
+      ctx.lineWidth = 2.5;
       ctx.strokeStyle = SLOT_COLORS[slot.attr];
-      ctx.lineWidth = Math.max(1, 2 * scale * 0.5);
-      roundRect(ctx, s.x + 2, s.y + 2, boxW - 4, boxH - 4, 4 * scale);
+      polygonPath(ctx, quad, 0.06);
       ctx.stroke();
+      ctx.restore();
+      const placed = save.placements[slot.id];
       if (!placed) {
+        const c = worldToScreen((slot.x + sw / 2) * TILE, (slot.y + sh / 2) * TILE, camera, viewport);
         const spr = getSprite(`slot_${slot.attr}` as SpriteName);
-        const w = spr.w * scale * (sw > 1 ? 0.9 : 0.5);
-        const h = spr.h * scale * (sh > 1 ? 0.9 : 0.5);
-        ctx.drawImage(spr.canvas, round(s.x + boxW / 2 - w / 2), round(s.y + boxH / 2 - h / 2), round(w), round(h));
+        const k = sw > 1 ? 0.9 : 0.55;
+        const w = spr.w * c.k * k;
+        const h = spr.h * c.k * k;
+        ctx.drawImage(spr.canvas, c.x - w / 2, c.y - h / 2, w, h);
       }
     }
   }
 
-  // --- y ソート対象（資源・宝箱・置いた家具・プレイヤー） ---
+  // --- y ソート対象（資源・宝箱・置いた家具・飾り・プレイヤー）。sortY は足元のタイル y。 ---
   type Drawable = { y: number; draw: () => void };
   const drawables: Drawable[] = [];
 
   for (const node of world.nodes) {
+    if (node.x < minTx - 1 || node.x > maxTx + 1 || node.y < minTy - 3 || node.y > maxTy + 1) continue;
     const alive = nodeAlive(save, node, now);
     if (alive) {
       drawables.push({
-        y: node.y,
-        draw: () => drawNodeWithSwing(node, now, state, drawSpriteAtTile),
+        y: node.y + 1,
+        draw: () => drawNode(node, now, state, drawOccludable, drawAtTile),
       });
     } else if (NODES[node.kind].respawnMs !== null) {
       const stump = NODE_TO_STUMP[node.kind];
-      if (stump) drawables.push({ y: node.y, draw: () => drawSpriteAtTile(stump, node.x, node.y) });
+      if (stump) drawables.push({ y: node.y + 1, draw: () => drawAtTile(stump, node.x, node.y) });
     }
   }
 
   for (const chest of world.chests) {
     const opened = save.chestsOpened.includes(chest.id);
-    drawables.push({
-      y: chest.y,
-      draw: () => drawSpriteAtTile((opened ? 'chestOpen' : 'chest') as SpriteName, chest.x, chest.y),
-    });
+    drawables.push({ y: chest.y + 1, draw: () => drawAtTile((opened ? 'chestOpen' : 'chest') as SpriteName, chest.x, chest.y) });
   }
 
-  // --- 昔の暮らしの名残（瓦礫・崩れた石・柱・商船）。ship のような大物は w×h の矩形の
-  //     下辺中央に据える。 ---
+  // --- 昔の暮らしの名残・商船。ship のような大物は w×h の矩形の下辺中央に据える。 ---
   for (const d of world.decor ?? []) {
     const name = DECOR_SPRITE[d.kind];
-    const anchorX = (d.x + d.w / 2) * TILE;
-    const anchorY = (d.y + d.h) * TILE;
+    const wx = (d.x + d.w / 2) * TILE;
+    const wy = (d.y + d.h) * TILE;
     if (d.kind === 'pillar') {
-      // 柱は背が高いので木と同じく見え隠れの対象にする。
-      const key = `decor:${d.x},${d.y}`;
-      drawables.push({
-        y: d.y + d.h - 1,
-        draw: () => {
-          const alpha = updateOcclusionAlpha(key, name, anchorX, anchorY, playerRect, save.player.y * TILE, occlusionEase);
-          if (alpha < 0.999) {
-            ctx.save();
-            ctx.globalAlpha = alpha;
-            drawSpriteAtWorld(name, anchorX, anchorY);
-            ctx.restore();
-          } else {
-            drawSpriteAtWorld(name, anchorX, anchorY);
-          }
-        },
-      });
-      continue;
+      drawables.push({ y: d.y + d.h, draw: () => drawOccludable(`decor:${d.x},${d.y}`, name, wx, wy) });
+    } else {
+      drawables.push({ y: d.y + d.h, draw: () => drawUpright(name, wx, wy) });
     }
-    drawables.push({
-      y: d.y + d.h - 1,
-      draw: () => drawSpriteAtWorld(name, anchorX, anchorY),
-    });
   }
 
-  // --- 設備（遺跡・作業台・船着き場・家の跡地）。遺跡は紋様が常にゆっくり明滅する（発見しやすさのため）。 ---
+  // --- 設備（遺跡・作業台・船着き場・家の跡地） ---
   for (const station of world.stations) {
     const spriteName = STATION_SPRITE[station.kind];
-    const anchorX = (station.x + 0.5) * TILE;
-    const anchorY = (station.y + 1) * TILE;
-    const isTall = station.kind === 'ruins'; // モノリスは背が高いので見え隠れの対象にする
-    const key = `station:${station.x},${station.y}`;
     drawables.push({
-      y: station.y,
+      y: station.y + 1,
       draw: () => {
-        const alpha =
-          isTall && spriteName
-            ? updateOcclusionAlpha(key, spriteName, anchorX, anchorY, playerRect, save.player.y * TILE, occlusionEase)
-            : 1;
         if (spriteName) {
-          if (alpha < 0.999) {
-            ctx.save();
-            ctx.globalAlpha = alpha;
-            drawSpriteAtTile(spriteName, station.x, station.y);
-            ctx.restore();
-          } else {
-            drawSpriteAtTile(spriteName, station.x, station.y);
-          }
+          if (station.kind === 'ruins') drawOccludable(`station:${station.x},${station.y}`, spriteName, (station.x + 0.5) * TILE, (station.y + 1) * TILE);
+          else drawAtTile(spriteName, station.x, station.y);
         }
-        if (station.kind === 'ruins') drawRuinsGlow(station.x, station.y, now, camera, viewport, scale);
+        if (station.kind === 'ruins') drawRuinsGlow(station.x, station.y, now, camera, viewport);
       },
     });
   }
@@ -641,94 +576,51 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
       const sw = slot.w ?? 1;
       const sh = slot.h ?? 1;
       if (furnitureId === 'woodPath' || furnitureId === 'stonePath') {
-        // 道系の家具だけは地面にぴったり敷く 1 マスのテクスチャ（隣の道・石畳とつながって
-        // 見えるよう、ワールド座標に応じてテクスチャの切り出し位置をずらす）。
+        // 道の家具は地面にぴったり敷く 1 マスの絵（台形に貼る）
         drawables.push({
-          y: slot.y - 0.5, // 地面とほぼ同じ高さ。他の資源・プレイヤーの下に来てよい
+          y: slot.y - 100, // 地面と同じ高さ。他のすべての物の下
           draw: () => {
             const spr = getGroundFurnitureSprite(furnitureId, slot.x, slot.y);
-            const topLeft = worldToScreen(slot.x * TILE, slot.y * TILE, camera, viewport);
-            const w = TILE * scale;
-            const h = TILE * scale;
-            const x0 = Math.floor(topLeft.x);
-            const y0 = Math.floor(topLeft.y);
-            ctx.drawImage(spr.canvas, x0, y0, Math.ceil(topLeft.x + w) - x0, Math.ceil(topLeft.y + h) - y0);
+            const iw = (spr.canvas as { width: number }).width || spr.w;
+            const ih = (spr.canvas as { height: number }).height || spr.h;
+            drawGroundImage(ctx, spr.canvas, iw, ih, slot.x * TILE, slot.y * TILE, (slot.x + 1) * TILE, (slot.y + 1) * TILE, camera, viewport);
           },
         });
         continue;
       }
       drawables.push({
-        y: slot.y + sh - 1,
+        y: slot.y + sh,
         draw: () => drawFurnitureAtWorld(furnitureId, (slot.x + sw / 2) * TILE, (slot.y + sh) * TILE),
       });
     }
   }
 
-  // --- 森の木（本物のスプライト。地面レイヤーには焼かず、プレイヤーと同じ y ソートに乗せる
-  //     ことで「北側を歩くと梢に隠れ、南側を歩くと手前に出る」を成立させる）。
-  //     可視範囲 ±2 マスの余裕を持たせて、画面端で木が急に消えないようにする。 ---
-  {
-    const treeMinX = minTx - 2;
-    const treeMaxX = maxTx + 2;
-    const treeMinY = minTy - 3;
-    const treeMaxY = maxTy + 1;
-    let treeIdx = 0;
-    for (const t of state.forestTrees) {
-      const idx = treeIdx++;
-      if (t.x < treeMinX || t.x > treeMaxX || t.y < treeMinY || t.y > treeMaxY) continue;
-      const anchorX = t.x * TILE;
-      const anchorY = t.y * TILE;
-      const key = `tree:${idx}`;
-      drawables.push({
-        y: t.y,
-        draw: () => {
-          const alpha = updateOcclusionAlpha(key, t.sprite, anchorX, anchorY, playerRect, save.player.y * TILE, occlusionEase);
-          if (alpha < 0.999) {
-            ctx.save();
-            ctx.globalAlpha = alpha;
-            drawSpriteAtWorld(t.sprite, anchorX, anchorY, true, false);
-            ctx.restore();
-          } else {
-            drawSpriteAtWorld(t.sprite, anchorX, anchorY, true, false);
-          }
-        },
-      });
-    }
-  }
-
-  // --- 地面の飾り（花・草・小石。影なし・見え隠れなし。可視範囲だけ描く） ---
+  // --- 地面の飾り（花・草・睡蓮・葦。可視範囲だけ描く） ---
   for (const d of state.groundDecor) {
-    if (d.x < minTx - 1 || d.x > maxTx + 2 || d.y < minTy - 1 || d.y > maxTy + 2) continue;
-    drawables.push({ y: d.flat ? -1000 : d.y - 0.6, draw: () => drawSpriteAtWorld(d.sprite, d.x * TILE, d.y * TILE, true, false) });
+    if (d.x < minTx - 2 || d.x > maxTx + 3 || d.y < minTy - 2 || d.y > maxTy + 3) continue;
+    drawables.push({ y: d.flat ? -1000 : d.y - 0.5, draw: () => drawUpright(d.sprite, d.x * TILE, d.y * TILE, false) });
   }
 
-  // --- 遺跡入口のアーチ・広場のかがり火（見た目だけの置物。ゲームロジックには存在しない）。 ---
-  drawables.push({
-    y: RUINS_ARCH.y,
-    draw: () => drawSpriteAtWorld('decor_arch' as SpriteName, RUINS_ARCH.x * TILE, RUINS_ARCH.y * TILE),
-  });
-  drawables.push({
-    y: PLAZA_CAMPFIRE.y,
-    draw: () => drawSpriteAtWorld('decor_campfire' as SpriteName, PLAZA_CAMPFIRE.x * TILE, PLAZA_CAMPFIRE.y * TILE),
-  });
+  // --- 遺跡入口のアーチ・広場のかがり火（見た目だけの置物） ---
+  drawables.push({ y: RUINS_ARCH.y, draw: () => drawUpright('decor_arch' as SpriteName, RUINS_ARCH.x * TILE, RUINS_ARCH.y * TILE) });
+  drawables.push({ y: PLAZA_CAMPFIRE.y, draw: () => drawUpright('decor_campfire' as SpriteName, PLAZA_CAMPFIRE.x * TILE, PLAZA_CAMPFIRE.y * TILE) });
 
-  // プレイヤー: 立ち絵は正面 1 枚だけなので、歩行は「はずみ＋ゆれ」で表す（止まっているときはゆっくり呼吸）。
+  // プレイヤー: 立ち絵は向きごとに 1 枚。歩行は「はずみ＋ゆれ」で表す（止まっているときはゆっくり呼吸）。
   const moving = state.moving;
-  const playerSprite = `player_${save.player.dir}0` as SpriteName;
   drawables.push({
     y: save.player.y,
     draw: () => {
-      const spr = getSprite(playerSprite);
-      const s0 = worldToScreen(save.player.x * TILE, save.player.y * TILE, camera, viewport);
-      const w = spr.w * scale;
-      const h = spr.h * scale;
+      const spr = getSprite(`player_${save.player.dir}0` as SpriteName);
+      const p = worldToScreen(save.player.x * TILE, save.player.y * TILE, camera, viewport);
+      const w = spr.w * p.k;
+      const h = spr.h * p.k;
       const phase = now / 95;
-      const bob = moving ? Math.abs(Math.sin(phase)) * 2.6 * scale : Math.sin(now / 520) * 0.5 * scale;
+      const bob = moving ? Math.abs(Math.sin(phase)) * 2.6 * p.k : Math.sin(now / 520) * 0.5 * p.k;
       const tilt = moving ? Math.sin(phase) * 0.07 : 0;
       const squash = moving ? 1 - Math.abs(Math.cos(phase)) * 0.03 : 1;
-      drawShadow(s0.x, s0.y - h * 0.02, w * (moving ? 1.05 - bob / (scale * 40) : 1.05));
+      drawShadow(p.x, p.y - h * 0.02, w * (moving ? 1.05 - bob / (p.k * 40) : 1.05));
       ctx.save();
-      ctx.translate(s0.x, s0.y - bob);
+      ctx.translate(p.x, p.y - bob);
       ctx.rotate(tilt);
       ctx.scale(1 / squash, squash);
       ctx.drawImage(spr.canvas, -w / 2, -h, w, h);
@@ -742,72 +634,72 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
   // --- ハイライト（通常モードのみ） ---
   if (!state.decorate && state.target) {
     const t = state.target;
-    const s = worldToScreen((t.x + 0.5) * TILE, (t.y + 0.5) * TILE, camera, viewport);
     const pulse = 0.5 + 0.5 * Math.sin(now / 160);
-    ctx.strokeStyle = t.blocked ? `rgba(220,90,90,${0.6 + 0.3 * pulse})` : `rgba(255,250,230,${0.6 + 0.3 * pulse})`;
-    ctx.lineWidth = 2;
-    const size = TILE * scale * 0.9;
-    roundRect(ctx, s.x - size / 2, s.y - size / 2, size, size, 6 * scale);
+    ctx.save();
+    ctx.strokeStyle = t.blocked ? `rgba(220,90,90,${0.65 + 0.3 * pulse})` : `rgba(255,250,230,${0.7 + 0.3 * pulse})`;
+    ctx.lineWidth = 2.5;
+    polygonPath(ctx, tileQuad(t.x, t.y, 1, 1, camera, viewport), 0.08);
     ctx.stroke();
+    ctx.restore();
 
+    const s = worldToScreen((t.x + 0.5) * TILE, (t.y + 0.5) * TILE, camera, viewport);
+    const topY = s.y - 0.55 * TILE * s.k - 1.1 * TILE * s.k * 0.35;
     const bounce = Math.sin(now / 140) * 3;
-    const ay = s.y - size / 2 - 10 * scale - bounce;
+    const ay = topY - 10 - bounce;
     ctx.fillStyle = t.blocked ? '#d65a5a' : '#fffbe6';
     ctx.beginPath();
-    ctx.moveTo(s.x, ay + 6);
-    ctx.lineTo(s.x - 5, ay - 2);
-    ctx.lineTo(s.x + 5, ay - 2);
+    ctx.moveTo(s.x, ay + 7);
+    ctx.lineTo(s.x - 6, ay - 2);
+    ctx.lineTo(s.x + 6, ay - 2);
     ctx.closePath();
     ctx.fill();
 
-    // --- 発見してほしい相手には、何をする場所かを名前で示す（遺跡・作業台・看板・宝箱）。 ---
     const label = targetLabel(t);
     if (label) {
-      ctx.font = `bold ${Math.round(13 * Math.max(1, scale))}px sans-serif`;
+      ctx.font = 'bold 14px sans-serif';
       ctx.textAlign = 'center';
       ctx.lineWidth = 3;
       ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-      ctx.strokeText(label, s.x, ay - 12 * scale);
+      ctx.strokeText(label, s.x, ay - 10);
       ctx.fillStyle = '#fffbe6';
-      ctx.fillText(label, s.x, ay - 12 * scale);
+      ctx.fillText(label, s.x, ay - 10);
     }
   }
 
-  // --- パーティクル（木くず・土ぼこり。小さく数個、フェードしながら飛ぶ） ---
+  // --- パーティクル（木くず・土ぼこり） ---
   for (const p of effects.particles) {
     const t = (now - p.startedAt) / p.lifeMs;
     if (t > 1) continue;
-    const px = p.x + p.vx * (t * p.lifeMs) / 1000;
-    const py = p.y + p.vy * (t * p.lifeMs) / 1000 + 60 * t * t; // 簡易重力
+    const px = p.x + (p.vx * (t * p.lifeMs)) / 1000;
+    const py = p.y + (p.vy * (t * p.lifeMs)) / 1000 + 60 * t * t;
     const s = worldToScreen(px, py, camera, viewport);
     const spr = getSprite(p.sprite);
     const shrink = 1 - t * 0.4;
-    const w = Math.max(1, spr.w * scale * 0.5 * shrink);
-    const h = Math.max(1, spr.h * scale * 0.5 * shrink);
+    const w = Math.max(1, spr.w * s.k * 0.6 * shrink);
+    const h = Math.max(1, spr.h * s.k * 0.6 * shrink);
     ctx.globalAlpha = 1 - t;
-    ctx.drawImage(spr.canvas, round(s.x - w / 2), round(s.y - h / 2), round(w), round(h));
+    ctx.drawImage(spr.canvas, s.x - w / 2, s.y - h / 2, w, h);
     ctx.globalAlpha = 1;
   }
 
   // --- トースト ---
-  ctx.font = `${Math.round(13 * Math.max(1, scale))}px sans-serif`;
-  ctx.textAlign = 'center';
   for (const toast of effects.toasts) {
     const t = (now - toast.startedAt) / TOAST_LIFE_MS;
     if (t > 1) continue;
-    const rise = 24 * t;
     const alpha = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
     let sx: number;
     let sy: number;
     if (toast.x < 0) {
-      sx = viewport.widthCssPx / 2;
-      sy = viewport.heightCssPx * 0.3;
-      ctx.font = `bold ${Math.round(20 * Math.max(1, scale))}px sans-serif`;
+      sx = W / 2;
+      sy = H * 0.3;
+      ctx.font = 'bold 22px sans-serif';
     } else {
       const s = worldToScreen(toast.x, toast.y, camera, viewport);
       sx = s.x;
-      sy = s.y - rise;
+      sy = s.y - 24 * t - 0.8 * TILE * s.k;
+      ctx.font = '15px sans-serif';
     }
+    ctx.textAlign = 'center';
     ctx.globalAlpha = Math.max(0, alpha);
     ctx.lineWidth = 3;
     ctx.strokeStyle = 'rgba(0,0,0,0.7)';
@@ -833,8 +725,38 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     ctx.fill();
   }
 
+  void inView;
   ctx.restore();
   currentCtx = null;
+}
+
+/** 水面のきらめき（やわらかい楕円）。可視範囲の水タイルだけを軽く処理する。 */
+function drawWaterSparkles(
+  ctx: CanvasRenderingContext2D,
+  world: World,
+  camera: CameraState,
+  viewport: Viewport,
+  now: number,
+  minTx: number,
+  minTy: number,
+  maxTx: number,
+  maxTy: number,
+): void {
+  for (let ty = minTy; ty <= maxTy; ty++) {
+    for (let tx = minTx; tx <= maxTx; tx++) {
+      if (world.ground[ty * world.width + tx] !== 'water') continue;
+      const seed = hash2(tx, ty);
+      if (seed > 0.45) continue;
+      const t1 = (now / 2600 + seed * 3) % 1;
+      const glow = Math.max(0, Math.sin(t1 * Math.PI * 2));
+      if (glow < 0.08) continue;
+      const s = worldToScreen((tx + 0.2 + 0.6 * ((seed * 7) % 1)) * TILE, (ty + 0.2 + 0.6 * ((seed * 13) % 1)) * TILE, camera, viewport);
+      ctx.fillStyle = `rgba(255,255,255,${(glow * 0.5).toFixed(2)})`;
+      ctx.beginPath();
+      ctx.ellipse(s.x, s.y, TILE * s.k * 0.2 * (0.6 + glow * 0.4), TILE * s.k * 0.2 * TILT_COS * 0.3 * (0.6 + glow * 0.4), 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 }
 
 /** ハイライト中の相手が何をする場所かを一言で示す。木・岩・畑は見れば分かるので出さない。 */
@@ -845,94 +767,71 @@ function targetLabel(t: Target): string | null {
   return null;
 }
 
-/** 遺跡の紋様をゆっくり明滅させる（「古代・魔法」を静止画より伝えるための最小限の演出）。 */
-function drawRuinsGlow(
-  tx: number,
-  ty: number,
-  now: number,
-  camera: CameraState,
-  viewport: Viewport,
-  scale: number,
-): void {
-  const ctx = getCurrentCtx();
+/** 遺跡の紋様をゆっくり明滅させる。 */
+function drawRuinsGlow(tx: number, ty: number, now: number, camera: CameraState, viewport: Viewport): void {
+  const ctx = currentCtx;
   if (!ctx) return;
-  const s = worldToScreen((tx + 0.5) * TILE, (ty + 0.47) * TILE, camera, viewport);
+  const s = worldToScreen((tx + 0.5) * TILE, (ty + 0.5) * TILE, camera, viewport);
   const pulse = 0.5 + 0.5 * Math.sin(now / 500);
   ctx.save();
   ctx.globalAlpha = 0.35 + 0.35 * pulse;
   ctx.fillStyle = '#5fe3c9';
   ctx.beginPath();
-  ctx.arc(s.x, s.y, (4 + 2 * pulse) * scale, 0, Math.PI * 2);
+  ctx.arc(s.x, s.y - 0.5 * TILE * s.k, (4 + 2 * pulse) * s.k * 1.2, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 }
 
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
-  const rr = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + rr, y);
-  ctx.arcTo(x + w, y, x + w, y + h, rr);
-  ctx.arcTo(x + w, y + h, x, y + h, rr);
-  ctx.arcTo(x, y + h, x, y, rr);
-  ctx.arcTo(x, y, x + w, y, rr);
-  ctx.closePath();
-}
-
 const SWING_MS = 220;
 
-/** 砂浜の木はヤシとして描く（見た目だけの差し替え。ゲームロジックは変わらない）。 */
+/** 見た目の選び分け：砂浜の木はヤシ、森の木は 2 種を場所でばらす。 */
 function spriteForNode(node: MapNode, world: World): SpriteName {
   if (node.kind === 'tree') {
     const g = world.ground[node.y * world.width + node.x];
     if (g === 'sand') return 'palm' as SpriteName;
   }
+  if (node.kind === 'forestTree') return (hash2(node.x, node.y) < 0.32 ? 'wallPine' : 'wallOak') as SpriteName;
   return node.kind as SpriteName;
 }
 
-function drawNodeWithSwing(
-  node: MapNode,
-  now: number,
-  state: RenderState,
-  drawSpriteAtTile: (name: SpriteName, tx: number, ty: number) => void,
-): void {
-  const last = store.lastAction();
-  const isTarget =
-    last !== null && last.x === node.x && last.y === node.y && now - last.at < SWING_MS && last.kind === 'hit';
+type OccludableDraw = (key: string, name: SpriteName, wx: number, wy: number, shadow?: boolean) => void;
+type TileDraw = (name: SpriteName, tx: number, ty: number, shadow?: boolean, alpha?: number) => void;
 
+function drawNode(node: MapNode, now: number, state: RenderState, drawOccludable: OccludableDraw, drawAtTile: TileDraw): void {
+  const last = store.lastAction();
+  const isTarget = last !== null && last.x === node.x && last.y === node.y && now - last.at < SWING_MS && last.kind === 'hit';
   const shakeT = isTarget ? 1 - (now - last!.at) / SWING_MS : 0;
   const shakeX = isTarget ? Math.sin(shakeT * Math.PI * 6) * 2 : 0;
   const spriteName = spriteForNode(node, state.world);
 
-  const ctx = getCurrentCtx();
+  const ctx = currentCtx;
+  const draw = () => {
+    if (TALL_NODES.has(node.kind)) drawOccludable(`node:${node.id}`, spriteName, (node.x + 0.5) * TILE, (node.y + 1) * TILE);
+    else drawAtTile(spriteName, node.x, node.y);
+  };
   if (ctx && shakeX !== 0) {
     ctx.save();
     ctx.translate(shakeX, 0);
-    drawSpriteAtTile(spriteName, node.x, node.y);
+    draw();
     ctx.restore();
   } else {
-    drawSpriteAtTile(spriteName, node.x, node.y);
+    draw();
   }
 
   if (isTarget && ctx) {
     const tool = NODE_TOOL[node.kind];
     const toolSprite = getSprite((tool === 'axe' ? 'tool_axe' : 'tool_pick') as SpriteName);
     const angle = (-Math.PI / 3) * (1 - shakeT);
-    const worldX = (node.x + 0.8) * TILE;
-    const worldY = (node.y + 0.5) * TILE;
-    const s = worldToScreen(worldX, worldY, state.camera, state.viewport);
-    const scale = state.camera.zoom * state.viewport.baseScale;
+    const s = worldToScreen((node.x + 0.85) * TILE, (node.y + 0.7) * TILE, state.camera, state.viewport);
     ctx.save();
     ctx.translate(s.x, s.y);
     ctx.rotate(angle);
-    const w = toolSprite.w * scale;
-    const h = toolSprite.h * scale;
+    const w = toolSprite.w * s.k;
+    const h = toolSprite.h * s.k;
     ctx.drawImage(toolSprite.canvas, -w / 2, -h, w, h);
     ctx.restore();
   }
 }
 
-// renderer 内で ctx を state 越しに渡すのが面倒なので、draw() 実行中だけ保持する。
+// draw() 実行中だけ保持する現在の ctx（drawNode などへ引き回さないため）。
 let currentCtx: CanvasRenderingContext2D | null = null;
-function getCurrentCtx(): CanvasRenderingContext2D | null {
-  return currentCtx;
-}

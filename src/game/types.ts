@@ -47,7 +47,8 @@ export type NodeKind =
   | 'rock' // 岩
   | 'hardRock' // 硬い岩（pickHard 1 以上）
   | 'borderTree' // 境界の大木（エリアごとに必要 Lv が違う）
-  | 'borderRock'; // 境界の大岩
+  | 'borderRock' // 境界の大岩
+  | 'forestTree'; // 森の木（いちばん高い段階の斧でだけ切れる）
 
 export type Dir = 'up' | 'down' | 'left' | 'right';
 

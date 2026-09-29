@@ -140,22 +140,50 @@ export function effectiveScale(cam: CameraState, baseScale: number): number {
   return baseScale * clampZoom(cam.zoom);
 }
 
+// ---------------------------------------------------------------------------
+// 斜めから見る視点（遠近法つき）。
+//
+// 地面は「真上から TILT だけ手前に傾けたカメラ」で見る。焦点（cam.x, cam.y）の地点では 1 ワールド px が
+// scale px（= baseScale × ズーム）になり、そこより奥（北）は小さく、手前（南）は大きく見える。
+// だから縦に並んだマスは台形（奥ほど狭い）になり、背の高い物は手前の物の後ろに隠れる。
+// 立っている物（木・家具・人）は、足元の投影点に「まっすぐ立てた板」として、その地点の倍率 k で描く。
+
+/** カメラの傾き（真上から手前へ）。0 で真上、90° で真横。 */
+export const TILT_DEG = 42;
+const TILT_SIN = Math.sin((TILT_DEG * Math.PI) / 180);
+const TILT_COS = Math.cos((TILT_DEG * Math.PI) / 180);
+/** カメラから焦点までの距離（ワールド px）。小さいほど遠近が強い。 */
+export const CAMERA_DISTANCE = 9 * TILE;
+
+export interface ScreenPoint {
+  x: number;
+  y: number;
+  /** その地点での倍率（1 ワールド px が何 css px か）。立てて描く物の大きさに掛ける。 */
+  k: number;
+}
+
 /** ワールド px → 画面 css px（キャンバスの CSS サイズ基準。DPR は描画側で別に掛ける）。 */
 export function worldToScreen(
   worldX: number,
   worldY: number,
   cam: CameraState,
   viewport: Viewport,
-): { x: number; y: number } {
+): ScreenPoint {
   const scale = effectiveScale(cam, viewport.baseScale);
   const ax = viewport.anchorX ?? 0.5;
   const ay = viewport.anchorY ?? 0.5;
+  const dx = worldX - cam.x;
+  const dy = worldY - cam.y;
+  const depth = Math.max(CAMERA_DISTANCE * 0.25, CAMERA_DISTANCE - dy * TILT_SIN);
+  const k = (scale * CAMERA_DISTANCE) / depth;
   return {
-    x: (worldX - cam.x) * scale + viewport.widthCssPx * ax,
-    y: (worldY - cam.y) * scale + viewport.heightCssPx * ay,
+    x: viewport.widthCssPx * ax + dx * k,
+    y: viewport.heightCssPx * ay + dy * TILT_COS * k,
+    k,
   };
 }
 
+/** 画面 css px → 地面のワールド px（worldToScreen の逆）。 */
 export function screenToWorld(
   screenX: number,
   screenY: number,
@@ -165,9 +193,13 @@ export function screenToWorld(
   const scale = effectiveScale(cam, viewport.baseScale);
   const ax = viewport.anchorX ?? 0.5;
   const ay = viewport.anchorY ?? 0.5;
+  const sy = screenY - viewport.heightCssPx * ay;
+  const dy = (sy * CAMERA_DISTANCE) / (scale * CAMERA_DISTANCE * TILT_COS + sy * TILT_SIN);
+  const depth = CAMERA_DISTANCE - dy * TILT_SIN;
+  const k = (scale * CAMERA_DISTANCE) / depth;
   return {
-    x: (screenX - viewport.widthCssPx * ax) / scale + cam.x,
-    y: (screenY - viewport.heightCssPx * ay) / scale + cam.y,
+    x: (screenX - viewport.widthCssPx * ax) / k + cam.x,
+    y: dy + cam.y,
   };
 }
 

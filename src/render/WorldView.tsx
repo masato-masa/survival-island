@@ -21,7 +21,7 @@ import {
 } from './camera';
 import { draw, effects, type RenderState, type Vec2 } from './renderer';
 import { paintTerrainAsync, type PaintedTerrain } from './terrain';
-import { buildForestTrees, buildGroundDecor, type TreeInstance } from './forestTrees';
+import { buildGroundDecor, type TreeInstance } from './forestTrees';
 import { PointerController } from '@/input/pointer';
 
 export interface WorldViewProps {
@@ -65,8 +65,6 @@ export function WorldView(props: WorldViewProps): JSX.Element {
     // フォールバックのベタ塗りを出すので、画面が固まって見えることはない。
     let terrain: PaintedTerrain | null = null;
     let cancelled = false;
-    // 森の木のインスタンスはタイルを舐めるだけ（ピクセル処理ではない）ので同期で十分軽い。
-    const forestTrees: TreeInstance[] = buildForestTrees(world);
     const groundDecor: TreeInstance[] = buildGroundDecor(world);
     paintTerrainAsync(world).then((result) => {
       if (cancelled) return;
@@ -224,7 +222,6 @@ export function WorldView(props: WorldViewProps): JSX.Element {
         dpr,
         stick: stickVisual,
         terrain,
-        forestTrees,
         groundDecor,
       };
       draw(ctx, state);

@@ -41,7 +41,7 @@ const DIRECT_GROUND: Record<string, Ground> = {
   '.': 'grass',
   ':': 'dirt',
   '=': 'paving',
-  '#': 'forest',
+  '#': 'grass', // 森の木は資源（ノード）。切ったあとは歩ける草地
   D: 'dock',
   F: 'foundation',
   f: 'soil',
@@ -168,6 +168,7 @@ function buildFrom(map: string[], areaMap: string[]): World {
     if (ch === 't') return 'bigTree';
     if (ch === 'R') return 'rock';
     if (ch === 'H') return 'hardRock';
+    if (ch === '#') return 'forestTree';
     if (isBorderChar(ch) && a) return AREAS[a].border?.kind ?? null;
     return null;
   };

@@ -194,6 +194,8 @@ interface SheetSpec {
   worldH?: number;
   /** worldW と worldH の両方をそのまま使う（縦に伸ばした木など。既定は worldH から幅を出す）。 */
   stretch?: boolean;
+  /** 木の幹の中ほどだけを縦に伸ばして背を高くする（樹冠と根元の花は伸ばさない）。worldW/worldH をそのまま使う。 */
+  tallTrunk?: boolean;
   /** 左右反転（右向き 1 枚から左向きを作る）。 */
   flip?: boolean;
   tint?: string; // 乗算合成で色違いを作る
@@ -205,14 +207,14 @@ const STONE_TINT = '#a7afba'; // 石材家具用（暖色の木目を寒色の�
 const COPPER_TINT = '#e59a58'; // 銅ランプ
 
 const SHEET_TARGET: Partial<Record<SpriteName, SheetSpec>> = {
-  tree: { src: 'tree_medium', worldW: 44, worldH: 74, stretch: true },
-  bigTree: { src: 'tree_big', worldW: 54, worldH: 92, stretch: true },
+  tree: { src: 'tree_medium', worldW: 46, worldH: 96, tallTrunk: true },
+  bigTree: { src: 'tree_big', worldW: 56, worldH: 112, tallTrunk: true },
   palm: { src: 'furn_palm_tree', worldW: 40 },
   rock: { src: 'rock_medium', worldW: 34 },
   hardRock: { src: 'rock_medium', worldW: 36, tint: '#8b97a3' },
-  wallOak: { src: 'tree_medium', worldW: 46, worldH: 76, stretch: true, tint: WALL_TINT },
-  wallPine: { src: 'tree_small', worldW: 42, worldH: 68, stretch: true, tint: WALL_TINT },
-  borderTree: { src: 'tree_medium', worldW: 46, worldH: 76, stretch: true, tint: BORDER_TINT },
+  wallOak: { src: 'tree_medium', worldW: 46, worldH: 92, tallTrunk: true, tint: WALL_TINT },
+  wallPine: { src: 'tree_small', worldW: 42, worldH: 84, tallTrunk: true, tint: WALL_TINT },
+  borderTree: { src: 'tree_medium', worldW: 46, worldH: 94, tallTrunk: true, tint: BORDER_TINT },
   borderRock: { src: 'rock_medium', worldW: 36, tint: BORDER_TINT },
 
   stump: { src: 'tree_stump', worldW: 30 },
@@ -880,16 +882,36 @@ function bakeFlipped(img: HTMLImageElement): HTMLCanvasElement | OffscreenCanvas
   return canvas;
 }
 
+/** 幹の中ほど [0.64, 0.80) だけを縦に伸ばして、背の高い木にする。 */
+function bakeTallTrunk(src: CanvasImageSource, iw: number, ih: number, ratio: number): HTMLCanvasElement | OffscreenCanvas {
+  const outH = Math.round(ih * ratio);
+  const canvas = makeCanvas(iw, outH);
+  const ctx = canvas.getContext('2d') as Ctx2D | null;
+  if (!ctx) return canvas;
+  const a1 = Math.round(ih * 0.64);
+  const a2 = Math.round(ih * 0.8);
+  const tailH = ih - a2;
+  const midH = outH - a1 - tailH;
+  ctx.drawImage(src, 0, 0, iw, a1, 0, 0, iw, a1); // 樹冠
+  ctx.drawImage(src, 0, a1, iw, a2 - a1, 0, a1, iw, midH); // 幹（伸ばす）
+  ctx.drawImage(src, 0, a2, iw, tailH, 0, a1 + midH, iw, tailH); // 根元
+  return canvas;
+}
+
 function bakeFromSheet(name: SpriteName): BakedSprite | null {
   const spec = SHEET_TARGET[name];
   if (!spec) return null;
   const img = sheetImages.get(spec.src);
   if (!img) return null;
   const aspect = img.naturalHeight / img.naturalWidth;
+  const source: CanvasImageSource = spec.tint ? bakeTinted(img, spec.tint) : spec.flip ? bakeFlipped(img) : img;
+  if (spec.tallTrunk && spec.worldH) {
+    const ratio = spec.worldH / (spec.worldW * aspect);
+    return { canvas: bakeTallTrunk(source, img.naturalWidth, img.naturalHeight, ratio), w: spec.worldW, h: spec.worldH };
+  }
   const w = spec.worldH && !spec.stretch ? spec.worldH / aspect : spec.worldW;
   const h = spec.worldH ?? spec.worldW * aspect;
-  const canvas = spec.tint ? bakeTinted(img, spec.tint) : spec.flip ? bakeFlipped(img) : img;
-  return { canvas, w, h };
+  return { canvas: source, w, h };
 }
 
 const EMPTY: BakedSprite = { canvas: makeEmpty(), w: 1, h: 1 };
