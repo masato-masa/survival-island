@@ -207,14 +207,14 @@ const STONE_TINT = '#a7afba'; // 石材家具用（暖色の木目を寒色の�
 const COPPER_TINT = '#e59a58'; // 銅ランプ
 
 const SHEET_TARGET: Partial<Record<SpriteName, SheetSpec>> = {
-  tree: { src: 'tree_medium', worldW: 46, worldH: 96, tallTrunk: true },
-  bigTree: { src: 'tree_big', worldW: 56, worldH: 112, tallTrunk: true },
+  tree: { src: 'tree_medium', worldW: 46, worldH: 84, tallTrunk: true },
+  bigTree: { src: 'tree_big', worldW: 56, worldH: 100, tallTrunk: true },
   palm: { src: 'furn_palm_tree', worldW: 40 },
   rock: { src: 'rock_medium', worldW: 34 },
   hardRock: { src: 'rock_medium', worldW: 36, tint: '#8b97a3' },
-  wallOak: { src: 'tree_medium', worldW: 46, worldH: 92, tallTrunk: true, tint: WALL_TINT },
-  wallPine: { src: 'tree_small', worldW: 42, worldH: 84, tallTrunk: true, tint: WALL_TINT },
-  borderTree: { src: 'tree_medium', worldW: 46, worldH: 94, tallTrunk: true, tint: BORDER_TINT },
+  wallOak: { src: 'tree_medium', worldW: 46, worldH: 80, tallTrunk: true, tint: WALL_TINT },
+  wallPine: { src: 'tree_small', worldW: 42, worldH: 74, tallTrunk: true, tint: WALL_TINT },
+  borderTree: { src: 'tree_medium', worldW: 46, worldH: 82, tallTrunk: true, tint: BORDER_TINT },
   borderRock: { src: 'rock_medium', worldW: 36, tint: BORDER_TINT },
 
   stump: { src: 'tree_stump', worldW: 30 },

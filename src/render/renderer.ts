@@ -162,7 +162,7 @@ export const effects = new Effects();
 // 判定は画面上の矩形の重なり（斜めの視点では、奥にいる人が手前の木の梢に隠れる）。
 // 個体ごとに現在の透明度を持ち、150ms のイージングで目標値へ近づける。
 
-const OCCLUSION_ALPHA = 0.42;
+const OCCLUSION_ALPHA = 0.5;
 const OCCLUSION_HALF_LIFE_SEC = 0.15;
 const occlusionAlpha = new Map<string, number>();
 let lastFrameNow: number | null = null;
@@ -174,13 +174,18 @@ interface Rect {
   bottom: number;
 }
 
-function rectsOverlap(a: Rect, b: Rect): boolean {
-  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+/** 2 つの矩形の重なりが、プレイヤー矩形の何割か。 */
+function overlapRatio(a: Rect, player: Rect): number {
+  const w = Math.min(a.right, player.right) - Math.max(a.left, player.left);
+  const h = Math.min(a.bottom, player.bottom) - Math.max(a.top, player.top);
+  if (w <= 0 || h <= 0) return 0;
+  return (w * h) / ((player.right - player.left) * (player.bottom - player.top));
 }
 
+// 物は消さない。プレイヤーが物の「後ろ」（奥）にいて、物がプレイヤーの体を 1/4 以上おおうときだけ半透明にする。
 function occlusionFor(key: string, rect: Rect, footWorldY: number, playerWorldY: number, playerRect: Rect, ease: number): number {
-  const behind = playerWorldY < footWorldY; // プレイヤーの足元が対象の根元より奥（北）
-  const target = behind && rectsOverlap(playerRect, rect) ? OCCLUSION_ALPHA : 1;
+  const behind = playerWorldY < footWorldY - 0.2 * TILE; // プレイヤーの足元が対象の根元より奥（北）
+  const target = behind && overlapRatio(rect, playerRect) > 0.25 ? OCCLUSION_ALPHA : 1;
   const prev = occlusionAlpha.get(key) ?? 1;
   const next = prev + (target - prev) * ease;
   occlusionAlpha.set(key, next);
@@ -629,7 +634,18 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
   });
 
   drawables.sort((a, b) => a.y - b.y);
-  for (const d of drawables) d.draw();
+  for (const d of drawables) {
+    try {
+      d.draw();
+    } catch (e) {
+      // 1 個の描画の失敗で、残りの物が全部消えないようにする（初回だけ知らせる）
+      if (!drawErrorLogged) {
+        drawErrorLogged = true;
+        // eslint-disable-next-line no-console
+        console.error('[render] drawable failed', e);
+      }
+    }
+  }
 
   // --- ハイライト（通常モードのみ） ---
   if (!state.decorate && state.target) {
@@ -781,6 +797,8 @@ function drawRuinsGlow(tx: number, ty: number, now: number, camera: CameraState,
   ctx.fill();
   ctx.restore();
 }
+
+let drawErrorLogged = false;
 
 const SWING_MS = 220;
 
