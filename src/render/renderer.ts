@@ -236,7 +236,7 @@ const STATION_SPRITE: Partial<Record<StationKind, SpriteName>> = {
 
 // ---------------------------------------------------------------------------
 // 模様替え（配置）モードの床：参考画像（pigg 風の家の庭）を実測したダイヤ格子。
-// 「もようがえ」中だけ、地面の代わりにこの格子を敷く（水面は敷かず、下の地面テクスチャを
+// 「もようがえ」中だけ、地面の代わりにこの格子を敷く（このゲームは斜めではなく縦横なので、格子も正方形）（水面は敷かず、下の地面テクスチャを
 // そのまま見せる＝池には置けないのが一目で分かる）。マス目 1 つ＝タイル 1 個に対応させ、
 // 4 辺の中点を結んだ菱形を並べるので、隣同士は角で接し継ぎ目のない格子になる。
 
@@ -255,8 +255,6 @@ function drawDecorateFloorGrid(
   maxTx: number,
   maxTy: number
 ): void {
-  const halfW = (TILE * scale) / 2;
-  const halfH = (TILE * scale) / 2;
   ctx.save();
   ctx.lineWidth = Math.max(1, scale * 0.9);
   ctx.strokeStyle = DIAMOND_LINE;
@@ -264,18 +262,13 @@ function drawDecorateFloorGrid(
     for (let tx = minTx; tx <= maxTx; tx++) {
       const g = world.ground[ty * world.width + tx];
       if (g === undefined || g === 'water') continue;
-      const c = worldToScreen((tx + 0.5) * TILE, (ty + 0.5) * TILE, camera, viewport);
+      const tl = worldToScreen(tx * TILE, ty * TILE, camera, viewport);
+      const size = TILE * scale;
       const light = (tx + ty) % 2 === 0;
       const rgb = light ? DIAMOND_LIGHT : DIAMOND_DARK;
       ctx.fillStyle = `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
-      ctx.beginPath();
-      ctx.moveTo(c.x, c.y - halfH);
-      ctx.lineTo(c.x + halfW, c.y);
-      ctx.lineTo(c.x, c.y + halfH);
-      ctx.lineTo(c.x - halfW, c.y);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
+      ctx.fillRect(tl.x, tl.y, size, size);
+      ctx.strokeRect(tl.x, tl.y, size, size);
     }
   }
   ctx.restore();
@@ -318,8 +311,8 @@ function drawWaterAnimated(
 // 見た目だけの置物（ゲームロジック上は存在しない）。座標はタイル単位、スプライトの
 // 下辺中央がここに来る。遺跡入口のアーチは西の通路をまたぐ位置、かがり火は広場の
 // 作業台のそばに置く。
-const RUINS_ARCH = { x: 15.5, y: 28.4 };
-const PLAZA_CAMPFIRE = { x: 30.5, y: 34.7 };
+const RUINS_ARCH = { x: 7.75, y: 14.2 };
+const PLAZA_CAMPFIRE = { x: 15.25, y: 17.35 };
 
 const SLOT_COLORS: Record<SlotAttr, string> = {
   bench: '#c97b4a',
@@ -549,8 +542,8 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
       ctx.stroke();
       if (!placed) {
         const spr = getSprite(`slot_${slot.attr}` as SpriteName);
-        const w = spr.w * scale * (sw > 1 ? 1.4 : 0.6);
-        const h = spr.h * scale * (sh > 1 ? 1.4 : 0.6);
+        const w = spr.w * scale * (sw > 1 ? 0.9 : 0.5);
+        const h = spr.h * scale * (sh > 1 ? 0.9 : 0.5);
         ctx.drawImage(spr.canvas, round(s.x + boxW / 2 - w / 2), round(s.y + boxH / 2 - h / 2), round(w), round(h));
       }
     }

@@ -9,9 +9,9 @@ import type { AreaId } from '../src/game/types';
 const world = buildWorld();
 
 describe('buildWorld', () => {
-  it('マップは 64x70', () => {
-    expect(world.width).toBe(64);
-    expect(world.height).toBe(70);
+  it('マップは 32x35（細かい 64x70 の設計を 2x2 ずつまとめたもの）', () => {
+    expect(world.width).toBe(32);
+    expect(world.height).toBe(35);
   });
 
   it('7 エリアすべてが空でない', () => {
@@ -39,11 +39,11 @@ describe('buildWorld', () => {
     }
   });
 
-  it('ランドマークの配置スペースは 4x4 が開けた土地に 1 つだけ', () => {
-    const landmarks = world.slots.filter((s) => s.attr === 'landmark' && s.w === 4 && s.h === 4);
+  it('ランドマークの配置スペースは 2x2 が開けた土地に 1 つだけ', () => {
+    const landmarks = world.slots.filter((s) => s.attr === 'landmark' && s.w === 2 && s.h === 2);
     expect(landmarks.length).toBe(1);
     expect(landmarks[0]?.area).toBe('plaza');
-    expect(landmarks[0]?.h).toBe(4);
+    expect(landmarks[0]?.h).toBe(2);
   });
 
   it('配置スペースがエリアごとに数えられる', () => {
@@ -67,10 +67,10 @@ describe('buildWorld', () => {
     }
   });
 
-  it('商船は 7x8 の Decor 1 つで、通れない', () => {
+  it('商船は 4x3 の Decor 1 つで、通れない', () => {
     const ships = world.decor.filter((d) => d.kind === 'ship');
     expect(ships.length).toBe(1);
-    expect(ships[0]).toMatchObject({ w: 6, h: 6, solid: true });
+    expect(ships[0]).toMatchObject({ w: 4, h: 3, solid: true });
   });
 });
 

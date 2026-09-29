@@ -31,12 +31,12 @@ export const ACTION_COOLDOWN_MS = 420;
 export const SPEED_PER_LEVEL = 0.1;
 
 /** アクション対象を探す半径（マス）。「体の中心」から対象マスの中心まで。 */
-export const TARGET_RADIUS = 1.5;
+export const TARGET_RADIUS = 1.0;
 /** 体の中心 = 足元から上へこれだけ。スプライトは足元から上に伸びるので、
  *  足元で測ると「見た目は木に触れているのに届かない」になる。 */
 export const TARGET_ORIGIN_UP = 0.5;
 
-export const WALK_SPEED = 6; // マス / 秒（4 だと反応が鈍く感じたので引き上げた）
+export const WALK_SPEED = 3; // マス / 秒（1 マスを物体 2 個ぶんに大きくしたので、画面上の速さは旧 6 マス/秒と同じ）
 
 // ---------------------------------------------------------------------------
 // 島レベル
@@ -253,10 +253,10 @@ export const FURNITURE_DISPLAY_SIZE: Record<FurnitureId, { w: number; h: number 
   copperLamp: { w: 1, h: 1.6 },
   ruinPillar: { w: 1.1, h: 1.9 },
   flowerPot: { w: 1, h: 1.4 },
-  // ランドマーク（4×4 用地。小さな余白を残して枠いっぱいに見せる）
-  woodTower: { w: 3.2, h: 3.2 },
-  flowerArch: { w: 3.2, h: 3.2 },
-  stoneStatue: { w: 3.2, h: 3.2 },
+  // ランドマーク（2×2 用地。小さな余白を残して枠いっぱいに見せる）
+  woodTower: { w: 1.7, h: 1.7 },
+  flowerArch: { w: 1.7, h: 1.7 },
+  stoneStatue: { w: 1.7, h: 1.7 },
 };
 
 export const AREAS: Record<AreaId, AreaDef> = {

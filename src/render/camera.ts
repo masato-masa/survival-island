@@ -6,13 +6,13 @@ export const TILE = 32; // 1 マス = 32 ワールドピクセル
 export const MIN_ZOOM = 0.6;
 export const MAX_ZOOM = 2.0;
 
-/** pigg 風の低く・近いカメラに寄せた基準タイル数：画面の短辺に 7 マス収まる大きさ
+/** pigg 風の低く・近いカメラに寄せた基準タイル数：画面の短辺に 3.5 マス収まる大きさ
  *  （縦持ちスマホなら幅、横持ち・PC なら高さが「短辺」になる）。
  *  旧 Stardew 風の 10.5 から縮め、キャラ・資源が画面に対して大きく＝近く見えるようにした。
  *  遊びやすさ（対象の見え方・ジョイスティック操作感）とのバランスは実機で確認して詰める。 */
-export const TILES_ACROSS_SHORT_SIDE = 7;
+export const TILES_ACROSS_SHORT_SIDE = 3.5;
 
-/** 基準スケール：画面の短辺に ~7 マスが収まる大きさ。 */
+/** 基準スケール：画面の短辺に ~3.5 マスが収まる大きさ。 */
 export function baseScaleFor(viewportWidthCssPx: number, viewportHeightCssPx: number): number {
   const shortSide = Math.min(viewportWidthCssPx, viewportHeightCssPx);
   return shortSide / (TILES_ACROSS_SHORT_SIDE * TILE);

@@ -215,7 +215,7 @@ const SHEET_TARGET: Partial<Record<SpriteName, SheetSpec>> = {
   decor_arch: { src: 'cave_entrance', worldW: 50 },
   decor_pillar: { src: 'rock_cliff', worldW: 42 },
   // ChatGPT で生成した pigg 風の帆船（scripts/import-generated.mjs で取り込み）。7×8 マスの用地に収まる大きさ。
-  decor_ship: { src: 'pigg_ship', worldW: 190 },
+  decor_ship: { src: 'pigg_ship', worldW: 84 },
   f_woodTower: { src: 'pigg_tower', worldW: 84 },
   f_flowerArch: { src: 'pigg_arch', worldW: 84 },
   station_ruins: { src: 'rock_fossil', worldW: 44 },
@@ -253,18 +253,18 @@ const SHEET_TARGET: Partial<Record<SpriteName, SheetSpec>> = {
 
   // 主人公: 正面・背面・右向き（左向きは右向きの反転）。歩行は描画側のはずみ・傾きで表すので、
   // 3 コマとも同じ絵。向きごとに余白がちがうので、高さでそろえる。
-  player_down0: { src: 'pigg_player_down0', worldW: 30, worldH: 41 },
-  player_down1: { src: 'pigg_player_down0', worldW: 30, worldH: 41 },
-  player_down2: { src: 'pigg_player_down0', worldW: 30, worldH: 41 },
-  player_up0: { src: 'pigg_player_up0', worldW: 30, worldH: 41 },
-  player_up1: { src: 'pigg_player_up0', worldW: 30, worldH: 41 },
-  player_up2: { src: 'pigg_player_up0', worldW: 30, worldH: 41 },
-  player_right0: { src: 'pigg_player_right0', worldW: 30, worldH: 41 },
-  player_right1: { src: 'pigg_player_right0', worldW: 30, worldH: 41 },
-  player_right2: { src: 'pigg_player_right0', worldW: 30, worldH: 41 },
-  player_left0: { src: 'pigg_player_right0', worldW: 30, worldH: 41, flip: true },
-  player_left1: { src: 'pigg_player_right0', worldW: 30, worldH: 41, flip: true },
-  player_left2: { src: 'pigg_player_right0', worldW: 30, worldH: 41, flip: true },
+  player_down0: { src: 'pigg_player_down0', worldW: 30, worldH: 18 },
+  player_down1: { src: 'pigg_player_down0', worldW: 30, worldH: 18 },
+  player_down2: { src: 'pigg_player_down0', worldW: 30, worldH: 18 },
+  player_up0: { src: 'pigg_player_up0', worldW: 30, worldH: 18 },
+  player_up1: { src: 'pigg_player_up0', worldW: 30, worldH: 18 },
+  player_up2: { src: 'pigg_player_up0', worldW: 30, worldH: 18 },
+  player_right0: { src: 'pigg_player_right0', worldW: 30, worldH: 18 },
+  player_right1: { src: 'pigg_player_right0', worldW: 30, worldH: 18 },
+  player_right2: { src: 'pigg_player_right0', worldW: 30, worldH: 18 },
+  player_left0: { src: 'pigg_player_right0', worldW: 30, worldH: 18, flip: true },
+  player_left1: { src: 'pigg_player_right0', worldW: 30, worldH: 18, flip: true },
+  player_left2: { src: 'pigg_player_right0', worldW: 30, worldH: 18, flip: true },
 };
 
 // ---------------------------------------------------------------------------

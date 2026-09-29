@@ -66,7 +66,7 @@ function mix(a: RGB, b: RGB, t: number, out: RGB): void {
 // 定数
 
 /** タイル 1 枚あたりのプリレンダー解像度。滑らかな塗りなので 32px あれば拡大してもほぼ崩れない。 */
-export const TERRAIN_PX = 32;
+export const TERRAIN_PX = 64;
 
 const WARP_AMP = 0.11 * TERRAIN_PX; // ドメインワープの振幅（px）
 const WARP_WAVELEN = 3 * TERRAIN_PX;
@@ -223,7 +223,7 @@ function baseColor(k: number, px: number, py: number, depth: number, out: RGB): 
     }
     case K.Paving: {
       // 石畳: 半マスずつずらした 2 段の石。石ごとに明るさを変え、目地は暗く。
-      const cell = TERRAIN_PX / 2;
+      const cell = TERRAIN_PX / 4;
       const row = Math.floor(py / cell);
       const shifted = px + (row % 2 === 0 ? 0 : cell / 2);
       const col = Math.floor(shifted / cell);
@@ -234,8 +234,8 @@ function baseColor(k: number, px: number, py: number, depth: number, out: RGB): 
       out[1] = PAVE_A[1] * tone;
       out[2] = PAVE_A[2] * tone;
       const edge = Math.min(lx, cell - lx, ly, cell - ly);
-      if (edge < 1.1) mix(out, PAVE_MORTAR, 1 - edge / 1.1, out);
-      else if (ly < 2.6 && lx > 2 && lx < cell - 2) {
+      if (edge < 1.8) mix(out, PAVE_MORTAR, 1 - edge / 1.8, out);
+      else if (ly < 4 && lx > 3 && lx < cell - 3) {
         out[0] += 6;
         out[1] += 6;
         out[2] += 6;
@@ -244,7 +244,7 @@ function baseColor(k: number, px: number, py: number, depth: number, out: RGB): 
     }
     case K.Dock: {
       // 桟橋: 横板。板ごとに色を変え、板の間に暗い線、たまに継ぎ目。
-      const bandH = TERRAIN_PX / 4;
+      const bandH = TERRAIN_PX / 8;
       const band = Math.floor(py / bandH);
       const ly = py - band * bandH;
       const tone = WOOD_TONES[Math.floor(hash2i(band, 0, 33) * WOOD_TONES.length)]!;
@@ -253,8 +253,8 @@ function baseColor(k: number, px: number, py: number, depth: number, out: RGB): 
       out[2] = tone[2];
       const joint = Math.floor((px + hash2i(band, 1, 34) * TERRAIN_PX * 2) / (TERRAIN_PX * 1.5));
       const jx = (px + hash2i(band, 1, 34) * TERRAIN_PX * 2) - joint * TERRAIN_PX * 1.5;
-      if (ly < 0.8 || jx < 0.7) mix(out, [120, 82, 50], 0.55, out);
-      else if (ly < 2) {
+      if (ly < 1.4 || jx < 1.2) mix(out, [120, 82, 50], 0.55, out);
+      else if (ly < 3.4) {
         out[0] += 8;
         out[1] += 8;
         out[2] += 6;
@@ -263,7 +263,7 @@ function baseColor(k: number, px: number, py: number, depth: number, out: RGB): 
     }
     case K.Soil: {
       // 畑の土: 横畝。畝の頂点を明るく。
-      const ridge = 0.5 + 0.5 * Math.sin((py / TERRAIN_PX) * Math.PI * 4);
+      const ridge = 0.5 + 0.5 * Math.sin((py / TERRAIN_PX) * Math.PI * 8);
       mix(SOIL_A, SOIL_B, ridge, out);
       const f = (valueNoise2D(px, py, 61, 0.6 * TERRAIN_PX) - 0.5) * 12;
       out[0] += f;

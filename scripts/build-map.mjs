@@ -1,4 +1,4 @@
-// 島のマップを組み立てて src/game/map.ts に書き出す。
+// 島のマップを組み立てて src/game/map.ts に書き出す（設計は細かい 64×70、書き出しは 2×2 にまとめた 32×35）。
 //
 //   node scripts/build-map.mjs
 //
@@ -194,21 +194,22 @@ put([[29, 21]], 'w'); // 作業台の置き場
 
 // 作業台（クラフト）と看板つきの畑
 set(28, 33, 'W');
-rect(44, 29, 46, 31, 'f');
-set(43, 30, 's');
-rect(44, 34, 45, 35, 'f');
-set(43, 34, 's');
+// 畑は粗くした地図で 3×3 マス（A）と 2×2 マス（B）になる大きさにする（範囲まきに 3×3 が要る）
+rect(44, 26, 49, 31, 'f');
+set(43, 28, 's');
+rect(44, 34, 47, 37, 'f');
+set(43, 35, 's');
 
 // 昔の人の暮らしの名残：崩れた石・瓦礫・折れた柱
-put([[23, 21], [47, 20], [46, 33], [24, 31], [42, 36]], 'B');
-put([[24, 22], [25, 21], [46, 21], [27, 30], [44, 26], [23, 33], [48, 32], [29, 35], [41, 35], [33, 20]], 'r');
+put([[23, 21], [47, 20], [46, 33], [24, 31], [41, 36]], 'B');
+put([[24, 22], [25, 21], [46, 21], [27, 30], [43, 24], [23, 33], [48, 33], [29, 35], [41, 35], [33, 20]], 'r');
 put([[21, 26], [21, 29]], 'P'); // 西の道の入口に立つ柱
 
 // 資源：開けた土地の縁の木と岩
-put([[22, 24], [49, 27], [22, 33], [49, 22], [27, 16], [44, 16]], 'T');
-put([[50, 30]], 't');
-put([[25, 34], [47, 27], [28, 19], [43, 20]], 'R');
-put([[49, 34]], 'H');
+put([[22, 24], [50, 25], [22, 33], [49, 22], [27, 16], [44, 16]], 'T');
+put([[51, 29]], 't');
+put([[25, 34], [47, 24], [28, 19], [43, 20]], 'R');
+put([[50, 34]], 'H');
 
 // ---------------------------------------------------------------------------
 // 5. 西の遺跡（x 3〜16, y 20〜34）。石畳の広場に、柱の輪と崩れた石。
@@ -258,21 +259,23 @@ put([[46, 5], [52, 4], [57, 6], [49, 9], [55, 10]], 'R');
 put([[50, 6], [58, 9], [45, 11]], 'H');
 set(59, 4, 'c');
 areaRect(43, 2, 61, 12, 'r');
+set(47, 13, '2');
 set(48, 13, '2');
-set(49, 13, '2');
 path([[48, 12], [48, 10], [44, 10]], ':', 1);
+setArea(47, 13, 'r');
 setArea(48, 13, 'r');
-setArea(49, 13, 'r');
 
 // 北の丘（x 26〜40, y 3〜11）：北西の森から（パワーアップ Lv2）
 for (let y = 3; y <= 11; y++) for (let x = 26; x <= 40; x++) if (hash(x, y, 63) < 0.92) set(x, y, '.');
 put([[29, 5], [36, 4], [33, 9]], 't');
 put([[39, 8], [27, 10]], 'H');
 path([[19, 6], [25, 6]], ':', 1);
+// 粗くしたあとも 2 マス幅（縦に 2 ブロック）になるよう、y 4〜7 を壁でなく境界の通路にする
+set(21, 4, '3');
 set(21, 6, '3');
+for (const y of [2, 3, 8, 9]) set(21, y, '#');
+set(21, 5, '3');
 set(21, 7, '3');
-set(21, 5, '#');
-set(21, 8, '#');
 areaRect(21, 2, 41, 12, 'h');
 
 // ---------------------------------------------------------------------------
@@ -319,10 +322,110 @@ for (let pass = 0; pass < 20; pass++) {
 }
 
 // ---------------------------------------------------------------------------
+// 8. 粗くする（2×2 マス → 1 マス）。
+//
+// 絵の物体・人が大きく見える（参考画像くらい）ように、ゲームの 1 マスを「今の物体 1 個ぶん×2」にした。
+// 上までは細かい 64×70 で設計してあるので、ここで 2×2 ごとに 1 文字へまとめて 32×35 にする。
+// 物体（木・岩・柱）は道の上に落ちると道をふさぐので、ブロックの地面が道ならばその物体は捨てる。
+
+const PATHY = new Set([':', '=', 'D']);
+const SPECIAL = ['@', 'X', 'W', 'Q', 'c', 's'];
+const BORDERS = ['1', '2', '3'];
+const SLOTS = ['b', 'o', 'd', 'e', 'k', 'w', 'p'];
+const NODES = ['t', 'H', 'T', 'R'];
+const DECOS = ['B', 'P'];
+const TERRAIN_ORDER = [':', '=', 'D', 'F', '.', ',', 'S', '#', '~'];
+
+function coarsen() {
+  const cw = W / 2;
+  const ch = H / 2;
+  const ct = Array.from({ length: ch }, () => Array(cw).fill('~'));
+  const ca = Array.from({ length: ch }, () => Array(cw).fill(' '));
+  for (let by = 0; by < ch; by++) {
+    for (let bx = 0; bx < cw; bx++) {
+      const cells = [];
+      const areas = {};
+      for (let dy = 0; dy < 2; dy++)
+        for (let dx = 0; dx < 2; dx++) {
+          cells.push(tile[by * 2 + dy][bx * 2 + dx]);
+          const a = area[by * 2 + dy][bx * 2 + dx];
+          if (a !== ' ') areas[a] = (areas[a] ?? 0) + 1;
+        }
+      const count = (c) => cells.filter((x) => x === c).length;
+      const first = (list) => list.find((c) => count(c) > 0);
+      // 地面（物体の下は分からないので草として数える）
+      const tcount = {};
+      for (const c of cells) {
+        const g = TERRAIN_ORDER.includes(c) ? c : '.';
+        tcount[g] = (tcount[g] ?? 0) + 1;
+      }
+      const ground = TERRAIN_ORDER.slice().sort((a, b) => (tcount[b] ?? 0) - (tcount[a] ?? 0) || TERRAIN_ORDER.indexOf(a) - TERRAIN_ORDER.indexOf(b))[0];
+
+      let out;
+      if ((out = first(SPECIAL))) {
+        /* そのまま */
+      } else if (count('L') > 0) out = 'L';
+      else if ((out = first(BORDERS))) {
+        /* そのまま */
+      } else if ((out = first(SLOTS))) {
+        /* そのまま */
+      } else if (count('f') >= 2) out = 'f';
+      else if (count('S') >= 2) out = 'S';
+      else if (!PATHY.has(ground) && (out = first(NODES))) {
+        /* そのまま */
+      } else if (!PATHY.has(ground) && (out = first(DECOS))) {
+        /* そのまま */
+      } else if (count('r') > 0 && !PATHY.has(ground) && ground !== '~') out = 'r';
+      else out = ground === 'S' ? '.' : ground;
+      ct[by][bx] = out;
+      const best = Object.entries(areas).sort((a, b) => b[1] - a[1])[0];
+      if (best) ca[by][bx] = best[0];
+    }
+  }
+  return { ct, ca, cw, ch };
+}
+
+const { ct, ca, cw, ch } = coarsen();
+
+// たどり着けない歩ける場所を森で埋める（粗くしたあとの地図でもう一度）
+{
+  const SOLID = new Set(['#', '~', 'S', 'B', 'P', 'Q', 'X', 'W', 'T', 't', 'R', 'H', 's', 'c']);
+  const seen = Array.from({ length: ch }, () => Array(cw).fill(false));
+  const stack = [];
+  for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) if (ct[y][x] === '@') stack.push([x, y]);
+  while (stack.length) {
+    const [x, y] = stack.pop();
+    if (x < 0 || y < 0 || x >= cw || y >= ch || seen[y][x] || SOLID.has(ct[y][x])) continue;
+    seen[y][x] = true;
+    stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+  }
+  let filled = 0;
+  for (let y = 0; y < ch; y++)
+    for (let x = 0; x < cw; x++)
+      if (!seen[y][x] && !SOLID.has(ct[y][x]) && ct[y][x] !== 'D') {
+        ct[y][x] = '#';
+        filled++;
+      }
+  console.error(`到達できない ${filled} マスを森で埋めた`);
+}
+for (let pass = 0; pass < 20; pass++)
+  for (let y = 0; y < ch; y++)
+    for (let x = 0; x < cw; x++) {
+      if (ca[y][x] !== ' ') continue;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const a = ca[y + dy]?.[x + dx];
+        if (a && a !== ' ') {
+          ca[y][x] = a;
+          break;
+        }
+      }
+    }
+
+// ---------------------------------------------------------------------------
 // 書き出し
 
-const rows = tile.map((r) => r.join(''));
-const arows = area.map((r) => r.join(''));
+const rows = ct.map((r) => r.join(''));
+const arows = ca.map((r) => r.join(''));
 const out = `// 生成物。直接編集しない。scripts/build-map.mjs を直して node scripts/build-map.mjs で作り直す。
 // 記号の意味は data.ts の MAP_LEGEND。
 

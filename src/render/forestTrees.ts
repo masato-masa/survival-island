@@ -45,8 +45,8 @@ function valueNoise2D(x: number, y: number, seed: number, wavelength: number): n
   return a + (b - a) * fy;
 }
 
-const STEP_X = 1.6;
-const STEP_Y = 1.1;
+const STEP_X = 1.2;
+const STEP_Y = 0.8;
 const PINE_CLUSTER_WAVELEN = 3.2; // タイル単位。この波長のノイズが低い場所を「松のかたまり」にする
 const PINE_CLUSTER_THRESHOLD = 0.32; // ~30% がクラスタになるよう調整
 
@@ -144,8 +144,8 @@ const DECO_PLANTS: SpriteName[] = ['deco_0', 'deco_1', 'deco_2', 'deco_3', 'deco
 
 // renderer.ts の見た目だけの置物（アーチ・かがり火）の位置。ここを避ける。
 const KEEP_CLEAR: { x: number; y: number }[] = [
-  { x: 15, y: 28 },
-  { x: 30, y: 34 },
+  { x: 7, y: 14 },
+  { x: 15, y: 17 },
 ];
 
 export function buildGroundDecor(world: World): TreeInstance[] {
