@@ -67,18 +67,13 @@ body {
   width: 100vw;
   overflow: hidden;
   touch-action: none;
-  background: #0d2b25; /* 画面比率を合わせたときに余る帯の色 */
+  background: #93cc6f;
 }
 
-/* 盤面と HUD は、参考（アメーバピグ）と同じ横長の比率（約 2.1:1）の「舞台」の中に収める。
-   窓がもっと縦長なら上下に、もっと横長なら左右に帯が出る。 */
+/* 盤面と HUD の入れ物。画面いっぱいに広げる（HUD の寸法は、この幅を基準にした cqw で決める）。 */
 .field-stage {
   position: absolute;
-  left: 50%;
-  top: 50%;
-  width: min(100vw, calc(100dvh * 2.1));
-  aspect-ratio: 2.1 / 1;
-  transform: translate(-50%, -50%);
+  inset: 0;
   overflow: hidden;
   container-type: inline-size;
 }
