@@ -11,13 +11,22 @@
 // 岩・木・草花は refs/image0〜3.png（ユーザー提供の参考シート）から切り出した新素材
 // （scripts/slice-refimg.mjs → src/assets/refimg/）を使い、既存の Pigg 試作素材
 // （ヤシ・岩・砂）と並べて質感・スケール感が合うか確かめる。
+//
+// --- タイル・ブロック方式（今回の改修） -------------------------------------
+// ユーザー指示で「世界は 5×5 マス程度の『ブロック』が連なってできている」
+// 「物体はタイルに揃える（プレイヤーの移動自体は連続座標のまま）」に変更した。
+// 静物（ヤシ・木・岩・家具・草花）は必ず TILE=100 の格子の中心に立ち、
+// 1 タイルにつき 1 個まで（Set<string> による本物のグリッド占有判定）。
+// ブロックごとの地面種別・飾りテーマは piggGround.ts の getBlocks() が持つ
+// BlockInfo を単一の情報源として使う（地面の塗り絵と物体配置が食い違わないように）。
+// プレイヤーの物理・当たり判定・ジョイスティック計算はいっさい変えていない。
 
 import { useEffect, useRef, useState } from 'react';
 
 import { dragStickAnchor, isDrag, JOYSTICK_DRAG_RADIUS_PX, keyToDir, stickVector, vectorFromKeys } from '@/input/pointer';
 import type { KeyDir } from '@/input/pointer';
-import { groundKindAt, paintPiggGroundAsync } from '@/render/piggGround';
-import type { GroundKind } from '@/render/piggGround';
+import { getBlocks, groundKindAt, paintPiggGroundAsync, TILE } from '@/render/piggGround';
+import type { BlockInfo, GroundKind } from '@/render/piggGround';
 
 import piggChest from '@/assets/pigg/pigg_chest.png?url';
 import piggPlayerDown0 from '@/assets/pigg/pigg_player_down0.png?url';
@@ -52,17 +61,18 @@ import treeMedium from '@/assets/refimg/tree_medium.png?url';
 import treeSmall from '@/assets/refimg/tree_small.png?url';
 import treeTopDown from '@/assets/refimg/tree_top_down.png?url';
 
-// 世界の大きさ（世界 px。1 世界 px ≒ 画面 1px 相当で作る）。
+// 世界の大きさ（世界 px）。TILE=100 なので 26×20 マスのタイル格子になる
+// （ちょうど 5 列 × 4 行のブロック分割と割り切れる大きさ。piggGround.ts の BLOCK_COLS/ROWS 参照）。
 const WORLD_W = 2600;
 const WORLD_H = 2000;
 const SPEED = 260; // 世界 px / 秒（本編の 6 マス/秒 ×TILE 相当のスケール感に合わせた値）。
 // ズームしても移動の速さ自体（世界座標上の速度）は変えない。画面上で動く距離が
 // 相対的に小さくなるのはズームアウトした結果として正しい挙動。
 const PLAYER_RADIUS = 22; // 当たり判定（見た目の主人公絵とだいたい合わせた半径）
-// カメラのズーム倍率。参考画像は今までの試作よりだいぶ引いた画角だったため、
-// 世界を 1 枚の layer として scale() で縮小してから画面中央に合わせる方式にした
-// （プレイヤーも他の物体と同じ world 直下の絶対配置にして、最後に描画するだけで済む）。
-const ZOOM = 0.62;
+// カメラのズーム倍率は固定値ではなく、「画面の横幅いっぱいに TILE×ZOOM_TILES_ACROSS マスが
+// 入る」ことから毎フレーム逆算する（lead 指示）。ウィンドウ幅が変わっても画角の見え方
+// （何マス見えるか）が一定になる。
+const ZOOM_TILES_ACROSS = 20;
 
 // 主人公の立ち絵の表示サイズ（元画像は 465x557 の縦長）。
 const PLAYER_W = 56;
@@ -76,47 +86,6 @@ function hash(i: number): number {
 /** 0〜1 の乱数値から配列の要素を選ぶ（呼び出し側の配列は必ず 1 個以上ある前提）。 */
 function pick<T>(arr: readonly T[], t: number): T {
   return arr[Math.min(arr.length - 1, Math.floor(t * arr.length))] as T;
-}
-
-/**
- * すでに置いた「当たり判定つき」の物体（幹・岩など）。placeOnGround が重ならないように
- * 参照する。木や岩は見た目も大きいので、地面の種別が合っているだけでは、たまたま同じ場所に
- * 何本も生えて不自然に重なることがある（実際に発生していた不具合）。
- */
-const placedSolids: { x: number; y: number; r: number }[] = [];
-
-/**
- * 指定した地面種別（砂/草/水）の上、かつ既存の物体と重ならない座標になるまで振り直す
- * （最大 16 回）。焼き込んだ地面（piggGround.ts）と同じ判定式を使うので、必ず見た目と一致する。
- * 16 回試しても見つからなければ最後の候補で諦める（無限ループにしない＝最終段は必ず成功する）。
- * solidRadius > 0 のときだけ placedSolids に積んで、以後の配置が避けるようにする。
- */
-function placeOnGround(
-  seed: number,
-  kinds: readonly GroundKind[],
-  marginX = 50,
-  marginY = 50,
-  solidRadius = 0,
-): { x: number; y: number } {
-  let candidate = { x: WORLD_W / 2, y: WORLD_H / 2 };
-  for (let attempt = 0; attempt < 16; attempt++) {
-    const hx = hash(seed * 7.13 + attempt * 3.71 + 1);
-    const hy = hash(seed * 5.37 + attempt * 2.19 + 2);
-    candidate = {
-      x: marginX + hx * (WORLD_W - marginX * 2),
-      y: marginY + hy * (WORLD_H - marginY * 2),
-    };
-    if (!kinds.includes(groundKindAt(candidate.x, candidate.y, WORLD_W, WORLD_H))) continue;
-    const overlaps = placedSolids.some((s) => {
-      const dx = candidate.x - s.x;
-      const dy = candidate.y - s.y;
-      const min = s.r + solidRadius;
-      return dx * dx + dy * dy < min * min;
-    });
-    if (!overlaps) break;
-  }
-  if (solidRadius > 0) placedSolids.push({ x: candidate.x, y: candidate.y, r: solidRadius });
-  return candidate;
 }
 
 interface Obj {
@@ -135,197 +104,16 @@ const WATER_KINDS: readonly GroundKind[] = ['water'];
 // 岩は既存の Pigg 岩に加え、参考シートから切り出した岩・鉱石を混ぜて単調さを消す。
 const ROCK_SPRITES = [piggRock, refRockMedium, refRockSmall, rockPebble, rockMossy, rockFlatGround, oreCopper];
 
-// 見た目の絵は当たり判定の円よりだいぶ大きい（葉が広がる等）ので、重なり判定には
-// 見た目の半分くらいの余裕（PLACE_PAD）を足す。当たり判定そのもの（solidRadius）は
-// 操作性のために小さく保ちたいので、両者を分けている。
-const PLACE_PAD = 34;
-
-// ---------------------------------------------------------------------------
-// 「ジャングル・池の角」の手作業アクセントエリア。
-//
-// ユーザーの参考画像（ジャングルの池の角: 密なヤシの木立が壁のように奥/左を塞ぎ、
-// 睡蓮とハスの花が水面を埋め、丈の高い草や白黄の花クラスターが岸を縁取り、
-// 浮き丸太と道しるべが添えてある）を、一部分だけでも本物に近づけて再現する。
-// 汎用の placeOnGround（ランダム＋間隔ルール）では密な「壁」感が出ないので、
-// この一角だけは piggGround.ts の池の楕円（pondCx/pondCy/pondRx/pondRy）を
-// そのまま使って、角度指定で直接座標を手配置する。
-const POND_CX = WORLD_W * 0.78;
-const POND_CY = WORLD_H * 0.24;
-const POND_RX = WORLD_W * 0.14;
-const POND_RY = WORLD_H * 0.13;
-
-/** 池の中心からの角度（度）＋楕円半径の倍率で世界座標を求める（池の縁に沿って物を並べるため）。 */
-function pondPoint(angleDeg: number, rxMul: number, ryMul: number): { x: number; y: number } {
-  const rad = (angleDeg * Math.PI) / 180;
-  return {
-    x: POND_CX + POND_RX * rxMul * Math.cos(rad),
-    y: POND_CY + POND_RY * ryMul * Math.sin(rad),
-  };
-}
-
-// 池の左奥（角度 155°→305°、楕円のやや外側＝草地）にヤシを詰めて並べ、
-// 「木立の壁」を作る。PLACE_PAD による間隔ルールは使わず直接手配置。
-function buildJungleTreeline(): Obj[] {
-  const count = 15;
-  return Array.from({ length: count }, (_, i) => {
-    const t = count > 1 ? i / (count - 1) : 0;
-    const angle = 155 + t * 150;
-    const { x, y } = pondPoint(angle, 1.26, 1.32);
-    return {
-      x: x + (hash(i * 2.1 + 811) - 0.5) * 22,
-      y: y + (hash(i * 3.3 + 812) - 0.5) * 22,
-      scale: 1.0 + hash(i * 5 + 813) * 0.35,
-      solidRadius: 26,
-      sprite: furnPalmTree,
-      baseWidth: 150,
-    };
-  });
-}
-
-function buildPalms(): Obj[] {
-  // このモジュール読み込み中は複数回マウントされうる（例: テスト用フィールドを閉じて再度開く）。
-  // placedSolids はモジュール直下の共有配列なので、置く物体の先頭（このあと rocks/trees と続く）
-  // で必ずリセットする。そうしないと前回ぶんが残って、2 回目以降だけ配置がおかしくなる。
-  placedSolids.length = 0;
-  // ジャングルの木立の壁は先に確定させ、placedSolids に積んでおく。
-  // こうすると、このあとのランダム配置（散らばったヤシ・岩・木）が壁と重ならず避けてくれる。
-  const treeline = buildJungleTreeline();
-  for (const p of treeline) placedSolids.push({ x: p.x, y: p.y, r: p.solidRadius + PLACE_PAD });
-  const scattered = Array.from({ length: 22 }, (_, i) => {
-    const { x, y } = placeOnGround(i * 11 + 900, LAND_KINDS, 50, 50, 26 + PLACE_PAD);
-    return {
-      x,
-      y,
-      scale: 0.75 + hash(i * 2 + 5) * 0.55,
-      solidRadius: 26,
-      // pigg_palm.png（生成 AI 製）は参考シートと絵柄が合わず、脱色にじみも残っていたので
-      // 廃止。参考シート由来の furn_palm_tree.png（正方形 161x161）に統一する。
-      sprite: furnPalmTree,
-      baseWidth: 150,
-    };
-  });
-  return [...scattered, ...treeline];
-}
-
-function buildRocks(): Obj[] {
-  return Array.from({ length: 20 }, (_, i) => {
-    const { x, y } = placeOnGround(i * 13 + 1100, LAND_KINDS, 50, 50, 20 + PLACE_PAD * 0.6);
-    return {
-      x,
-      y,
-      scale: 0.5 + hash(i * 3 + 105) * 0.6,
-      solidRadius: 20,
-      sprite: pick(ROCK_SPRITES, hash(i * 3 + 102)),
-      baseWidth: 70,
-    };
-  });
-}
-
 // 新しい木（参考シート由来）。斜め見下ろし視点のゲームなので、正面/横向きの木は
 // 中サイズ・小サイズだけを使い、上から見た木（tree_top_down）はアクセントとして少数混ぜる。
 const TREE_SPRITES = [treeMedium, treeMedium, treeSmall, treeTopDown];
-
-function buildTrees(): Obj[] {
-  return Array.from({ length: 16 }, (_, i) => {
-    const { x, y } = placeOnGround(i * 17 + 1300, LAND_KINDS, 50, 50, 24 + PLACE_PAD);
-    return {
-      x,
-      y,
-      scale: 0.75 + hash(i * 5 + 205) * 0.45,
-      solidRadius: 24,
-      sprite: pick(TREE_SPRITES, hash(i * 5 + 207)),
-      baseWidth: 150,
-    };
-  });
-}
 
 // 草花はただの地面の飾り（当たり判定なし）。参考シートの色違いを多く混ぜて賑やかさを出す。
 // plant_10/16/54/59 は市松模様の抜き残りがわずかに出るため、意図して外している。
 const PLANT_SPRITES_LAND = [plant01, plant05, plant12, plant18, plant22, plant29, plant33, plant40];
 
-function buildPlants(): Obj[] {
-  return Array.from({ length: 55 }, (_, i) => {
-    const { x, y } = placeOnGround(i * 19 + 1700, LAND_KINDS, 30, 30);
-    return {
-      x,
-      y,
-      scale: 0.55 + hash(i * 7 + 305) * 0.55,
-      solidRadius: 0,
-      sprite: pick(PLANT_SPRITES_LAND, hash(i * 7 + 309)),
-      baseWidth: 46,
-    };
-  });
-}
-
-// 池の岸（草地側、角度 -70°→150°＝手前〜右側）を丈の高い草・リードと白黄の花クラスターで
-// 厚めに縁取る。plant_55/56 は背の高いリード寄りの草、18/29/33/40 は白黄の花クラスター。
+// 池の岸を縁取る、丈の高い草・白黄の花クラスター。
 const EDGE_FLORA_SPRITES = [plant18, plant29, plant33, plant40, plant55, plant56];
-
-function buildJungleEdgeFlora(): Obj[] {
-  return Array.from({ length: 24 }, (_, i) => {
-    const angle = -70 + (i / 23) * 220;
-    const rMul = 1.04 + hash(i * 3 + 950) * 0.32;
-    const { x, y } = pondPoint(angle, rMul, rMul);
-    return {
-      x: x + (hash(i * 5 + 951) - 0.5) * 34,
-      y: y + (hash(i * 7 + 952) - 0.5) * 34,
-      scale: 0.7 + hash(i * 9 + 953) * 0.55,
-      solidRadius: 0,
-      sprite: pick(EDGE_FLORA_SPRITES, hash(i * 11 + 954)),
-      baseWidth: 52,
-    };
-  });
-}
-
-// 睡蓮っぽい草花は池（水）の上だけに置く。地面の焼き込み（piggGround.ts）と
-// 同じ groundKindAt() で判定するので、常に水面の上に乗る。
-const PLANT_SPRITES_WATER = [plant45, plant47, plant51, plant53];
-
-function buildWaterPlants(): Obj[] {
-  return Array.from({ length: 12 }, (_, i) => {
-    const { x, y } = placeOnGround(i * 23 + 2100, WATER_KINDS, 20, 20);
-    return {
-      x,
-      y,
-      scale: 0.6 + hash(i * 9 + 405) * 0.5,
-      solidRadius: 0,
-      sprite: pick(PLANT_SPRITES_WATER, hash(i * 9 + 409)),
-      baseWidth: 52,
-    };
-  });
-}
-
-// ジャングル池のアクセント: 睡蓮（緑の葉、plant_47/51/53）を水面全体に多めに散らし、
-// ハスの花（ピンク、plant_45）を主役として少数・少し大きめに目立たせる。
-function buildJunglePondAccents(): Obj[] {
-  const lilyPads: Obj[] = Array.from({ length: 16 }, (_, i) => {
-    const angle = hash(i * 7 + 900) * 360;
-    const rMul = 0.1 + hash(i * 11 + 901) * 0.8;
-    const { x, y } = pondPoint(angle, rMul, rMul);
-    return {
-      x,
-      y,
-      scale: 0.7 + hash(i * 9 + 902) * 0.5,
-      solidRadius: 0,
-      sprite: pick([plant47, plant51, plant53], hash(i * 13 + 903)),
-      baseWidth: 56,
-    };
-  });
-  const lotuses: Obj[] = Array.from({ length: 4 }, (_, i) => {
-    const angle = 40 + i * 70 + (hash(i * 3 + 910) - 0.5) * 24;
-    const rMul = 0.3 + hash(i * 5 + 911) * 0.35;
-    const { x, y } = pondPoint(angle, rMul, rMul);
-    return {
-      x,
-      y,
-      scale: 0.9 + hash(i * 7 + 912) * 0.3,
-      solidRadius: 0,
-      sprite: plant45,
-      baseWidth: 82,
-    };
-  });
-  return [...lilyPads, ...lotuses];
-}
 
 // 家具は完全な飾り（当たり判定なし）。ゲームロジックには一切繋がらない。
 const FURNITURE_SPRITES: { sprite: string; baseWidth: number }[] = [
@@ -336,30 +124,299 @@ const FURNITURE_SPRITES: { sprite: string; baseWidth: number }[] = [
   { sprite: furnFlowerBed, baseWidth: 52 },
 ];
 
-function buildFurniture(): Obj[] {
-  return Array.from({ length: 12 }, (_, i) => {
-    const { x, y } = placeOnGround(i * 29 + 2500, LAND_KINDS);
-    const f = FURNITURE_SPRITES[i % FURNITURE_SPRITES.length]!;
-    return {
-      x,
-      y,
-      scale: 0.8 + hash(i * 11 + 505) * 0.3,
-      solidRadius: 0,
-      sprite: f.sprite,
-      baseWidth: f.baseWidth,
-    };
-  });
+// ---------------------------------------------------------------------------
+// タイル占有（本物のグリッド判定。以前の「円で重なりを避けつつ最大 16 回振り直す」方式を廃止）。
+//
+// 「小さな草花 1 本まで、1 タイルにつき 1 個まで」というユーザーの明示指示があるので、
+// 装飾も含め、置いた物体は必ず occupied に積む。密度は物体の重なりではなく
+// 「520 マス中どれだけのマスを飾るか」で決まる。
+
+type TileKey = `${number},${number}`;
+function tileKey(gx: number, gy: number): TileKey {
+  return `${gx},${gy}`;
+}
+function tileCenter(gx: number, gy: number): { x: number; y: number } {
+  return { x: (gx + 0.5) * TILE, y: (gy + 0.5) * TILE };
 }
 
-// ジャングル池の角のランドマーク: 水際の「浮き丸太」と、岸の少し手前の「道しるべ」。
-// どちらも 1 個だけの飾りなので、池の楕円に対する角度で直接座標を決め打ちする。
-function buildJungleLandmarks(): Obj[] {
-  const log = pondPoint(215, 1.0, 1.02); // 水と岸の境目＝丸太が半分浸かって見える位置
-  const sign = pondPoint(-15, 1.5, 1.55); // 岸のやや手前、木立の壁と重ならない開けた場所
-  return [
-    { x: log.x, y: log.y, scale: 1.15, solidRadius: 0, sprite: furnBenchLog, baseWidth: 100 },
-    { x: sign.x, y: sign.y, scale: 1.0, solidRadius: 0, sprite: furnSignpost, baseWidth: 52 },
-  ];
+/** モジュール直下の共有状態。テスト用フィールドを閉じて再度開く（再マウント）たびにリセットする。 */
+const occupied = new Set<TileKey>();
+
+/**
+ * ブロック範囲内で、指定した地面種別に合う空きタイルをランダムに探す（最大 24 回試す）。
+ * 見つからなければ、ブロック内を線形走査して条件に合う空きタイルを探し、
+ * それも無ければ地面種別を無視して空きタイルを探す（＝最終段は必ず成功する梯子。
+ * ブロックが完全に埋まっている場合だけ null を返し、呼び出し側はその 1 個をあきらめる）。
+ */
+function pickFreeTileInBlock(seed: number, block: BlockInfo, kinds: readonly GroundKind[]): { x: number; y: number } | null {
+  const w = block.gx1 - block.gx0;
+  const h = block.gy1 - block.gy0;
+  for (let attempt = 0; attempt < 24; attempt++) {
+    const hx = hash(seed * 7.13 + attempt * 3.71 + 1);
+    const hy = hash(seed * 5.37 + attempt * 2.19 + 2);
+    const gx = block.gx0 + Math.min(w - 1, Math.floor(hx * w));
+    const gy = block.gy0 + Math.min(h - 1, Math.floor(hy * h));
+    if (occupied.has(tileKey(gx, gy))) continue;
+    const c = tileCenter(gx, gy);
+    if (!kinds.includes(groundKindAt(c.x, c.y, WORLD_W, WORLD_H))) continue;
+    occupied.add(tileKey(gx, gy));
+    return c;
+  }
+  // 梯子 2 段目: 地面種別に合う空きタイルを線形走査。
+  for (let gy = block.gy0; gy < block.gy1; gy++) {
+    for (let gx = block.gx0; gx < block.gx1; gx++) {
+      if (occupied.has(tileKey(gx, gy))) continue;
+      const c = tileCenter(gx, gy);
+      if (!kinds.includes(groundKindAt(c.x, c.y, WORLD_W, WORLD_H))) continue;
+      occupied.add(tileKey(gx, gy));
+      return c;
+    }
+  }
+  // 梯子 3 段目（最終段）: 地面種別を無視して、とにかく空いているタイルを使う。
+  for (let gy = block.gy0; gy < block.gy1; gy++) {
+    for (let gx = block.gx0; gx < block.gx1; gx++) {
+      if (occupied.has(tileKey(gx, gy))) continue;
+      occupied.add(tileKey(gx, gy));
+      return tileCenter(gx, gy);
+    }
+  }
+  return null; // ブロックが完全に埋まっている（想定densityでは起きない）
+}
+
+/** 望ましい世界座標に一番近い、ブロック内の空きタイルを探す（池の周りの手作業配置用）。 */
+function nearestFreeTileInBlock(desired: { x: number; y: number }, block: BlockInfo, kinds: readonly GroundKind[]): { x: number; y: number } | null {
+  let best: { gx: number; gy: number; d: number } | null = null;
+  for (let gy = block.gy0; gy < block.gy1; gy++) {
+    for (let gx = block.gx0; gx < block.gx1; gx++) {
+      if (occupied.has(tileKey(gx, gy))) continue;
+      const c = tileCenter(gx, gy);
+      if (!kinds.includes(groundKindAt(c.x, c.y, WORLD_W, WORLD_H))) continue;
+      const d = (c.x - desired.x) ** 2 + (c.y - desired.y) ** 2;
+      if (!best || d < best.d) best = { gx, gy, d };
+    }
+  }
+  if (!best) {
+    // 梯子: 地面種別を無視して一番近い空きタイル。
+    for (let gy = block.gy0; gy < block.gy1; gy++) {
+      for (let gx = block.gx0; gx < block.gx1; gx++) {
+        if (occupied.has(tileKey(gx, gy))) continue;
+        const c = tileCenter(gx, gy);
+        const d = (c.x - desired.x) ** 2 + (c.y - desired.y) ** 2;
+        if (!best || d < best.d) best = { gx, gy, d };
+      }
+    }
+  }
+  if (!best) return null;
+  occupied.add(tileKey(best.gx, best.gy));
+  return tileCenter(best.gx, best.gy);
+}
+
+// ---------------------------------------------------------------------------
+// ジャングル池ブロック: 池の楕円（block.pond、piggGround.ts が世界配置ずみ）の周りに
+// 木立の壁・岸辺の草花・睡蓮・ハス・ランドマークを手配置する。以前は世界全体に対する
+// 角度指定だったが、今は「そのブロックの pond」だけを見ればよい。
+// タイル数がブロック 1 個ぶん（このレイアウトでは 6×5=30 マス）しか無いので、
+// 元の密度（睡蓮 16 本など）をそのまま持ち込むと入り切らない。1 タイル 1 個の制約に
+// 合わせて個数を間引いた。
+
+function pondPointFor(block: BlockInfo, angleDeg: number, rxMul: number, ryMul: number): { x: number; y: number } {
+  const pond = block.pond!;
+  const rad = (angleDeg * Math.PI) / 180;
+  return {
+    x: pond.cx + pond.rx * rxMul * Math.cos(rad),
+    y: pond.cy + pond.ry * ryMul * Math.sin(rad),
+  };
+}
+
+interface Bucket {
+  palms: Obj[];
+  rocks: Obj[];
+  trees: Obj[];
+  plants: Obj[];
+  waterPlants: Obj[];
+  furniture: Obj[];
+  chest: { x: number; y: number };
+}
+
+function buildJunglePondBlock(block: BlockInfo, out: Bucket): void {
+  // 木立の壁（池の左奥、角度 155°→305°）。solidRadius を持つので当たり判定に使われる。
+  const treelineCount = 9;
+  for (let i = 0; i < treelineCount; i++) {
+    const t = treelineCount > 1 ? i / (treelineCount - 1) : 0;
+    const angle = 155 + t * 150;
+    const desired = pondPointFor(block, angle, 1.15, 1.2);
+    const c = nearestFreeTileInBlock(desired, block, LAND_KINDS);
+    if (!c) continue;
+    out.palms.push({
+      x: c.x,
+      y: c.y,
+      scale: 1.0 + hash(i * 5 + 813) * 0.3,
+      solidRadius: 26,
+      sprite: furnPalmTree,
+      baseWidth: 150,
+    });
+  }
+  // 岸の縁取り（丈の高い草・白黄の花クラスター）。角度 -70°→150°＝手前〜右側。
+  const edgeCount = 7;
+  for (let i = 0; i < edgeCount; i++) {
+    const angle = -70 + (i / (edgeCount - 1)) * 220;
+    const desired = pondPointFor(block, angle, 1.0, 1.0);
+    const c = nearestFreeTileInBlock(desired, block, LAND_KINDS);
+    if (!c) continue;
+    out.plants.push({
+      x: c.x,
+      y: c.y,
+      scale: 0.7 + hash(i * 9 + 953) * 0.5,
+      solidRadius: 0,
+      sprite: pick(EDGE_FLORA_SPRITES, hash(i * 11 + 954)),
+      baseWidth: 52,
+    });
+  }
+  // 池のアクセント: 睡蓮（緑の葉）を多め、ハス（ピンク、主役）を少数。
+  const lilyCount = 7;
+  for (let i = 0; i < lilyCount; i++) {
+    const angle = hash(i * 7 + 900) * 360;
+    const rMul = 0.15 + hash(i * 11 + 901) * 0.7;
+    const desired = pondPointFor(block, angle, rMul, rMul);
+    const c = nearestFreeTileInBlock(desired, block, WATER_KINDS);
+    if (!c) continue;
+    out.waterPlants.push({
+      x: c.x,
+      y: c.y,
+      scale: 0.7 + hash(i * 9 + 902) * 0.5,
+      solidRadius: 0,
+      sprite: pick([plant47, plant51, plant53], hash(i * 13 + 903)),
+      baseWidth: 56,
+    });
+  }
+  const lotusCount = 2;
+  for (let i = 0; i < lotusCount; i++) {
+    const angle = 40 + i * 140 + (hash(i * 3 + 910) - 0.5) * 24;
+    const rMul = 0.3 + hash(i * 5 + 911) * 0.3;
+    const desired = pondPointFor(block, angle, rMul, rMul);
+    const c = nearestFreeTileInBlock(desired, block, WATER_KINDS);
+    if (!c) continue;
+    out.waterPlants.push({ x: c.x, y: c.y, scale: 0.9 + hash(i * 7 + 912) * 0.3, solidRadius: 0, sprite: plant45, baseWidth: 82 });
+  }
+  // ランドマーク: 水際の浮き丸太、岸の道しるべ（各 1 個）。
+  const log = pondPointFor(block, 215, 1.0, 1.02);
+  const logC = nearestFreeTileInBlock(log, block, LAND_KINDS);
+  if (logC) out.furniture.push({ x: logC.x, y: logC.y, scale: 1.1, solidRadius: 0, sprite: furnBenchLog, baseWidth: 100 });
+  const sign = pondPointFor(block, -15, 1.4, 1.4);
+  const signC = nearestFreeTileInBlock(sign, block, LAND_KINDS);
+  if (signC) out.furniture.push({ x: signC.x, y: signC.y, scale: 1.0, solidRadius: 0, sprite: furnSignpost, baseWidth: 52 });
+  // 岩を 2 個だけ、余った陸タイルに。
+  for (let i = 0; i < 2; i++) {
+    const c = pickFreeTileInBlock(block.bi * 97 + block.bj * 131 + i * 17 + 4000, block, LAND_KINDS);
+    if (!c) continue;
+    out.rocks.push({ x: c.x, y: c.y, scale: 0.5 + hash(i * 3 + 4005) * 0.5, solidRadius: 20, sprite: pick(ROCK_SPRITES, hash(i * 3 + 4006)), baseWidth: 70 });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 通常ブロック（beach / meadow / grove）は「テーマごとの密度」でタイルを埋める。
+// 密度は合計 1.0 を超えないようにしてあり（空きタイルも残る＝過密にしない）、
+// grove だけ木を濃くして「密な木立」のバリエーションを出す。
+
+interface ThemeConfig {
+  palmDensity: number;
+  treeDensity: number;
+  rockDensity: number;
+  plantDensity: number;
+  furnitureDensity: number;
+}
+
+const THEME_CONFIG: Record<'beach' | 'meadow' | 'grove', ThemeConfig> = {
+  beach: { palmDensity: 0.06, treeDensity: 0, rockDensity: 0.2, plantDensity: 0.1, furnitureDensity: 0.04 },
+  meadow: { palmDensity: 0.02, treeDensity: 0.08, rockDensity: 0.06, plantDensity: 0.35, furnitureDensity: 0.04 },
+  grove: { palmDensity: 0.02, treeDensity: 0.35, rockDensity: 0.1, plantDensity: 0.15, furnitureDensity: 0.01 },
+};
+
+function buildGenericBlock(block: BlockInfo, out: Bucket): void {
+  const cfg = THEME_CONFIG[block.theme as 'beach' | 'meadow' | 'grove'];
+  const tileCount = (block.gx1 - block.gx0) * (block.gy1 - block.gy0);
+  const seedBase = block.bi * 1301 + block.bj * 6151;
+
+  const palmCount = Math.round(tileCount * cfg.palmDensity);
+  for (let i = 0; i < palmCount; i++) {
+    const c = pickFreeTileInBlock(seedBase + i * 11 + 100, block, LAND_KINDS);
+    if (!c) continue;
+    out.palms.push({ x: c.x, y: c.y, scale: 0.75 + hash(seedBase + i * 2 + 5) * 0.55, solidRadius: 26, sprite: furnPalmTree, baseWidth: 150 });
+  }
+
+  const treeCount = Math.round(tileCount * cfg.treeDensity);
+  for (let i = 0; i < treeCount; i++) {
+    const c = pickFreeTileInBlock(seedBase + i * 17 + 300, block, LAND_KINDS);
+    if (!c) continue;
+    out.trees.push({
+      x: c.x,
+      y: c.y,
+      scale: 0.75 + hash(seedBase + i * 5 + 205) * 0.45,
+      solidRadius: 24,
+      sprite: pick(TREE_SPRITES, hash(seedBase + i * 5 + 207)),
+      baseWidth: 150,
+    });
+  }
+
+  const rockCount = Math.round(tileCount * cfg.rockDensity);
+  for (let i = 0; i < rockCount; i++) {
+    const c = pickFreeTileInBlock(seedBase + i * 13 + 500, block, LAND_KINDS);
+    if (!c) continue;
+    out.rocks.push({
+      x: c.x,
+      y: c.y,
+      scale: 0.5 + hash(seedBase + i * 3 + 105) * 0.6,
+      solidRadius: 20,
+      sprite: pick(ROCK_SPRITES, hash(seedBase + i * 3 + 102)),
+      baseWidth: 70,
+    });
+  }
+
+  const plantCount = Math.round(tileCount * cfg.plantDensity);
+  for (let i = 0; i < plantCount; i++) {
+    const c = pickFreeTileInBlock(seedBase + i * 19 + 700, block, LAND_KINDS);
+    if (!c) continue;
+    out.plants.push({
+      x: c.x,
+      y: c.y,
+      scale: 0.55 + hash(seedBase + i * 7 + 305) * 0.55,
+      solidRadius: 0,
+      sprite: pick(PLANT_SPRITES_LAND, hash(seedBase + i * 7 + 309)),
+      baseWidth: 46,
+    });
+  }
+
+  const furnitureCount = Math.round(tileCount * cfg.furnitureDensity);
+  for (let i = 0; i < furnitureCount; i++) {
+    const c = pickFreeTileInBlock(seedBase + i * 29 + 900, block, LAND_KINDS);
+    if (!c) continue;
+    const f = FURNITURE_SPRITES[(seedBase + i) % FURNITURE_SPRITES.length]!;
+    out.furniture.push({ x: c.x, y: c.y, scale: 0.8 + hash(seedBase + i * 11 + 505) * 0.3, solidRadius: 0, sprite: f.sprite, baseWidth: f.baseWidth });
+  }
+}
+
+/** 世界全体を組み立てる。マウントのたびに occupied をリセットしてから、全ブロックを順に埋める。 */
+function buildWorld(): Bucket {
+  occupied.clear();
+  const out: Bucket = { palms: [], rocks: [], trees: [], plants: [], waterPlants: [], furniture: [], chest: { x: 0, y: 0 } };
+  const blocks = getBlocks(WORLD_W, WORLD_H);
+  // jungle_pond を先に確定させる（池の周りは手作業配置の要求が細かいため、空きタイルが
+  // 一番豊富なうちに埋めたい）。そのあと残りのブロックを埋める。
+  for (const block of blocks) {
+    if (block.theme === 'jungle_pond') buildJunglePondBlock(block, out);
+  }
+  for (const block of blocks) {
+    if (block.theme !== 'jungle_pond') buildGenericBlock(block, out);
+  }
+  // 宝箱もタイル占有システムに乗せる（他の物体と同じ 1 タイル 1 個のルールを守るため、
+  // 単独で座標を決め打ちしない）。ワールド中央のタイルを含むブロックの中から、
+  // その中心に一番近い空きタイルを選ぶ。
+  const cgx = Math.floor(WORLD_W / 2 / TILE);
+  const cgy = Math.floor(WORLD_H / 2 / TILE);
+  const centerBlock = blocks.find((b) => cgx >= b.gx0 && cgx < b.gx1 && cgy >= b.gy0 && cgy < b.gy1)!;
+  const chestPos = nearestFreeTileInBlock({ x: WORLD_W / 2, y: WORLD_H / 2 }, centerBlock, LAND_KINDS);
+  out.chest = chestPos ?? tileCenter(cgx, cgy);
+  return out;
 }
 
 export function PiggTestField({ onClose }: { onClose: () => void }) {
@@ -368,16 +425,17 @@ export function PiggTestField({ onClose }: { onClose: () => void }) {
   const stickRef = useRef<HTMLDivElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const groundCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  // palmsRef は「木立の壁」（buildJungleTreeline）を含む。placedSolids に積んでから
-  // rocks/trees を配置したいので、必ずこの順番で呼ぶ。
-  const palmsRef = useRef<Obj[]>(buildPalms());
-  const rocksRef = useRef<Obj[]>(buildRocks());
-  const treesRef = useRef<Obj[]>(buildTrees());
-  const plantsRef = useRef<Obj[]>([...buildPlants(), ...buildJungleEdgeFlora()]);
-  const waterPlantsRef = useRef<Obj[]>([...buildWaterPlants(), ...buildJunglePondAccents()]);
-  const furnitureRef = useRef<Obj[]>([...buildFurniture(), ...buildJungleLandmarks()]);
-  // 宝箱は飾り 1 個だけ（当たり判定なし）。ワールド中央寄りの分かりやすい位置に置く。
-  const chestRef = useRef<{ x: number; y: number }>({ x: WORLD_W / 2 + 160, y: WORLD_H / 2 + 40 });
+  const worldRefData = useRef<Bucket | null>(null);
+  if (!worldRefData.current) worldRefData.current = buildWorld();
+  const builtWorld = worldRefData.current;
+  const palmsRef = useRef<Obj[]>(builtWorld.palms);
+  const rocksRef = useRef<Obj[]>(builtWorld.rocks);
+  const treesRef = useRef<Obj[]>(builtWorld.trees);
+  const plantsRef = useRef<Obj[]>(builtWorld.plants);
+  const waterPlantsRef = useRef<Obj[]>(builtWorld.waterPlants);
+  const furnitureRef = useRef<Obj[]>(builtWorld.furniture);
+  // 宝箱は飾り 1 個だけ（当たり判定なし）。buildWorld() 内でタイル占有を通して決めた位置。
+  const chestRef = useRef<{ x: number; y: number }>(builtWorld.chest);
   // 地面は 1 枚の Canvas へ事前に焼く（piggGround.ts）。焼き終わるまではローディングを出す
   // （CLAUDE.md: 「無言で固まる 1 秒は許容しない」）。
   const [groundReady, setGroundReady] = useState(false);
@@ -498,15 +556,20 @@ export function PiggTestField({ onClose }: { onClose: () => void }) {
 
       const vw = root.clientWidth;
       const vh = root.clientHeight;
+      // ズーム倍率は固定値をやめ、「画面の横幅いっぱいに ZOOM_TILES_ACROSS マスが入る」
+      // ことから毎フレーム逆算する（lead 指示）。毎フレーム root.clientWidth を読むので、
+      // ウィンドウのリサイズやデバイス幅の違いにもそのまま追従する
+      // （ResizeObserver を別途持たなくても、この rAF ループ自体が実質のポーリングになる）。
+      const zoom = vw / (ZOOM_TILES_ACROSS * TILE);
       // カメラが向く世界座標上の焦点（プレイヤー位置を、ワールドの外が画面に映らないよう
       // クランプしたもの）。ズームしている分、画面に映る世界の半幅/半高は
-      // viewportSize / (2*ZOOM) に広がるので、素の pos.x/pos.y をそのままクランプするのではなく
+      // viewportSize / (2*zoom) に広がるので、素の pos.x/pos.y をそのままクランプするのではなく
       // その半幅/半高でクランプする。ワールドがその半幅/半高より小さい向きは中央に固定する。
       const focusX =
-        WORLD_W * ZOOM <= vw ? WORLD_W / 2 : Math.max(vw / (2 * ZOOM), Math.min(WORLD_W - vw / (2 * ZOOM), pos.x));
+        WORLD_W * zoom <= vw ? WORLD_W / 2 : Math.max(vw / (2 * zoom), Math.min(WORLD_W - vw / (2 * zoom), pos.x));
       const focusY =
-        WORLD_H * ZOOM <= vh ? WORLD_H / 2 : Math.max(vh / (2 * ZOOM), Math.min(WORLD_H - vh / (2 * ZOOM), pos.y));
-      world.style.transform = `translate(${vw / 2 - focusX * ZOOM}px, ${vh / 2 - focusY * ZOOM}px) scale(${ZOOM})`;
+        WORLD_H * zoom <= vh ? WORLD_H / 2 : Math.max(vh / (2 * zoom), Math.min(WORLD_H - vh / (2 * zoom), pos.y));
+      world.style.transform = `translate(${vw / 2 - focusX * zoom}px, ${vh / 2 - focusY * zoom}px) scale(${zoom})`;
       // 歩きコマがまだ1枚しか無いので、動いている間だけ軽くバウンドさせて
       // 「歩いている感」だけ出す（本格的な歩行アニメは別途）。
       // プレイヤーは他の物体と同じく .pigg-world 直下の絶対配置（world 座標系）にしたので、
@@ -533,7 +596,7 @@ export function PiggTestField({ onClose }: { onClose: () => void }) {
   return (
     <div className="pigg-field" ref={rootRef}>
       <div className="pigg-world" ref={worldRef} style={{ width: WORLD_W, height: WORLD_H }}>
-        {/* 地面は piggGround.ts が焼いた 1 枚の Canvas（砂・草・水をなめらかにブレンド）。 */}
+        {/* 地面は piggGround.ts が焼いた 1 枚の Canvas（ブロックごとの砂・草・水をなめらかにブレンド）。 */}
         <canvas ref={groundCanvasRef} className="pigg-field-ground" width={WORLD_W} height={WORLD_H} />
         {waterPlantsRef.current.map((p, i) => (
           <img
