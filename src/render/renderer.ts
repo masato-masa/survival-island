@@ -223,10 +223,9 @@ const GRID_LINE = 'rgba(221, 237, 201, 0.85)';
 const RUINS_ARCH = { x: 7.5, y: 15 };
 const PLAZA_CAMPFIRE = { x: 15.5, y: 18 };
 
+// 壊れて復活待ちの岩に残す瓦礫。木は「幹（stump 状態）を切ると消える」ので、消えたあとには何も残さない
+// （前はここで幹を描いていて、切れない幹に見えていた）。
 const NODE_TO_STUMP: Partial<Record<NodeKind, SpriteName>> = {
-  tree: 'stump' as SpriteName,
-  bigTree: 'stump' as SpriteName,
-  forestTree: 'stump' as SpriteName,
   rock: 'rubble' as SpriteName,
   hardRock: 'rubble' as SpriteName,
 };
