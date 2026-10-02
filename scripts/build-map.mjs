@@ -118,8 +118,8 @@ areaRect(8, 55, 20, 68, 's');
 // 開始位置
 set(32, 53, '@');
 
-// 砂浜のヤシ（木）と岩・流木代わりの岩
-put([[5, 51], [14, 50], [21, 52], [44, 51], [52, 50], [58, 52], [26, 56], [48, 55]], 'T');
+// 砂浜には木を置かない（砂の上の木は無し。粗くしたあとにも砂の上の木を消す）。
+// 流木代わりの岩（粗くするときにフィールドの岩は消える）
 put([[18, 55], [38, 56], [55, 55], [41, 51]], 'R');
 
 // ---------------------------------------------------------------------------
@@ -332,7 +332,7 @@ const PATHY = new Set([':', '=', 'D']);
 const SPECIAL = ['@', 'X', 'W', 'Q', 'c', 's'];
 const BORDERS = ['1', '2', '3'];
 const SLOTS = ['b', 'o', 'd', 'e', 'k', 'w', 'p'];
-const NODES = ['t', 'H', 'T', 'R'];
+const NODES = ['t', 'H', 'T', 'R', 'v']; // 花（v）は木より後回し
 const DECOS = ['B', 'P'];
 const TERRAIN_ORDER = [':', '=', 'D', 'F', '.', ',', 'S', '#', '~'];
 
@@ -390,9 +390,31 @@ function coarsen() {
 
 const { ct, ca, cw, ch } = coarsen();
 
-// たどり着けない歩ける場所を森で埋める（粗くしたあとの地図でもう一度）
+// 砂の上の木を消す（world.ts と同じく、物の下の地面は上下左右の歩ける地面の多数決。同数なら草以外が勝つ）
 {
-  const SOLID = new Set(['#', '~', 'S', 'B', 'P', 'Q', 'X', 'W', 'T', 't', 'R', 'H', 's', 'c']);
+  const GROUND_OF = { ',': 'sand', '.': 'grass', '#': 'grass', v: 'grass', ':': 'dirt', '=': 'paving', D: 'dock', F: 'foundation' };
+  let removed = 0;
+  for (let y = 0; y < ch; y++)
+    for (let x = 0; x < cw; x++) {
+      if (ct[y][x] !== 'T' && ct[y][x] !== 't') continue;
+      const counts = {};
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const g = GROUND_OF[ct[y + dy]?.[x + dx]];
+        if (g) counts[g] = (counts[g] ?? 0) + 1;
+      }
+      const sand = counts.sand ?? 0;
+      if (sand > 0 && Object.entries(counts).every(([g, c]) => g === 'sand' || c <= sand)) {
+        ct[y][x] = ',';
+        removed++;
+      }
+    }
+  console.error(`砂の上の木 ${removed} 本を消した`);
+}
+
+// たどり着けない歩ける場所を森で埋める（粗くしたあとの地図でもう一度）
+const COARSE_SOLID = new Set(['#', '~', 'S', 'B', 'P', 'Q', 'X', 'W', 'T', 't', 'R', 'H', 's', 'c', 'v']);
+{
+  const SOLID = COARSE_SOLID;
   const seen = Array.from({ length: ch }, () => Array(cw).fill(false));
   const stack = [];
   for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) if (ct[y][x] === '@') stack.push([x, y]);
@@ -423,6 +445,65 @@ for (let pass = 0; pass < 20; pass++)
         }
       }
     }
+
+// ---------------------------------------------------------------------------
+// 9. 花（v）を散らす。砂浜以外の草地（'.'）に、ハッシュで決定的に、草 12〜15 マスに 1 つくらい。
+//    開始位置・看板・宝箱・作業台・遺跡・係留柱・柱・境界・畑・家の跡地、最初から置く家具
+//    （data.ts の EXTRA_INITIAL_FURNITURE：たき火 15,17 と 遺跡のアーチ 7,14）の周り 1 マスには置かない。
+//    花どうしは隣り合わせない（斜めも）。置くとたどり着けるマスが減る（道や通り道をふさぐ）なら置かない。
+{
+  const FLOWER_RATE = 1 / 13.5;
+  const KEEP_CLEAR = new Set(['@', 's', 'c', 'W', 'X', 'Q', 'P', '1', '2', '3', 'f', 'F']);
+  const RESERVED = [
+    [15, 17],
+    [7, 14],
+  ];
+  const reachableCount = () => {
+    const seen = Array.from({ length: ch }, () => Array(cw).fill(false));
+    const stack = [];
+    for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) if (ct[y][x] === '@') stack.push([x, y]);
+    let n = 0;
+    while (stack.length) {
+      const [x, y] = stack.pop();
+      if (x < 0 || y < 0 || x >= cw || y >= ch || seen[y][x] || COARSE_SOLID.has(ct[y][x])) continue;
+      seen[y][x] = true;
+      n++;
+      stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+    }
+    return n;
+  };
+  // 草マスをハッシュの小さい順に並べ、条件を満たすものから目標数（草 ÷ 13.5）まで置く
+  const candidates = [];
+  for (let y = 0; y < ch; y++)
+    for (let x = 0; x < cw; x++) if (ct[y][x] === '.' && ca[y][x] !== 's') candidates.push([x, y, hash(x, y, 71)]);
+  candidates.sort((a, b) => a[2] - b[2]);
+  const grass = candidates.length;
+  const target = Math.round(grass * FLOWER_RATE);
+  let placed = 0;
+  let rejected = 0;
+  let reach = reachableCount();
+  for (const [x, y] of candidates) {
+      if (placed >= target) break;
+      let ok = true;
+      for (let dy = -1; dy <= 1 && ok; dy++)
+        for (let dx = -1; dx <= 1 && ok; dx++) {
+          if (KEEP_CLEAR.has(ct[y + dy]?.[x + dx])) ok = false;
+          if (RESERVED.some(([rx, ry]) => rx === x + dx && ry === y + dy)) ok = false;
+        }
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (ct[y + dy]?.[x + dx] === 'v') ok = false;
+      if (!ok) continue;
+      ct[y][x] = 'v';
+      const after = reachableCount();
+      if (after < reach - 1) {
+        ct[y][x] = '.';
+        rejected++;
+        continue;
+      }
+      reach = after;
+      placed++;
+    }
+  console.error(`花 ${placed} 本（草 ${grass} マス、通り道をふさぐので見送り ${rejected}）`);
+}
 
 // ---------------------------------------------------------------------------
 // 書き出し

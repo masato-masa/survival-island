@@ -20,6 +20,8 @@ export function islandPoints(world: World, save: SaveState): IslandPoints {
   for (const [anchor, furnitureId] of Object.entries(save.placements)) {
     const def = furnitureId ? FURNITURE_BY_ID[furnitureId] : undefined;
     if (!def) continue;
+    // 最初から島にある置物（たき火・柱など。作れない家具）は得点にも統一ボーナスにも数えない
+    if ('none' in def.learn) continue;
     const [xs, ys] = anchor.split(',');
     const area = world.area[Number(ys) * world.width + Number(xs)];
     if (!area) continue;

@@ -18,7 +18,8 @@ export function CraftSheet({
   onClose: () => void;
 }) {
   const known = new Set(knownRecipes(save));
-  const sorted = [...FURNITURE].sort((a, b) => Number(known.has(b.id)) - Number(known.has(a.id)));
+  // 作れない家具（たき火・古い柱など、島に最初からあるだけのもの）は並べない
+  const sorted = [...FURNITURE].filter((f) => !('none' in f.learn)).sort((a, b) => Number(known.has(b.id)) - Number(known.has(a.id)));
 
   return (
     <Sheet title="クラフト" onClose={onClose}>

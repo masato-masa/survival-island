@@ -11,6 +11,22 @@
 // 1 マス = 32 ワールドピクセル。w/h はワールド px（描画側が scale 倍する）。
 // 縦に長いスプライト（木など）はタイルの「下辺・中央」に合わせて描く。
 
+import { drawAvatar, idlePose, type AvatarDir } from './avatar';
+import {
+  paintBigTree,
+  paintBorderTree,
+  paintFlower,
+  paintFlowerSprout,
+  paintItemFlowerSeed,
+  paintItemPetal,
+  paintItemSapling,
+  paintSapling,
+  paintStump,
+  paintTree,
+  paintWallOak,
+  paintWallPine,
+} from './plantArt';
+
 export type SpriteName =
   | 'tree'
   | 'bigTree'
@@ -116,7 +132,19 @@ export type SpriteName =
   | 'deco_reed2'
   | 'deco_log'
   | 'deco_tuft0'
-  | 'deco_tuft1';
+  | 'deco_tuft1'
+  | 'sapling'
+  | 'flower0'
+  | 'flower1'
+  | 'flower2'
+  | 'flower3'
+  | 'flowerSprout'
+  | 'item_sapling'
+  | 'item_flowerSeed'
+  | 'item_petal'
+  | 'f_campfire'
+  | 'f_ruinArch'
+  | 'f_oldPillar';
 
 export interface BakedSprite {
   // 素材シート由来は元画像をそのまま返すことがあるので HTMLImageElement も許す。
@@ -194,30 +222,21 @@ interface SheetSpec {
   worldH?: number;
   /** worldW と worldH の両方をそのまま使う（縦に伸ばした木など。既定は worldH から幅を出す）。 */
   stretch?: boolean;
-  /** 木の幹の中ほどだけを縦に伸ばして背を高くする（樹冠と根元の花は伸ばさない）。worldW/worldH をそのまま使う。 */
-  tallTrunk?: boolean;
   /** 左右反転（右向き 1 枚から左向きを作る）。 */
   flip?: boolean;
   tint?: string; // 乗算合成で色違いを作る
 }
 
-const WALL_TINT = '#b3c6aa'; // 森の壁の木: ほんの少しだけ落ち着かせる（資源の木と見分けがつく程度）
 const BORDER_TINT = '#a99bd0'; // 境界ノード: 淡い紫がかった色
 const STONE_TINT = '#a7afba'; // 石材家具用（暖色の木目を寒色の石灰岩っぽく）
 const COPPER_TINT = '#e59a58'; // 銅ランプ
 
 const SHEET_TARGET: Partial<Record<SpriteName, SheetSpec>> = {
-  tree: { src: 'tree_medium', worldW: 46, worldH: 84, tallTrunk: true },
-  bigTree: { src: 'tree_big', worldW: 56, worldH: 100, tallTrunk: true },
   palm: { src: 'furn_palm_tree', worldW: 40 },
   rock: { src: 'rock_medium', worldW: 34 },
   hardRock: { src: 'rock_medium', worldW: 36, tint: '#8b97a3' },
-  wallOak: { src: 'tree_medium', worldW: 46, worldH: 80, tallTrunk: true, tint: WALL_TINT },
-  wallPine: { src: 'tree_small', worldW: 42, worldH: 74, tallTrunk: true, tint: WALL_TINT },
-  borderTree: { src: 'tree_medium', worldW: 46, worldH: 82, tallTrunk: true, tint: BORDER_TINT },
   borderRock: { src: 'rock_medium', worldW: 36, tint: BORDER_TINT },
 
-  stump: { src: 'tree_stump', worldW: 30 },
   rubble: { src: 'rock_pebble', worldW: 26 },
   chest: { src: 'furn_chest', worldW: 34 },
   chestOpen: { src: 'furn_chest', worldW: 34 },
@@ -274,20 +293,10 @@ const SHEET_TARGET: Partial<Record<SpriteName, SheetSpec>> = {
   deco_pebble: { src: 'rock_pebble', worldW: 14 },
   deco_mossy: { src: 'rock_mossy', worldW: 22 },
 
-  // 主人公: 正面・背面・右向き（左向きは右向きの反転）。歩行は描画側のはずみ・傾きで表すので、
-  // 3 コマとも同じ絵。向きごとに余白がちがうので、高さでそろえる。
-  player_down0: { src: 'pigg_player_down0', worldW: 30, worldH: 34 },
-  player_down1: { src: 'pigg_player_down0', worldW: 30, worldH: 34 },
-  player_down2: { src: 'pigg_player_down0', worldW: 30, worldH: 34 },
-  player_up0: { src: 'pigg_player_up0', worldW: 30, worldH: 34 },
-  player_up1: { src: 'pigg_player_up0', worldW: 30, worldH: 34 },
-  player_up2: { src: 'pigg_player_up0', worldW: 30, worldH: 34 },
-  player_right0: { src: 'pigg_player_right0', worldW: 30, worldH: 34 },
-  player_right1: { src: 'pigg_player_right0', worldW: 30, worldH: 34 },
-  player_right2: { src: 'pigg_player_right0', worldW: 30, worldH: 34 },
-  player_left0: { src: 'pigg_player_right0', worldW: 30, worldH: 34, flip: true },
-  player_left1: { src: 'pigg_player_right0', worldW: 30, worldH: 34, flip: true },
-  player_left2: { src: 'pigg_player_right0', worldW: 30, worldH: 34, flip: true },
+  // 家具（素材シートから）
+  f_campfire: { src: 'furn_campfire', worldW: 36 },
+  f_ruinArch: { src: 'cave_entrance', worldW: 50 },
+  f_oldPillar: { src: 'rock_cliff', worldW: 42 },
 };
 
 // ---------------------------------------------------------------------------
@@ -804,7 +813,41 @@ function paintTuft(variant: 0 | 1): Painter {
   };
 }
 
+// 主人公（avatar.ts のコード描画）。アイコン・一覧用の立ち止まり姿。歩き・作業は renderer が drawAvatar で直接描く。
+function paintPlayer(dir: AvatarDir): Painter {
+  return (ctx) => drawAvatar(ctx, 15, 41, 1, idlePose(dir));
+}
+const PLAYER = (dir: AvatarDir): PainterSpec => ({ w: 30, h: 42, paint: paintPlayer(dir) });
+
 const PAINTERS: Partial<Record<SpriteName, PainterSpec>> = {
+  // 木・花（plantArt.ts）。下辺中央が根元。
+  tree: { w: 40, h: 58, paint: paintTree },
+  bigTree: { w: 46, h: 68, paint: paintBigTree },
+  wallOak: { w: 40, h: 58, paint: paintWallOak },
+  wallPine: { w: 38, h: 62, paint: paintWallPine },
+  borderTree: { w: 40, h: 58, paint: paintBorderTree },
+  stump: { w: 26, h: 18, paint: paintStump },
+  sapling: { w: 20, h: 22, paint: paintSapling },
+  flower0: { w: 26, h: 26, paint: paintFlower(0) },
+  flower1: { w: 26, h: 26, paint: paintFlower(1) },
+  flower2: { w: 26, h: 26, paint: paintFlower(2) },
+  flower3: { w: 26, h: 26, paint: paintFlower(3) },
+  flowerSprout: { w: 16, h: 14, paint: paintFlowerSprout },
+  item_sapling: { w: 24, h: 24, paint: paintItemSapling },
+  item_flowerSeed: { w: 24, h: 24, paint: paintItemFlowerSeed },
+  item_petal: { w: 24, h: 24, paint: paintItemPetal },
+  player_down0: PLAYER('down'),
+  player_down1: PLAYER('down'),
+  player_down2: PLAYER('down'),
+  player_up0: PLAYER('up'),
+  player_up1: PLAYER('up'),
+  player_up2: PLAYER('up'),
+  player_right0: PLAYER('right'),
+  player_right1: PLAYER('right'),
+  player_right2: PLAYER('right'),
+  player_left0: PLAYER('left'),
+  player_left1: PLAYER('left'),
+  player_left2: PLAYER('left'),
   deco_tuft0: { w: 18, h: 12, paint: paintTuft(0) },
   deco_tuft1: { w: 18, h: 12, paint: paintTuft(1) },
   turnip0: { w: 32, h: 32, paint: paintTurnip(0) },
@@ -882,22 +925,6 @@ function bakeFlipped(img: HTMLImageElement): HTMLCanvasElement | OffscreenCanvas
   return canvas;
 }
 
-/** 幹の中ほど [0.64, 0.80) だけを縦に伸ばして、背の高い木にする。 */
-function bakeTallTrunk(src: CanvasImageSource, iw: number, ih: number, ratio: number): HTMLCanvasElement | OffscreenCanvas {
-  const outH = Math.round(ih * ratio);
-  const canvas = makeCanvas(iw, outH);
-  const ctx = canvas.getContext('2d') as Ctx2D | null;
-  if (!ctx) return canvas;
-  const a1 = Math.round(ih * 0.64);
-  const a2 = Math.round(ih * 0.8);
-  const tailH = ih - a2;
-  const midH = outH - a1 - tailH;
-  ctx.drawImage(src, 0, 0, iw, a1, 0, 0, iw, a1); // 樹冠
-  ctx.drawImage(src, 0, a1, iw, a2 - a1, 0, a1, iw, midH); // 幹（伸ばす）
-  ctx.drawImage(src, 0, a2, iw, tailH, 0, a1 + midH, iw, tailH); // 根元
-  return canvas;
-}
-
 function bakeFromSheet(name: SpriteName): BakedSprite | null {
   const spec = SHEET_TARGET[name];
   if (!spec) return null;
@@ -905,10 +932,6 @@ function bakeFromSheet(name: SpriteName): BakedSprite | null {
   if (!img) return null;
   const aspect = img.naturalHeight / img.naturalWidth;
   const source: CanvasImageSource = spec.tint ? bakeTinted(img, spec.tint) : spec.flip ? bakeFlipped(img) : img;
-  if (spec.tallTrunk && spec.worldH) {
-    const ratio = spec.worldH / (spec.worldW * aspect);
-    return { canvas: bakeTallTrunk(source, img.naturalWidth, img.naturalHeight, ratio), w: spec.worldW, h: spec.worldH };
-  }
   const w = spec.worldH && !spec.stretch ? spec.worldH / aspect : spec.worldW;
   const h = spec.worldH ?? spec.worldW * aspect;
   return { canvas: source, w, h };

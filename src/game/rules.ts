@@ -1,11 +1,14 @@
 // スキル段階の上限、ダメージ、クールダウン、覚えているレシピ・種、エリアの開放判定。
 
 import {
-  ACTION_COOLDOWN_MS,
   AREAS,
+  CHOP_ACTION_MS,
   CROPS,
+  FARM_ACTION_MS,
+  FLOWER_GROW_MS,
   FURNITURE,
   FURNITURE_BY_ID,
+  GATHER_ACTION_MS,
   ISLAND_LEVEL_POINTS,
   NODES,
   NODE_REQUIRES,
@@ -13,11 +16,12 @@ import {
   SPEED_PER_LEVEL,
   STAMINA_BASE,
   STAMINA_PER_LEVEL,
+  TREE_GROW_MS,
   damageForLevel,
   furnitureSize,
   skillCapForIslandLevel,
 } from './data';
-import type { AreaId, CropId, FurnitureId, MapNode, SaveState, SkillId, World } from './types';
+import type { AreaId, CropId, FurnitureId, LiveNode, MapNode, SaveState, SkillId, World } from './types';
 
 export function staminaMax(save: SaveState): number {
   return STAMINA_BASE + STAMINA_PER_LEVEL * (save.skills.staminaMax ?? 0);
@@ -59,19 +63,24 @@ export function canHit(save: SaveState, node: MapNode): boolean {
   return (save.skills[req.skill] ?? 0) >= req.level;
 }
 
-function powerSkillFor(node: MapNode): SkillId {
-  return NODES[node.kind].tool === 'axe' ? 'axePower' : 'pickHard';
+function powerSkillFor(node: MapNode): SkillId | null {
+  const tool = NODES[node.kind].tool;
+  return tool === 'axe' ? 'axePower' : tool === 'pick' ? 'pickHard' : null;
 }
 
+/** 1 回叩いたときに減る体力。花（採取）は常に 1（1 回摘む）。 */
 export function damageFor(save: SaveState, node: MapNode): number {
-  const level = save.skills[powerSkillFor(node)] ?? 0;
-  return damageForLevel(level);
+  const skill = powerSkillFor(node);
+  if (!skill) return 1;
+  return damageForLevel(save.skills[skill] ?? 0);
 }
 
-export function cooldownMs(save: SaveState, tool: 'axe' | 'pick' | 'farm'): number {
-  const speedSkill: SkillId | null = tool === 'axe' ? 'axeSpeed' : tool === 'pick' ? 'pickSpeed' : null;
-  const level = speedSkill ? save.skills[speedSkill] ?? 0 : 0;
-  return ACTION_COOLDOWN_MS * (1 - SPEED_PER_LEVEL * level);
+/** 時間のかかる行動 1 回の長さ（ミリ秒）。伐採・採掘は速度スキル 1 段階ごとに 10% 短い。 */
+export function actionMs(save: SaveState, tool: 'axe' | 'pick' | 'gather' | 'farm'): number {
+  if (tool === 'farm') return FARM_ACTION_MS;
+  if (tool === 'gather') return GATHER_ACTION_MS;
+  const level = save.skills[tool === 'axe' ? 'axeSpeed' : 'pickSpeed'] ?? 0;
+  return CHOP_ACTION_MS * (1 - SPEED_PER_LEVEL * level);
 }
 
 /** 覚えているレシピ（島レベルで覚えるもの＋宝箱などで覚えたもの）。 */
@@ -79,6 +88,7 @@ export function knownRecipes(save: SaveState): FurnitureId[] {
   const level = islandLevel(save);
   const result: FurnitureId[] = [];
   for (const f of FURNITURE) {
+    if ('none' in f.learn) continue; // 作れない家具（最初から置いてあるだけ）
     if ('level' in f.learn) {
       if (f.learn.level <= level) result.push(f.id);
     } else if (save.learnedRecipes.includes(f.id)) {
@@ -106,13 +116,74 @@ export function isAreaOpen(world: World, save: SaveState, area: AreaId): boolean
   return borders.every((n) => save.nodes[n.id]?.destroyedAt != null);
 }
 
-/** ノードが今生きているか（壊れていない）。復活時刻を過ぎていれば生きている扱い。 */
+/** ノードが今生きているか（壊れていない）。復活時刻を過ぎていれば生きている扱い。
+ *  植えたもの（allNodes が返すもの）は育っている途中でも true（固い。叩けるかは growing を見る）。 */
 export function nodeAlive(save: SaveState, node: MapNode, now: number): boolean {
   const state = save.nodes[node.id];
   if (!state || state.destroyedAt == null) return true;
   const def = NODES[node.kind];
   if (def.respawnMs != null && state.destroyedAt + def.respawnMs <= now) return true;
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// 植えた木・花と、地図の資源をまとめた「いまフィールドにある資源」
+
+/** 植えたものの資源 id（save.nodes のキーにもなる）。 */
+export const plantedNodeId = (tileKey: string): string => `p:${tileKey}`;
+
+const staticLiveCache = new WeakMap<World, LiveNode[]>();
+
+function staticLiveNodes(world: World): LiveNode[] {
+  let list = staticLiveCache.get(world);
+  if (!list) {
+    list = world.nodes.map((n) => ({ ...n, planted: false, growing: false, growth: 1 }));
+    staticLiveCache.set(world, list);
+  }
+  return list;
+}
+
+/** save.planted の 1 件を資源にする。 */
+function plantedLiveNode(world: World, save: SaveState, tileKey: string, now: number): LiveNode | null {
+  const p = save.planted[tileKey];
+  if (!p) return null;
+  const [xs, ys] = tileKey.split(',');
+  const x = Number(xs);
+  const y = Number(ys);
+  const growMs = p.kind === 'tree' ? TREE_GROW_MS : FLOWER_GROW_MS;
+  const growth = Math.min(1, Math.max(0, (now - p.plantedAt) / growMs));
+  return {
+    id: plantedNodeId(tileKey),
+    x,
+    y,
+    kind: p.kind,
+    area: world.area[y * world.width + x] ?? 'beach',
+    planted: true,
+    growing: growth < 1,
+    growth,
+  };
+}
+
+/**
+ * 地図の資源（world.nodes。壊れたものも含む。生死は nodeAlive で見る）と、植えた木・花をまとめて返す。
+ * 植えたものの id は "p:x,y"。体力・幹の状態は地図の資源と同じく save.nodes[id] に入る。
+ */
+export function allNodes(world: World, save: SaveState, now: number): LiveNode[] {
+  const statics = staticLiveNodes(world);
+  const keys = Object.keys(save.planted);
+  if (keys.length === 0) return statics;
+  const out = statics.slice();
+  for (const k of keys) {
+    const n = plantedLiveNode(world, save, k, now);
+    if (n) out.push(n);
+  }
+  return out;
+}
+
+/** id から資源を引く（地図の資源・植えたもの）。無ければ null。 */
+export function liveNodeById(world: World, save: SaveState, id: string, now: number): LiveNode | null {
+  if (id.startsWith('p:')) return plantedLiveNode(world, save, id.slice(2), now);
+  return staticLiveNodes(world).find((n) => n.id === id) ?? null;
 }
 
 
@@ -149,13 +220,14 @@ export function placementAt(save: SaveState, x: number, y: number): string | nul
 }
 
 /**
- * 家具を置いてよいマスか（家具そのものは見ない）。水・畑・看板・宝箱・設備・飾り・立っている資源の上には置けない。
- * 復活しない資源（森の木・境界）が完全に消えたあとの跡地には置ける。
+ * 家具を置いてよいマスか（家具そのものは見ない）。水・畑・看板・宝箱・設備・飾り・立っている資源・植えたものの上には置けない。
+ * 復活しない資源（木・森の木・境界・花）が完全に消えたあとの跡地には置ける。苗木・花の種を植えられるのも同じマス。
  */
 export function isBuildable(world: World, save: SaveState, x: number, y: number): boolean {
   if (x < 0 || y < 0 || x >= world.width || y >= world.height) return false;
   const ground = world.ground[y * world.width + x];
   if (!ground || !BUILDABLE_GROUND.has(ground)) return false;
+  if (save.planted[`${x},${y}`]) return false;
   for (const node of world.nodes) {
     if (node.x !== x || node.y !== y) continue;
     const gone = save.nodes[node.id]?.destroyedAt != null && NODES[node.kind].respawnMs === null;

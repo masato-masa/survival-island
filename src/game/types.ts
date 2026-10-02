@@ -6,6 +6,10 @@ export type ItemId =
   | 'wood'
   | 'stone'
   | 'copper'
+  // 植物（植えられるもの・花から取れるもの）
+  | 'sapling' // 苗木（切り株を切ると出る。植えると木になる）
+  | 'flowerSeed' // 花の種（花を摘むと出る。植えると花になる）
+  | 'petal' // 花びら（花を摘むと出る。花壇・花の鉢の素材）
   // 作物
   | 'turnip'
   | 'sunflower'
@@ -48,7 +52,8 @@ export type NodeKind =
   | 'hardRock' // 硬い岩（pickHard 1 以上）
   | 'borderTree' // 境界の大木（エリアごとに必要 Lv が違う）
   | 'borderRock' // 境界の大岩
-  | 'forestTree'; // 森の木（いちばん高い段階の斧でだけ切れる）
+  | 'forestTree' // 森の木（いちばん高い段階の斧でだけ切れる）
+  | 'flower'; // 花（道具なしで摘める。FLOWER_GATHERS 回で消える）
 
 export type Dir = 'up' | 'down' | 'left' | 'right';
 
@@ -58,7 +63,7 @@ export type Dir = 'up' | 'down' | 'left' | 'right';
 export interface ItemDef {
   id: ItemId;
   name: string;
-  kind: 'material' | 'crop';
+  kind: 'material' | 'plant' | 'crop';
 }
 
 export interface CropDef {
@@ -85,8 +90,8 @@ export interface FurnitureDef {
   points: number;
   cost: Partial<Record<ItemId, number>>;
   stamina: number; // 作るときのスタミナ消費
-  /** 覚え方。島レベル到達で覚えるか、宝箱で覚えるか。 */
-  learn: { level: number } | { chest: string };
+  /** 覚え方。島レベル到達で覚えるか、宝箱で覚えるか。none は作れない（島に最初から置いてあるだけの家具）。 */
+  learn: { level: number } | { chest: string } | { none: true };
 }
 
 export type FurnitureId = string;
@@ -96,9 +101,10 @@ export interface NodeDef {
   name: string;
   hp: number; // 叩くと減る。0 で壊れる
   drops: Partial<Record<ItemId, number>>;
-  /** 壊してから復活するまで。null は復活しない（境界）。 */
+  /** 壊してから復活するまで。null は復活しない（木・境界・花。木は苗木を植えて増やす）。 */
   respawnMs: number | null;
-  tool: 'axe' | 'pick';
+  /** gather は道具なし（花を摘む）。 */
+  tool: 'axe' | 'pick' | 'gather';
 }
 
 export interface AreaDef {
@@ -117,8 +123,9 @@ export interface AreaDef {
  *  dirt は土の道、paving は古い石畳、foundation は家の跡地の土台。 */
 export type Ground = 'water' | 'grass' | 'sand' | 'soil' | 'dirt' | 'paving' | 'forest' | 'dock' | 'foundation';
 
-/** 飾りの置物。叩けない。rubble だけは上を歩ける。ship は w×h を占める 1 つの物。 */
-export type DecorKind = 'rubble' | 'brokenStone' | 'pillar' | 'ship';
+/** 飾りの置物。叩けない。rubble だけは上を歩ける。ship は w×h を占める 1 つの物。
+ *  （柱は家具 oldPillar になった。動かせる） */
+export type DecorKind = 'rubble' | 'brokenStone' | 'ship';
 
 export interface Decor {
   id: string; // 左上の "x,y"
@@ -153,9 +160,10 @@ export interface Chest {
   recipe: FurnitureId;
 }
 
-/** 島に据え付けの設備。触れると画面が開く（遺跡 = スキル、作業台 = クラフト）。 */
-/** ruins = スキル、workbench = クラフト、housePlot = 家の跡地（今は説明だけ）、dock = 船着き場（今は説明だけ。交易は M2）。 */
-export type StationKind = 'ruins' | 'workbench' | 'housePlot' | 'dock';
+/** 島に据え付けの設備（動かせない）。触れると画面が開く。
+ *  ruins = スキル、housePlot = 家の跡地（今は説明だけ）、dock = 船着き場（今は説明だけ。交易は M2）。
+ *  作業台は設備ではなく家具 woodWorkbench（最初から置いてあり、動かせる。触れるとクラフト）。 */
+export type StationKind = 'ruins' | 'housePlot' | 'dock';
 
 export interface Station {
   id: string; // "x,y"
@@ -163,6 +171,13 @@ export interface Station {
   y: number;
   kind: StationKind;
   area: AreaId;
+}
+
+/** 島に最初から置いてある家具（新規セーブ・古いセーブの移行で placements に入る）。 */
+export interface InitialFurniture {
+  x: number;
+  y: number;
+  furniture: FurnitureId;
 }
 
 export interface World {
@@ -175,7 +190,19 @@ export interface World {
   chests: Chest[];
   stations: Station[];
   decor: Decor[];
+  /** 最初から置いてある家具（作業台・古い柱・たき火・遺跡のアーチ）。 */
+  initialFurniture: InitialFurniture[];
   start: { x: number; y: number };
+}
+
+/** 地図の資源と、植えた木・花をまとめた「いまフィールドにある資源」（rules.ts の allNodes）。 */
+export interface LiveNode extends MapNode {
+  /** 植えたもの（id は "p:x,y"）。 */
+  planted: boolean;
+  /** 植えて育っている途中（固いが、叩けない）。 */
+  growing: boolean;
+  /** 育ち具合 0..1（地図の資源は常に 1）。 */
+  growth: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -196,6 +223,12 @@ export interface CropTile {
 export interface PlotState {
   selected: CropId | null; // 看板で選んだ作物（次に植えるときから反映）
   tiles: Record<string, CropTile>; // key = "x,y"。空きマスは入れない
+}
+
+/** 植えた苗木・花の種。key は "x,y"。消えたら（幹を切る・摘み切る）エントリごと消す。 */
+export interface PlantedState {
+  kind: 'tree' | 'flower';
+  plantedAt: number;
 }
 
 export interface Buff {
@@ -221,6 +254,24 @@ export interface SaveState {
   chestsOpened: string[];
   seenIntro: boolean;
   buffs: Buff[];
+  /** 植えた苗木・花の種（"x,y" → 状態）。資源としての体力などは nodes["p:x,y"] に入る。 */
+  planted: Record<string, PlantedState>;
+  /** 最初から置く家具（作業台・柱など）を placements に入れ終えたか。古いセーブに一度だけ入れるための印。 */
+  seededV2: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// 時間のかかる行動（伐採・採取・畑）。始めてから約 3 秒後に結果が出る。その間プレイヤーは動けない。
+
+export interface TimedAction {
+  kind: 'chop' | 'gather' | 'farm';
+  /** 対象のマス */
+  x: number;
+  y: number;
+  nodeId?: string;
+  nodeKind?: NodeKind;
+  startedAt: number;
+  endsAt: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -229,6 +280,14 @@ export interface SaveState {
 export type GameEvent =
   | { type: 'hit'; x: number; y: number; kind: NodeKind; damage: number }
   | { type: 'broke'; x: number; y: number; kind: NodeKind; drops: Partial<Record<ItemId, number>> }
+  /** 花を摘んだ。remaining = あと何回摘めるか（0 なら消えた）。 */
+  | { type: 'gathered'; x: number; y: number; kind: NodeKind; remaining: number }
+  /** アイテムが出た（見た目だけ。持ち物にはこの時点で入っている）。x, y は出どころのマス。 */
+  | { type: 'dropped'; x: number; y: number; items: Partial<Record<ItemId, number>> }
+  /** 時間のかかる行動を始めた。 */
+  | { type: 'actionStarted'; action: TimedAction }
+  /** 苗木・花の種を植えた。 */
+  | { type: 'sowed'; x: number; y: number; plant: 'tree' | 'flower' }
   | { type: 'areaOpened'; area: AreaId }
   | { type: 'planted'; tiles: { x: number; y: number }[] }
   | { type: 'harvested'; tiles: { x: number; y: number }[]; crop: CropId; amount: number }
@@ -258,8 +317,10 @@ export type Result =
 
 /** プレイヤーの近くにある「タップで実行できる対象」。 */
 export type Target =
-  | { kind: 'node'; x: number; y: number; node: MapNode }
+  | { kind: 'node'; x: number; y: number; node: LiveNode }
   | { kind: 'farm'; x: number; y: number; plot: Plot; action: 'plant' | 'harvest' }
   | { kind: 'sign'; x: number; y: number; plot: Plot }
   | { kind: 'chest'; x: number; y: number; chest: Chest }
-  | { kind: 'station'; x: number; y: number; station: Station };
+  | { kind: 'station'; x: number; y: number; station: Station }
+  /** 機能のある家具（作業台）。anchor は家具の左上マスの "x,y"。 */
+  | { kind: 'furniture'; x: number; y: number; furnitureId: FurnitureId; anchor: string };

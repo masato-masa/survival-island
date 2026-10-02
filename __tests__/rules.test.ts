@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { ISLAND_LEVEL_POINTS, damageForLevel } from '../src/game/data';
-import { canHit, cooldownMs, damageFor, islandLevel, isAreaOpen, knownCrops, knownRecipes, skillCap } from '../src/game/rules';
+import { actionMs, canHit, damageFor, islandLevel, isAreaOpen, knownCrops, knownRecipes, skillCap } from '../src/game/rules';
 import { freshSave, world } from './helpers';
 
 describe('islandLevel', () => {
@@ -50,22 +50,21 @@ describe('canHit / damageFor', () => {
   });
 });
 
-describe('cooldownMs', () => {
-  it('速度スキルで短くなる', () => {
+describe('actionMs', () => {
+  it('伐採は 3 秒で、速度スキル 1 段階ごとに 10% 短くなる', () => {
     const save = freshSave(0);
-    const base = cooldownMs(save, 'axe');
+    const base = actionMs(save, 'axe');
+    expect(base).toBe(3000);
     save.skills.axeSpeed = 2;
-    const faster = cooldownMs(save, 'axe');
-    expect(faster).toBeLessThan(base);
-    expect(faster).toBeCloseTo(base * 0.8);
+    expect(actionMs(save, 'axe')).toBeCloseTo(base * 0.8);
   });
 
-  it('畑は速度スキル 0 扱い', () => {
+  it('畑・採取は速度スキルに関係なく 3 秒', () => {
     const save = freshSave(0);
     save.skills.axeSpeed = 5;
     save.skills.pickSpeed = 5;
-    const base = cooldownMs(freshSave(0), 'farm');
-    expect(cooldownMs(save, 'farm')).toBe(base);
+    expect(actionMs(save, 'farm')).toBe(3000);
+    expect(actionMs(save, 'gather')).toBe(3000);
   });
 });
 
@@ -75,6 +74,13 @@ describe('knownRecipes / knownCrops', () => {
     const recipes = knownRecipes(save);
     expect(recipes).toContain('woodFence');
     expect(recipes).not.toContain('stonePath'); // レベル2
+  });
+
+  it('作れない家具（たき火・古い柱など）は覚えない', () => {
+    const save = freshSave(0);
+    save.maxPoints = 1000;
+    const recipes = knownRecipes(save);
+    for (const id of ['campfire', 'ruinArch', 'oldPillar']) expect(recipes).not.toContain(id);
   });
 
   it('宝箱で覚えたレシピも含む', () => {

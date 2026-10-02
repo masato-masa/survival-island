@@ -1,7 +1,7 @@
 // プレイヤー位置からアクション対象を選ぶ。歩けるかの当たり判定もここ。
 
-import { FURNITURE_BY_ID, TARGET_ORIGIN_UP, TARGET_RADIUS } from './data';
-import { canHit, nodeAlive, placementAt } from './rules';
+import { FURNITURE_BY_ID, FURNITURE_FUNCTION, TARGET_ORIGIN_UP, TARGET_RADIUS } from './data';
+import { allNodes, canHit, nodeAlive, placementAt, placementRect } from './rules';
 import { isReady } from './time';
 import { key, worldIndex } from './world';
 import type { Dir, Fail, SaveState, Target, World } from './types';
@@ -38,7 +38,8 @@ export function findTarget(
 ): (Target & { blocked?: Fail }) | null {
   const candidates: Candidate[] = [];
 
-  for (const node of world.nodes) {
+  for (const node of allNodes(world, save, now)) {
+    if (node.growing) continue; // 育っている途中の苗木・花は叩けない
     if (!nodeAlive(save, node, now)) continue;
     const d = dist(px, py, node.x, node.y);
     if (d > TARGET_RADIUS) continue;
@@ -101,6 +102,27 @@ export function findTarget(
     }
   }
 
+  // 機能のある家具（作業台）。占めるマスのうち一番近いマスで測る。
+  for (const [anchor, furnitureId] of Object.entries(save.placements)) {
+    if (!FURNITURE_FUNCTION[furnitureId]) continue;
+    const r = placementRect(anchor, furnitureId);
+    let best: { d: number; x: number; y: number } | null = null;
+    for (let dy = 0; dy < r.size; dy++) {
+      for (let dx = 0; dx < r.size; dx++) {
+        const d = dist(px, py, r.x + dx, r.y + dy);
+        if (!best || d < best.d) best = { d, x: r.x + dx, y: r.y + dy };
+      }
+    }
+    if (best && best.d <= TARGET_RADIUS) {
+      candidates.push({
+        dist: best.d,
+        x: best.x,
+        y: best.y,
+        target: { kind: 'furniture', x: best.x, y: best.y, furnitureId, anchor },
+      });
+    }
+  }
+
   if (candidates.length === 0) return null;
 
   let minDist = Infinity;
@@ -137,6 +159,8 @@ export function isSolidTile(world: World, save: SaveState, x: number, y: number,
   for (const node of world.nodes) {
     if (node.x === x && node.y === y && nodeAlive(save, node, now)) return true;
   }
+  // 植えた苗木・花（育っている途中も固い。消えると記録ごと無くなる）
+  if (save.planted[key(x, y)]) return true;
   for (const plot of world.plots) {
     if (plot.sign.x === x && plot.sign.y === y) return true;
   }

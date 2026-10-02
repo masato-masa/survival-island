@@ -7,6 +7,7 @@ import type {
   CropId,
   FurnitureDef,
   FurnitureId,
+  InitialFurniture,
   ItemDef,
   ItemId,
   NodeDef,
@@ -26,9 +27,22 @@ export const STAMINA_PER_LEVEL = 5; // staminaMax 1 段階ごと
 export const STAMINA_REGEN_MS = 3 * 60 * 1000; // 3 分で 1 回復
 export const XP_PER_STAMINA = 1; // 経験値は消費スタミナに比例
 
-/** 叩く・植える・収穫の間隔（ミリ秒）。速度スキル 1 段階ごとに 10% 短くなる。 */
-export const ACTION_COOLDOWN_MS = 420;
+/**
+ * 時間のかかる行動（ピグライフ風）。タップすると約 3 秒かけて 1 段階ぶん作業し、終わったときに結果が出る。
+ * 伐採・採掘は速度スキル 1 段階ごとに SPEED_PER_LEVEL ずつ短くなる。採取（花）・畑は一定。
+ */
+export const CHOP_ACTION_MS = 3000;
+export const GATHER_ACTION_MS = 3000;
+export const FARM_ACTION_MS = 3000;
 export const SPEED_PER_LEVEL = 0.1;
+
+/** 苗木・花の種を植えてから育ちきるまで。 */
+export const TREE_GROW_MS = 10 * 60 * 1000;
+export const FLOWER_GROW_MS = 3 * 60 * 1000;
+/** 花は何回摘むと消えるか。 */
+export const FLOWER_GATHERS = 3;
+/** 植えるときのスタミナ。 */
+export const PLANT_STAMINA = 1;
 
 /** アクション対象を探す半径（マス）。「体の中心」から対象マスの中心まで。 */
 export const TARGET_RADIUS = 1.0;
@@ -63,6 +77,9 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   wood: { id: 'wood', name: '木材', kind: 'material' },
   stone: { id: 'stone', name: '石', kind: 'material' },
   copper: { id: 'copper', name: '銅鉱石', kind: 'material' },
+  sapling: { id: 'sapling', name: '苗木', kind: 'plant' },
+  flowerSeed: { id: 'flowerSeed', name: '花の種', kind: 'plant' },
+  petal: { id: 'petal', name: '花びら', kind: 'plant' },
   turnip: { id: 'turnip', name: 'カブ', kind: 'crop' },
   sunflower: { id: 'sunflower', name: 'ヒマワリ', kind: 'crop' },
   tomato: { id: 'tomato', name: 'トマト', kind: 'crop' },
@@ -75,8 +92,9 @@ export const CROPS: Record<CropId, CropDef> = {
 };
 
 export const NODES: Record<NodeKind, NodeDef> = {
-  tree: { kind: 'tree', name: '木', hp: 2, drops: { wood: 2 }, respawnMs: 10 * 60 * 1000, tool: 'axe' },
-  bigTree: { kind: 'bigTree', name: '太い木', hp: 4, drops: { wood: 5 }, respawnMs: 15 * 60 * 1000, tool: 'axe' },
+  // 木は復活しない（幹を切ると苗木が出るので、それを植えて増やす）。
+  tree: { kind: 'tree', name: '木', hp: 2, drops: { wood: 2 }, respawnMs: null, tool: 'axe' },
+  bigTree: { kind: 'bigTree', name: '太い木', hp: 4, drops: { wood: 5 }, respawnMs: null, tool: 'axe' },
   rock: { kind: 'rock', name: '岩', hp: 2, drops: { stone: 2 }, respawnMs: 10 * 60 * 1000, tool: 'pick' },
   hardRock: {
     kind: 'hardRock',
@@ -89,6 +107,8 @@ export const NODES: Record<NodeKind, NodeDef> = {
   borderTree: { kind: 'borderTree', name: '境界の大木', hp: 3, drops: { wood: 4 }, respawnMs: null, tool: 'axe' },
   borderRock: { kind: 'borderRock', name: '境界の大岩', hp: 3, drops: { stone: 4 }, respawnMs: null, tool: 'pick' },
   forestTree: { kind: 'forestTree', name: '森の木', hp: 4, drops: { wood: 3 }, respawnMs: null, tool: 'axe' },
+  // 花は 1 回摘むごとに drops が出て、hp（= 摘める回数）が 1 減る。
+  flower: { kind: 'flower', name: '花', hp: FLOWER_GATHERS, drops: { petal: 2, flowerSeed: 1 }, respawnMs: null, tool: 'gather' },
 };
 
 /** 太い木・硬い岩を叩くのに必要な段階。境界は AREAS 側で決める。 */
@@ -186,6 +206,8 @@ export const SERIES: Record<SeriesId, string> = {
 /** 幹（切り株）の体力と、切り取ったときの木材。木は切ると幹になり、幹を切ると消える。 */
 export const STUMP_HP = 2;
 export const STUMP_DROPS = { wood: 1 } as const;
+/** 幹を切って木が消えるときに出る苗木（STUMP_DROPS に足す）。 */
+export const SAPLING_DROPS: Partial<Record<NodeKind, number>> = { tree: 1, bigTree: 2, forestTree: 1, borderTree: 1 };
 
 /** 家具が占めるマス数（1 辺）。ランドマークだけ 2×2、ほかは 1×1。 */
 export const furnitureSize = (attr: SlotAttr): number => (attr === 'landmark' ? 2 : 1);
@@ -221,8 +243,8 @@ export const FURNITURE: FurnitureDef[] = [
   F({ id: 'stoneLantern', name: '石灯籠', attr: 'decor', series: 'stone', points: 4, cost: { stone: 5, copper: 1 }, stamina: 2, learn: { level: 2 } }),
   F({ id: 'copperLamp', name: '銅のランタン', attr: 'decor', series: 'stone', points: 4, cost: { stone: 2, copper: 2 }, stamina: 1, learn: { chest: 'rocks' } }),
   // ガーデンシリーズ（島レベル 3）
-  F({ id: 'flowerBed', name: '花壇', attr: 'fence', series: 'garden', points: 2, cost: { stone: 2, sunflower: 1 }, stamina: 1, learn: { level: 3 } }),
-  F({ id: 'flowerPot', name: '花の鉢', attr: 'decor', series: 'garden', points: 3, cost: { stone: 2, sunflower: 2 }, stamina: 1, learn: { level: 3 } }),
+  F({ id: 'flowerBed', name: '花壇', attr: 'fence', series: 'garden', points: 2, cost: { wood: 2, petal: 3 }, stamina: 1, learn: { level: 3 } }),
+  F({ id: 'flowerPot', name: '花の鉢', attr: 'decor', series: 'garden', points: 3, cost: { wood: 2, petal: 4 }, stamina: 1, learn: { level: 3 } }),
   F({ id: 'fruitTable', name: '果物の台', attr: 'desk', series: 'garden', points: 4, cost: { wood: 4, tomato: 2 }, stamina: 2, learn: { level: 3 } }),
   F({ id: 'veggieStand', name: '野菜の屋台', attr: 'kitchen', series: 'garden', points: 5, cost: { wood: 6, turnip: 3, tomato: 1 }, stamina: 2, learn: { level: 3 } }),
   F({ id: 'flowerArch', name: '花のアーチ', attr: 'landmark', series: 'garden', points: 7, cost: { wood: 8, sunflower: 4 }, stamina: 3, learn: { level: 3 } }),
@@ -230,9 +252,22 @@ export const FURNITURE: FurnitureDef[] = [
   F({ id: 'stoneStatue', name: '石の像', attr: 'landmark', series: 'stone', points: 10, cost: { stone: 15, copper: 3 }, stamina: 3, learn: { level: 4 } }),
   // 遺跡の宝箱で覚える
   F({ id: 'ruinPillar', name: '古代の石柱', attr: 'decor', series: 'stone', points: 5, cost: { stone: 6, copper: 1 }, stamina: 2, learn: { chest: 'ruins' } }),
+  // 作れない（島に最初から置いてある）。動かす・しまうことはできる。クラフト画面には出さない。
+  F({ id: 'campfire', name: 'たき火', attr: 'decor', series: 'wood', points: 0, cost: {}, stamina: 0, learn: { none: true } }),
+  F({ id: 'ruinArch', name: '遺跡のアーチ', attr: 'decor', series: 'stone', points: 0, cost: {}, stamina: 0, learn: { none: true } }),
+  F({ id: 'oldPillar', name: '古い柱', attr: 'decor', series: 'stone', points: 0, cost: {}, stamina: 0, learn: { none: true } }),
 ];
 
 export const FURNITURE_BY_ID: Record<string, FurnitureDef> = Object.fromEntries(FURNITURE.map((f) => [f.id, f]));
+
+/** 触ると画面が開く家具（模様替えでないときに対象になる）。 */
+export const FURNITURE_FUNCTION: Partial<Record<FurnitureId, 'craft'>> = { woodWorkbench: 'craft' };
+
+/** 地図の記号以外で、最初から置く家具（既定マップのときだけ。W = 作業台、P = 古い柱は MAP の記号から決まる）。 */
+export const EXTRA_INITIAL_FURNITURE: InitialFurniture[] = [
+  { x: 15, y: 17, furniture: 'campfire' }, // 開けた土地の南西
+  { x: 7, y: 14, furniture: 'ruinArch' }, // 遺跡の広場
+];
 
 // ---------------------------------------------------------------------------
 // 家具の「表示サイズ」（タイル単位、デザインで決め打ち・art px 数から逆算しない）。
@@ -267,6 +302,10 @@ export const FURNITURE_DISPLAY_SIZE: Record<FurnitureId, { w: number; h: number 
   woodTower: { w: 1.7, h: 1.7 },
   flowerArch: { w: 1.7, h: 1.7 },
   stoneStatue: { w: 1.7, h: 1.7 },
+  // 島に最初からある置物
+  campfire: { w: 0.9, h: 1.2 },
+  ruinArch: { w: 0.9, h: 1.2 },
+  oldPillar: { w: 0.9, h: 1.2 },
 };
 
 export const AREAS: Record<AreaId, AreaDef> = {
@@ -297,11 +336,11 @@ export const CHEST_RECIPES: Partial<Record<AreaId, string>> = {
 //   S 商船（地面は水。S の矩形全体を覆う 1 つの Decor 'ship'。通れない）
 //   Q 桟橋の係留柱（地面 dock。Station 'dock'。通れない）
 //   L ランドマーク用地（4x4。地面 paving。1 つの Slot attr 'landmark'、w=4,h=4、id は左上）
-//   r 瓦礫の飾り（歩ける）   B 崩れた石の飾り（通れない）   P 柱の飾り（通れない）
-//   T 木   t 太い木   R 岩   H 硬い岩
+//   r 瓦礫の飾り（歩ける）   B 崩れた石の飾り（通れない）   P 古い柱（家具 oldPillar を最初から置く。動かせる）
+//   T 木   t 太い木   R 岩   H 硬い岩   v 花（地面は草。摘める資源 'flower'）
 //   1 2 3 境界（数字 = AREAS の borderChar）。ノードの種類は AREAS[area].border.kind
 //   f 畑   s 看板（上下左右に接する畑の区画の看板になる）   c 宝箱
-//   X 謎の遺跡（スキル）   W 作業台（クラフト）   @ 開始位置
+//   X 謎の遺跡（スキル）   W 作業台（家具 woodWorkbench を最初から置く。触るとクラフト。動かせる）   @ 開始位置
 //   配置スペース（1x1）: b ベンチ  l ランドマーク  p 道  w 作業台  k キッチン  d 机  o 飾り  e 柵
 //
 // 物・配置スペース・設備・境界・開始位置の下の地面は、記号からは分からないので
@@ -310,11 +349,13 @@ export const CHEST_RECIPES: Partial<Record<AreaId, string>> = {
 //
 // エリア文字（AREA_MAP）: s 砂浜  w 森の小道  p 開けた土地  u 遺跡  f 北西の森  r 北東の岩場  h 北の丘
 
-export const STATION_CHARS: Record<string, StationKind> = { X: 'ruins', W: 'workbench', Q: 'dock' };
+export const STATION_CHARS: Record<string, StationKind> = { X: 'ruins', Q: 'dock' };
+
+/** 最初から家具を置く地図の記号。 */
+export const FURNITURE_CHARS: Record<string, FurnitureId> = { W: 'woodWorkbench', P: 'oldPillar' };
 
 export const STATIONS: Record<StationKind, { name: string; hint: string }> = {
   ruins: { name: '謎の遺跡', hint: 'スキルを授かる' },
-  workbench: { name: '作業台', hint: '家具を作る' },
   housePlot: { name: '家の跡地', hint: 'いつか ここに家を建てられそうだ' },
   dock: { name: '船着き場', hint: 'ときどき商船が来るらしい（交易は準備中）' },
 };

@@ -6,6 +6,7 @@ import { freeTiles, freshSave, world } from './helpers';
 describe('islandPoints', () => {
   it('配置した家具の得点を合計する', () => {
     const save = freshSave(0);
+    save.placements = {}; // 最初から置いてある家具（作業台など）を除いて、点数の計算だけを見る
     const [slot] = freeTiles(save, 1);
     if (!slot) throw new Error('no free tile');
     save.placements[slot.id] = 'woodFence'; // points: 1
@@ -16,6 +17,7 @@ describe('islandPoints', () => {
 
   it('同じシリーズが 3 個そろうとボーナスが付く', () => {
     const save = freshSave(0);
+    save.placements = {}; // 最初から置いてある家具（作業台など）を除いて、点数の計算だけを見る
     const slots = freeTiles(save, 3);
     expect(slots.length).toBe(3);
     for (const s of slots) save.placements[s.id] = 'woodFence';
@@ -29,6 +31,7 @@ describe('islandPoints', () => {
 describe('updateMaxPoints', () => {
   it('島レベルが上がったら islandLevelUp イベントを返す', () => {
     const save = freshSave(0);
+    save.placements = {}; // 最初から置いてある家具（作業台など）を除いて、点数の計算だけを見る
     const slots = freeTiles(save, 3);
     for (const s of slots) save.placements[s.id] = 'woodFence';
     const event = updateMaxPoints(world, save);
@@ -39,6 +42,7 @@ describe('updateMaxPoints', () => {
 
   it('しきい値を超えたらレベルアップイベント', () => {
     const save = freshSave(0);
+    save.placements = {}; // 最初から置いてある家具（作業台など）を除いて、点数の計算だけを見る
     // 木製シリーズを 3 種類（bench, desk, workbench）同じエリアに置く: 3+3+4=10 base + 3個でボーナス2 = 12
     const [benchSlot, deskSlot, workbenchSlot] = freeTiles(save, 3);
     if (!benchSlot || !deskSlot || !workbenchSlot) throw new Error('missing tiles');

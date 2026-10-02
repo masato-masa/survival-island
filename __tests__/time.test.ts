@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { STAMINA_BASE, STAMINA_REGEN_MS } from '../src/game/data';
 import { applyRespawns, cropProgress, currentStamina, isReady, normalizeStamina } from '../src/game/time';
+import { buildWorld } from '../src/game/world';
 import { freshSave, world } from './helpers';
 
 describe('currentStamina', () => {
@@ -97,21 +98,33 @@ describe('cropProgress / isReady', () => {
 });
 
 describe('applyRespawns', () => {
+  // 木は復活しなくなった（苗木を植えて増やす）。復活するのは岩だけ（フィールドには無いので小さなマップで見る）。
+  const rockWorld = buildWorld(['~~~~', '~@R~', '~~~~']);
+
   it('復活時刻を過ぎたら nodes から消える', () => {
     const save = freshSave(0);
-    const node = world.nodes.find((n) => n.kind === 'tree');
-    if (!node) throw new Error('tree not found');
+    const node = rockWorld.nodes.find((n) => n.kind === 'rock');
+    if (!node) throw new Error('rock not found');
     save.nodes[node.id] = { hp: 0, destroyedAt: 0 };
-    applyRespawns(world, save, 10 * 60 * 1000 + 1, undefined);
+    applyRespawns(rockWorld, save, 10 * 60 * 1000 + 1, undefined);
     expect(save.nodes[node.id]).toBeUndefined();
   });
 
   it('プレイヤーが立っているマスは復活させない', () => {
     const save = freshSave(0);
+    const node = rockWorld.nodes.find((n) => n.kind === 'rock');
+    if (!node) throw new Error('rock not found');
+    save.nodes[node.id] = { hp: 0, destroyedAt: 0 };
+    applyRespawns(rockWorld, save, 10 * 60 * 1000 + 1, { x: node.x, y: node.y });
+    expect(save.nodes[node.id]).toBeDefined();
+  });
+
+  it('木は復活しない', () => {
+    const save = freshSave(0);
     const node = world.nodes.find((n) => n.kind === 'tree');
     if (!node) throw new Error('tree not found');
     save.nodes[node.id] = { hp: 0, destroyedAt: 0 };
-    applyRespawns(world, save, 10 * 60 * 1000 + 1, { x: node.x, y: node.y });
+    applyRespawns(world, save, 999_999_999_999, undefined);
     expect(save.nodes[node.id]).toBeDefined();
   });
 

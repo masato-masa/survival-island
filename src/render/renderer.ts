@@ -11,16 +11,17 @@ import type {
   Fail,
   GameEvent,
   ItemId,
-  MapNode,
+  LiveNode,
   NodeKind,
   SaveState,
   StationKind,
   Target,
+  TimedAction,
   World,
 } from '@/game/types';
-import { CROPS, FURNITURE_BY_ID, FURNITURE_DISPLAY_SIZE, ITEMS, NODES, STATIONS } from '@/game/data';
+import { FURNITURE_BY_ID, FURNITURE_DISPLAY_SIZE, ITEMS, NODES, STATIONS } from '@/game/data';
 import { cropProgress } from '@/game/time';
-import { isBuildable, nodeAlive, placementRect } from '@/game/rules';
+import { allNodes, isBuildable, nodeAlive, placementRect } from '@/game/rules';
 import { store } from '@/game/store';
 
 import { followFactor, screenToWorld, TILE, TILT_DEG, type CameraState, type Viewport, worldToScreen } from './camera';
@@ -28,6 +29,7 @@ import { getGroundFurnitureSprite, getSprite, type SpriteName } from './sprites'
 import type { PaintedTerrain } from './terrain';
 import { TERRAIN_PX } from './terrainCore';
 import type { TreeInstance } from './forestTrees';
+import { chopImpactTimes, drawAvatar, type AvatarDir, type AvatarPose, type AvatarTool } from './avatar';
 
 const TILT_COS = Math.cos((TILT_DEG * Math.PI) / 180);
 
@@ -48,6 +50,8 @@ export interface RenderState {
   decorate: boolean;
   target: (Target & { blocked?: Fail }) | null;
   moving: boolean;
+  /** 今やっている時間のかかる行動（伐採・採取・畑）。無ければ null。 */
+  action: TimedAction | null;
   dpr: number;
   stick: { anchor: Vec2; finger: Vec2 } | null;
   /** 事前描画した地面レイヤー（WorldView がロード時に焼いて渡す）。まだ無ければ null。 */
@@ -57,47 +61,177 @@ export interface RenderState {
 }
 
 // ---------------------------------------------------------------------------
-// パーティクル・トースト（時間経過で消える）
+// 行動のタイミング（道具が当たる瞬間）。木の揺れ・音・パーティクルをここに合わせる。
+
+/** 1 回の行動の中で道具が当たる瞬間（0..1）。 */
+export const IMPACT_TIMES: readonly number[] = chopImpactTimes();
+
+/** i 回目の当たりの実時刻。 */
+export function impactAt(a: TimedAction, i: number): number {
+  return a.startedAt + IMPACT_TIMES[i]! * (a.endsAt - a.startedAt);
+}
+
+/** 行動の道具（主人公の動き）。 */
+export function toolForAction(a: TimedAction): AvatarTool {
+  if (a.kind === 'gather') return 'hand';
+  if (a.kind === 'farm') return 'hoe';
+  return 'axe';
+}
+
+const TREE_KIND_SET = new Set<NodeKind>(['tree', 'bigTree', 'borderTree', 'forestTree']);
+const isStoneKind = (k: NodeKind) => k === 'rock' || k === 'hardRock' || k === 'borderRock';
+
+/** 揺れが続く時間と形（減衰振動）。 */
+const SWAY_MS = 1500;
+const SWAY_DECAY_MS = 300;
+const SWAY_HZ = 2.6;
+
+/** 叩かれたあとの揺れ。当たるたびに外へ押され、ばねのように戻る。おおむね -1..1。 */
+function swayFor(a: TimedAction, now: number): number {
+  let s = 0;
+  for (let i = 0; i < IMPACT_TIMES.length; i++) {
+    const dt = now - impactAt(a, i);
+    if (dt < 0 || dt > SWAY_MS) continue;
+    s += Math.exp(-dt / SWAY_DECAY_MS) * Math.sin((dt / 1000) * Math.PI * 2 * SWAY_HZ);
+  }
+  return s;
+}
+
+/** 花を引っぱったときの伸び縮み。+ で縦に伸びる。 */
+function tugFor(a: TimedAction, now: number): number {
+  let s = 0;
+  for (let i = 0; i < IMPACT_TIMES.length; i++) {
+    const dt = now - impactAt(a, i);
+    if (dt < -120 || dt > 900) continue;
+    if (dt < 0) s -= (1 + dt / 120) * 0.5; // 引く直前は少しつぶれる（ため）
+    else s += Math.exp(-dt / 160) * Math.cos((dt / 1000) * Math.PI * 2 * 4.5);
+  }
+  return s;
+}
+
+// ---------------------------------------------------------------------------
+// パーティクル・トースト・ドロップ（時間経過で消える）
 
 interface Particle {
-  x: number; // ワールド px
+  x: number; // ワールド px（地面の位置）
   y: number;
+  z: number; // 地面からの高さ（ワールド px）
   vx: number;
   vy: number;
-  sprite: SpriteName; // fx_leaf（木）/ fx_dust（岩）
+  vz: number;
+  gravity: number; // z 方向の重力（ワールド px/s²）。木の葉は小さく、ひらひら落ちる
+  flutter: number; // 横ゆれの強さ
+  sprite: SpriteName;
+  size: number;
   startedAt: number;
   lifeMs: number;
 }
 
 interface Toast {
   text: string;
-  x: number; // ワールド px（生成時のアンカー）
+  x: number; // ワールド px（生成時のアンカー）。-1 なら画面中央の大きな文字
   y: number;
   startedAt: number;
   big: boolean;
+  /** プレイヤーの頭の上について行く（拾ったアイテム）。 */
+  follow?: { item: ItemId; n: number };
 }
 
-const PARTICLE_LIFE_MS = 500;
-const TOAST_LIFE_MS = 900;
+/** 「コン」の当たり表現（星形の閃光と小さな文字）。 */
+interface Burst {
+  x: number;
+  y: number;
+  z: number;
+  text: string | null;
+  /** 文字を出す側（+1 = 右）。 */
+  side: number;
+  startedAt: number;
+}
 
-const isStoneKind = (k: NodeKind) => k === 'rock' || k === 'hardRock' || k === 'borderRock';
+/** 倒れる木・消える幹や花の残像。 */
+interface Fell {
+  sprite: SpriteName;
+  x: number; // 根元（ワールド px）
+  y: number;
+  tileY: number;
+  kind: 'topple' | 'pop';
+  sign: number; // 倒れる向き（+1 = 右）
+  maxTiles: number | null;
+  crown: boolean;
+  startedAt: number;
+}
+
+/** 出てきたアイテム 1 個ぶん。飛び出す → 地面で弾む → 3 秒置かれる → プレイヤーへ吸い込まれる。 */
+interface DropIcon {
+  item: ItemId;
+  ox: number; // 出どころ（ワールド px）
+  oy: number;
+  oz: number;
+  lx: number; // 着地点
+  ly: number;
+  startedAt: number;
+  /** 群れの最初の 1 個に「×n」を出す。 */
+  badge: number | null;
+  /** 群れの最後の 1 個が届いたら「+n 名前」を出す。 */
+  arriveToast: number | null;
+  arrived: boolean;
+  seed: number;
+}
+
+const PARTICLE_LIFE_MS = 650;
+const TOAST_LIFE_MS = 900;
+const FOLLOW_TOAST_MS = 1300;
+const BURST_MS = 520;
+const TOPPLE_MS = 680;
+const POP_MS = 420;
+
+const DROP_POP_MS = 520; // 弧を描いて飛ぶ
+const DROP_BOUNCE_MS = 200; // 小さく 1 回弾む
+const DROP_REST_END_MS = 3000; // ここまで地面に置いておく
+const DROP_SUCK_MS = 430; // プレイヤーへ吸い込まれる
+const DROP_STAGGER_MS = 70;
+const DROP_MAX_ICONS = 6;
+const DROP_ICON_SCALE = 0.72;
+const CHEST_Z = 20; // 吸い込み先（胸の高さ、ワールド px）
+
+const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
+const clamp01 = (t: number) => (t < 0 ? 0 : t > 1 ? 1 : t);
 
 class Effects {
   particles: Particle[] = [];
   toasts: Toast[] = [];
+  bursts: Burst[] = [];
+  fells: Fell[] = [];
+  drops: DropIcon[] = [];
+  /** アイテムがプレイヤーに届いたとき（WorldView が音を鳴らす）。 */
+  onCollect: (() => void) | null = null;
 
-  private spawnParticles(x: number, y: number, sprite: SpriteName, now: number, count = 5): void {
+  private spawnParticles(
+    x: number,
+    y: number,
+    z: number,
+    sprite: SpriteName,
+    now: number,
+    count: number,
+    opts: { speed?: number; up?: number; gravity?: number; flutter?: number; size?: number; delay?: number; life?: number; dirX?: number } = {},
+  ): void {
+    const speed = opts.speed ?? 40;
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
-      const speed = 20 + Math.random() * 40;
+      const sp = speed * (0.5 + Math.random() * 0.7);
       this.particles.push({
         x,
         y,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed - 30,
+        z,
+        vx: Math.cos(angle) * sp + (opts.dirX ?? 0),
+        vy: Math.sin(angle) * sp * 0.5,
+        vz: (opts.up ?? 40) * (0.6 + Math.random() * 0.8),
+        gravity: opts.gravity ?? 260,
+        flutter: opts.flutter ?? 0,
         sprite,
-        startedAt: now,
-        lifeMs: PARTICLE_LIFE_MS,
+        size: (opts.size ?? 0.6) * (0.75 + Math.random() * 0.5),
+        startedAt: now + (opts.delay ?? 0) + Math.random() * 40,
+        lifeMs: (opts.life ?? PARTICLE_LIFE_MS) * (0.8 + Math.random() * 0.4),
       });
     }
   }
@@ -106,37 +240,120 @@ class Effects {
     this.toasts.push({ text, x, y, startedAt: now, big });
   }
 
+  /** 道具が当たった瞬間（WorldView が当たりの時刻を越えたときに呼ぶ）。 */
+  impact(a: TimedAction, i: number, now: number): void {
+    const cx = (a.x + 0.5) * TILE;
+    const cy = (a.y + BASE_IN_TILE) * TILE;
+    const player = store.get().player;
+    const side = player.x * TILE < cx ? -1 : 1; // 当たる面（プレイヤーのいる側）
+    if (a.kind === 'farm') {
+      this.spawnParticles(cx, (a.y + 0.6) * TILE, 2, 'fx_dust' as SpriteName, now, 6, { speed: 34, up: 30, gravity: 200, size: 0.7 });
+      return;
+    }
+    if (a.kind === 'gather') {
+      this.spawnParticles(cx, cy - 2, 10, 'fx_leaf' as SpriteName, now, 3, { speed: 26, up: 50, gravity: 120, flutter: 10, size: 0.45 });
+      this.bursts.push({ x: cx, y: cy, z: 12, text: i === IMPACT_TIMES.length - 1 ? 'ポン' : null, side, startedAt: now });
+      return;
+    }
+    const kind = a.nodeKind ?? 'tree';
+    const stump = a.nodeId ? store.get().nodes[a.nodeId]?.stump === true : false;
+    if (isStoneKind(kind)) {
+      this.spawnParticles(cx + side * 6, cy, 10, 'fx_dust' as SpriteName, now, 5, { speed: 40, up: 50, size: 0.6, dirX: side * 20 });
+      this.bursts.push({ x: cx + side * 8, y: cy, z: 12, text: 'カン', side, startedAt: now });
+      return;
+    }
+    if (TREE_KIND_SET.has(kind) && !stump) {
+      // 梢から葉が舞い、幹に「コン」
+      this.spawnParticles(cx - 14, cy, 40, 'fx_leaf' as SpriteName, now, 4, { speed: 36, up: 24, gravity: 60, flutter: 16, size: 1.1, life: 1400, dirX: -18 });
+      this.spawnParticles(cx + 14, cy, 40, 'fx_leaf' as SpriteName, now, 4, { speed: 36, up: 24, gravity: 60, flutter: 16, size: 1.1, life: 1400, dirX: 18 });
+      this.spawnParticles(cx + side * 7, cy, 9, 'fx_dust' as SpriteName, now, 3, { speed: 30, up: 40, size: 0.45, dirX: side * 24 });
+      this.bursts.push({ x: cx + side * 8, y: cy, z: 10, text: 'コン', side, startedAt: now });
+    } else {
+      // 幹（切り株）・その他
+      this.spawnParticles(cx + side * 5, cy, 6, 'fx_dust' as SpriteName, now, 4, { speed: 36, up: 45, size: 0.55, dirX: side * 20 });
+      this.bursts.push({ x: cx + side * 6, y: cy, z: 6, text: 'コン', side, startedAt: now });
+    }
+  }
+
+  /** 出てきたアイテムを、1 個ずつ（同じ種類は最大 6 個）弧を描いて飛ばす。 */
+  private spawnDrops(tx: number, ty: number, items: Partial<Record<ItemId, number>>, now: number, fromTree: boolean): void {
+    const ox = (tx + 0.5) * TILE;
+    const oy = (ty + BASE_IN_TILE) * TILE;
+    const player = store.get().player;
+    // プレイヤーのいる側の左右（斜め手前）へ交互に散らす。物の向こう側は物や森の陰に隠れ、
+    // プレイヤーの真上は主人公に重なるので避ける。
+    const toward = Math.atan2(player.y * TILE - oy, player.x * TILE - ox);
+    const entries = Object.entries(items).filter(([, n]) => (n ?? 0) > 0) as [ItemId, number][];
+    let k = 0;
+    for (const [item, n] of entries) {
+      const icons = Math.min(DROP_MAX_ICONS, n);
+      for (let j = 0; j < icons; j++) {
+        const side = k % 2 === 0 ? 1 : -1;
+        const ring = Math.floor(k / 2);
+        const fan = 1.1 + ring * 0.3;
+        const ang = toward + side * fan + (Math.random() - 0.5) * 0.25;
+        const r = TILE * (0.6 + Math.random() * 0.3 + ring * 0.08);
+        this.drops.push({
+          item,
+          ox,
+          oy,
+          oz: fromTree ? 22 : 8,
+          lx: ox + Math.cos(ang) * r,
+          ly: oy + Math.sin(ang) * r * 0.8,
+          startedAt: now + k * DROP_STAGGER_MS,
+          badge: j === 0 && n > icons ? n : null,
+          arriveToast: j === icons - 1 ? n : null,
+          arrived: false,
+          seed: Math.random() * 10,
+        });
+        k++;
+      }
+    }
+  }
+
+  /** 倒れる木・消える物の残像を作る。イベント処理の時点でセーブは更新済みなので、今の状態から「何だったか」を逆算する。 */
+  private spawnFell(ev: { x: number; y: number; kind: NodeKind }, now: number): void {
+    const world = store.world;
+    const save = store.get();
+    const player = save.player;
+    const x = (ev.x + 0.5) * TILE;
+    const y = (ev.y + BASE_IN_TILE) * TILE;
+    const sign = player.x * TILE < x ? 1 : -1; // プレイヤーと反対へ倒れる
+    if (TREE_KIND_SET.has(ev.kind)) {
+      const node = allNodes(world, save, now).find((n) => n.x === ev.x && n.y === ev.y);
+      const nowStump = node && nodeAlive(save, node, now) && save.nodes[node.id]?.stump === true;
+      if (nowStump) {
+        const tall = TALL_NODES.has(ev.kind);
+        this.fells.push({ sprite: spriteForNode(ev.kind, ev.x, ev.y, world), x, y, tileY: ev.y, kind: 'topple', sign, maxTiles: tall ? CROWN_FIT_TILES : 1, crown: tall, startedAt: now });
+        // 梢が地面に着くころに葉が舞う
+        this.spawnParticles(x + sign * 34, y, 6, 'fx_leaf' as SpriteName, now, 9, { speed: 50, up: 40, gravity: 120, flutter: 12, size: 0.85, delay: TOPPLE_MS * 0.55, life: 900 });
+        this.spawnParticles(x + sign * 30, y, 2, 'fx_dust' as SpriteName, now, 6, { speed: 46, up: 30, size: 0.8, delay: TOPPLE_MS * 0.55 });
+      } else {
+        this.fells.push({ sprite: 'stump' as SpriteName, x, y, tileY: ev.y, kind: 'pop', sign, maxTiles: 1, crown: false, startedAt: now });
+        this.spawnParticles(x, y, 6, 'fx_dust' as SpriteName, now, 7, { speed: 44, up: 50, size: 0.75 });
+      }
+    } else if (ev.kind === 'flower') {
+      this.fells.push({ sprite: flowerSprite(ev.x, ev.y), x, y, tileY: ev.y, kind: 'pop', sign, maxTiles: 1, crown: false, startedAt: now });
+      this.spawnParticles(x, y, 8, 'fx_leaf' as SpriteName, now, 5, { speed: 30, up: 50, gravity: 120, flutter: 10, size: 0.5 });
+    } else {
+      this.spawnParticles(x, y, 8, (isStoneKind(ev.kind) ? 'fx_dust' : 'fx_leaf') as SpriteName, now, 7, { speed: 44, up: 50, size: 0.7 });
+    }
+  }
+
   pushEvents(events: GameEvent[], now: number): void {
+    // 木から出たものは梢の高さから飛ぶ
+    const brokeTree = events.some((e) => e.type === 'broke' && TREE_KIND_SET.has(e.kind));
     for (const ev of events) {
       switch (ev.type) {
-        case 'hit': {
-          this.spawnParticles((ev.x + 0.5) * TILE, (ev.y + 0.6) * TILE, (isStoneKind(ev.kind) ? 'fx_dust' : 'fx_leaf') as SpriteName, now, 4);
+        case 'broke':
+          this.spawnFell(ev, now);
           break;
-        }
-        case 'broke': {
-          this.spawnParticles((ev.x + 0.5) * TILE, (ev.y + 0.6) * TILE, (isStoneKind(ev.kind) ? 'fx_dust' : 'fx_leaf') as SpriteName, now, 6);
-          const parts = Object.entries(ev.drops)
-            .filter(([, n]) => (n ?? 0) > 0)
-            .map(([id, n]) => `${ITEMS[id as ItemId]?.name ?? id} +${n}`);
-          if (parts.length) this.pushToast(parts.join(' '), (ev.x + 0.5) * TILE, ev.y * TILE, now);
+        case 'dropped':
+          this.spawnDrops(ev.x, ev.y, ev.items, now, brokeTree);
           break;
-        }
-        case 'harvested': {
-          const t = ev.tiles[0];
-          if (t) {
-            const name = CROPS[ev.crop]?.name ?? ev.crop;
-            this.pushToast(`${name} +${ev.amount}`, (t.x + 0.5) * TILE, t.y * TILE, now);
-          }
-          break;
-        }
-        case 'xp': {
-          this.pushToast(`+${ev.amount} EXP`, store.get().player.x * TILE, store.get().player.y * TILE, now);
-          break;
-        }
-        case 'areaOpened': {
+        case 'areaOpened':
           this.pushToast(`${ev.area} がひらけた！`, -1, -1, now, true);
           break;
-        }
         case 'chest': {
           const name = FURNITURE_BY_ID[ev.recipe]?.name ?? ev.recipe;
           this.pushToast(`レシピ：${name}`, (ev.x + 0.5) * TILE, ev.y * TILE, now);
@@ -148,9 +365,31 @@ class Effects {
     }
   }
 
+  /** アイテムがプレイヤーに届いた。同じアイテムの直前のトーストがあれば数を足す。 */
+  collected(item: ItemId, n: number, now: number): void {
+    const prev = this.toasts.find((t) => t.follow?.item === item && now - t.startedAt < 500);
+    if (prev && prev.follow) {
+      prev.follow.n += n;
+      prev.startedAt = now;
+      prev.text = `+${prev.follow.n} ${ITEMS[item]?.name ?? item}`;
+    } else {
+      this.toasts.push({ text: `+${n} ${ITEMS[item]?.name ?? item}`, x: 0, y: 0, startedAt: now, big: false, follow: { item, n } });
+    }
+    this.onCollect?.();
+  }
+
   prune(now: number): void {
     this.particles = this.particles.filter((p) => now - p.startedAt < p.lifeMs);
-    this.toasts = this.toasts.filter((t) => now - t.startedAt < TOAST_LIFE_MS);
+    this.toasts = this.toasts.filter((t) => now - t.startedAt < (t.follow ? FOLLOW_TOAST_MS : TOAST_LIFE_MS));
+    this.bursts = this.bursts.filter((b) => now - b.startedAt < BURST_MS);
+    this.fells = this.fells.filter((f) => now - f.startedAt < (f.kind === 'topple' ? TOPPLE_MS : POP_MS));
+    for (const d of this.drops) {
+      if (!d.arrived && now - d.startedAt >= DROP_REST_END_MS + DROP_SUCK_MS) {
+        d.arrived = true;
+        if (d.arriveToast != null) this.collected(d.item, d.arriveToast, now);
+      }
+    }
+    this.drops = this.drops.filter((d) => !d.arrived);
   }
 }
 
@@ -205,39 +444,52 @@ const OCEAN = '#1b5f7c'; // 地図の外（海）
 const DECOR_SPRITE: Record<DecorKind, SpriteName> = {
   rubble: 'decor_rubble' as SpriteName,
   brokenStone: 'decor_brokenStone' as SpriteName,
-  pillar: 'decor_pillar' as SpriteName,
   ship: 'decor_ship' as SpriteName,
 };
 
 const STATION_SPRITE: Partial<Record<StationKind, SpriteName>> = {
   ruins: 'station_ruins' as SpriteName,
-  workbench: 'station_workbench' as SpriteName,
   dock: 'station_dock' as SpriteName,
 };
 
-const DIAMOND_LIGHT: readonly [number, number, number] = [147, 204, 111];
-const DIAMOND_DARK: readonly [number, number, number] = [119, 184, 81];
-const GRID_LINE = 'rgba(221, 237, 201, 0.85)';
+// 模様替えのマス目（ピグの模様替えのように、うすい白の面にくっきりした白線）
+const GRID_FILL = 'rgba(255, 255, 255, 0.22)';
+const GRID_LINE = 'rgba(255, 255, 255, 0.85)';
 
-// 見た目だけの置物（ゲームロジック上は存在しない）。座標はタイル単位、スプライトの下辺中央がここに来る。
-const RUINS_ARCH = { x: 7.5, y: 15 };
-const PLAZA_CAMPFIRE = { x: 15.5, y: 18 };
+/** 立つ物の足元の幅の上限（マス幅に対する割合）。はみ出すときは全体を一様に縮める。 */
+const FOOT_FIT = 0.92;
+/** 背の高い木は梢がマスより広くてよい（上限は 1.4 マス幅）。 */
+const CROWN_FIT_TILES = 1.4;
+/** 物の足元をマスの手前の縁から少し内側（マス内 y+0.92）に置く。 */
+const BASE_IN_TILE = 0.92;
+
+// 落ち影（光は左手前から → 影は右奥へ伸びる）。スプライトのシルエットを 1 度だけ焼いて使い回す。
+const CAST_SHEAR = 0.5;
+const CAST_SQUASH = 0.3;
+const CAST_ALPHA = 0.22;
+const CAST_BAKE_SCALE = 0.5;
+const silhouetteCache = new WeakMap<object, HTMLCanvasElement>();
+
+function getSilhouette(src: CanvasImageSource & { width: number; height: number }): HTMLCanvasElement {
+  let c = silhouetteCache.get(src);
+  if (c) return c;
+  c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(src.width * CAST_BAKE_SCALE));
+  c.height = Math.max(1, Math.round(src.height * CAST_BAKE_SCALE));
+  const g = c.getContext('2d')!;
+  g.drawImage(src, 0, 0, c.width, c.height);
+  g.globalCompositeOperation = 'source-in';
+  g.fillStyle = 'rgb(40, 60, 40)';
+  g.fillRect(0, 0, c.width, c.height);
+  silhouetteCache.set(src, c);
+  return c;
+}
 
 // 壊れて復活待ちの岩に残す瓦礫。木は「幹（stump 状態）を切ると消える」ので、消えたあとには何も残さない
 // （前はここで幹を描いていて、切れない幹に見えていた）。
 const NODE_TO_STUMP: Partial<Record<NodeKind, SpriteName>> = {
   rock: 'rubble' as SpriteName,
   hardRock: 'rubble' as SpriteName,
-};
-
-const NODE_TOOL: Record<NodeKind, 'axe' | 'pick'> = {
-  tree: 'axe',
-  bigTree: 'axe',
-  borderTree: 'axe',
-  forestTree: 'axe',
-  rock: 'pick',
-  hardRock: 'pick',
-  borderRock: 'pick',
 };
 
 /** 背が高く、後ろに人が隠れる物。 */
@@ -369,37 +621,73 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     ctx.restore();
   };
 
-  /** スプライトを足元 (wx,wy)（ワールド px）にまっすぐ立てて描く。 */
-  const drawUpright = (name: SpriteName, wx: number, wy: number, shadow = true, alpha = 1) => {
+  /** 立つ物の落ち影（シルエットを右奥へ倒す）。(sx,sy) は足元、w,h は描画サイズ（画面 px）。 */
+  const drawCastShadow = (canvas: CanvasImageSource, sx: number, sy: number, w: number, h: number, strength = 1) => {
+    const sil = getSilhouette(canvas as CanvasImageSource & { width: number; height: number });
+    ctx.save();
+    ctx.globalAlpha = CAST_ALPHA * strength;
+    ctx.transform(1, 0, -CAST_SHEAR, CAST_SQUASH, sx, sy);
+    ctx.drawImage(sil, -w / 2, -h, w, h);
+    ctx.restore();
+  };
+
+  /**
+   * スプライトを足元 (wx,wy)（ワールド px）にまっすぐ立てて描く。
+   * 幅が maxTiles マス × FOOT_FIT（木の梢は maxTiles をそのまま）を超えるなら、全体を一様に縮める。
+   */
+  const drawUpright = (name: SpriteName, wx: number, wy: number, shadow = true, alpha = 1, maxTiles: number | null = 1, crown = false, xf: SpriteXf | null = null) => {
     const spr = getSprite(name);
     const p = worldToScreen(wx, wy, camera, viewport);
-    const w = spr.w * p.k;
-    const h = spr.h * p.k;
+    let w = spr.w * p.k;
+    let h = spr.h * p.k;
+    if (maxTiles != null) {
+      const allowed = maxTiles * TILE * p.k * (crown ? 1 : FOOT_FIT);
+      if (w > allowed) {
+        const f = allowed / w;
+        w *= f;
+        h *= f;
+      }
+    }
     if (p.x + w / 2 < 0 || p.x - w / 2 > W || p.y - h > H || p.y < 0) return;
-    if (shadow) drawShadow(p.x, p.y - h * 0.02, w * 0.9);
+    if (shadow) {
+      const foot = Math.min(w, (maxTiles ?? 1) * TILE * p.k * FOOT_FIT);
+      drawCastShadow(spr.canvas, p.x, p.y, w, h, alpha);
+      drawShadow(p.x, p.y - h * 0.01, foot * 0.9, 1.1);
+    }
+    if (xf) {
+      // 根元を軸に回す・伸び縮みさせる（揺れ・倒れる・ぽんと消える）。影は地面に残す。
+      ctx.save();
+      ctx.globalAlpha = alpha * (xf.alpha ?? 1);
+      ctx.translate(p.x + (xf.dx ?? 0) * p.k, p.y);
+      if (xf.rot) ctx.rotate(xf.rot);
+      ctx.scale(xf.sx ?? 1, xf.sy ?? 1);
+      ctx.drawImage(spr.canvas, -w / 2, -h, w, h);
+      ctx.restore();
+      return;
+    }
     if (alpha < 0.999) ctx.globalAlpha = alpha;
     ctx.drawImage(spr.canvas, p.x - w / 2, p.y - h, w, h);
     if (alpha < 0.999) ctx.globalAlpha = 1;
   };
 
-  const drawAtTile = (name: SpriteName, tx: number, ty: number, shadow = true, alpha = 1) =>
-    drawUpright(name, (tx + 0.5) * TILE, (ty + 1) * TILE, shadow, alpha);
+  const drawAtTile = (name: SpriteName, tx: number, ty: number, shadow = true, alpha = 1, xf: SpriteXf | null = null) =>
+    drawUpright(name, (tx + 0.5) * TILE, (ty + BASE_IN_TILE) * TILE, shadow, alpha, 1, false, xf);
 
   /** 見え隠れつきで描く（プレイヤーが後ろに重なれば半透明）。 */
-  const drawOccludable = (key: string, name: SpriteName, wx: number, wy: number, shadow = true) => {
+  const drawOccludable = (key: string, name: SpriteName, wx: number, wy: number, shadow = true, maxTiles: number | null = 1, crown = false, xf: SpriteXf | null = null) => {
     const spr = getSprite(name);
     const p = worldToScreen(wx, wy, camera, viewport);
     const rect: Rect = { left: p.x - (spr.w * p.k) / 2, right: p.x + (spr.w * p.k) / 2, top: p.y - spr.h * p.k, bottom: p.y };
     const alpha = occlusionFor(key, rect, wy, save.player.y * TILE, playerRect, occlusionEase);
-    drawUpright(name, wx, wy, shadow, alpha);
+    drawUpright(name, wx, wy, shadow, alpha, maxTiles, crown, xf);
   };
 
-  /** 家具を「デザインで決めた表示サイズ」に contain-fit して、footprint の下辺中央 (wx,wy) に立てる。 */
-  const drawFurnitureAtWorld = (furnitureId: string, wx: number, wy: number) => {
+  /** 家具を「デザインで決めた表示サイズ」に contain-fit して、footprint の下辺中央 (wx,wy) に立てる。幅は footprint(size マス)×0.92 以内。 */
+  const drawFurnitureAtWorld = (furnitureId: string, wx: number, wy: number, tiles: number) => {
     const spr = getSprite(`f_${furnitureId}` as SpriteName);
     const size = FURNITURE_DISPLAY_SIZE[furnitureId] ?? { w: 1, h: 1 };
     const p = worldToScreen(wx, wy, camera, viewport);
-    const boxW = size.w * TILE * p.k;
+    const boxW = Math.min(size.w, tiles) * TILE * p.k;
     const boxH = size.h * TILE * p.k * 1.15; // 立てて見るぶん縦を少し高く取る
     const artAspect = spr.w / spr.h || 1;
     let drawW: number;
@@ -411,19 +699,97 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
       drawH = boxH;
       drawW = boxH * artAspect;
     }
-    drawShadow(p.x, p.y - drawH * 0.03, drawW * 0.85);
+    const allowed = tiles * TILE * p.k * FOOT_FIT;
+    if (drawW > allowed) {
+      const f = allowed / drawW;
+      drawW *= f;
+      drawH *= f;
+    }
+    drawCastShadow(spr.canvas, p.x, p.y, drawW, drawH);
+    drawShadow(p.x, p.y - drawH * 0.01, drawW * 0.9, 1.1);
     ctx.drawImage(spr.canvas, p.x - drawW / 2, p.y - drawH, drawW, drawH);
   };
 
-  // プレイヤーの画面上の矩形（見え隠れ判定用）
-  const playerSpr = getSprite(`player_${save.player.dir}0` as SpriteName);
+  /** 出てきたアイテム 1 個。age は飛び出してからの ms。 */
+  const drawDrop = (d: DropIcon, age: number) => {
+    const spr = getSprite(`item_${d.item}` as SpriteName);
+    const restZ = 1.5 + 1.5 * Math.sin((age / 1000) * Math.PI * 2 * 0.9 + d.seed);
+    let gx = d.lx;
+    let gy = d.ly;
+    let z = restZ;
+    let sx = 1;
+    let sy = 1;
+    let alpha = 1;
+    let shadow = true;
+    if (age < DROP_POP_MS) {
+      // 物から弧を描いて飛び出す
+      const u = age / DROP_POP_MS;
+      const e = 1 - (1 - u) * (1 - u) * 0.6 - 0.4 * (1 - u); // ほぼ等速、着地前に少し減速
+      gx = d.ox + (d.lx - d.ox) * e;
+      gy = d.oy + (d.ly - d.oy) * e;
+      z = d.oz * (1 - u) + 4 * 22 * u * (1 - u);
+      const grow = Math.min(1, 0.55 + u * 1.5);
+      sx = grow;
+      sy = grow;
+    } else if (age < DROP_POP_MS + DROP_BOUNCE_MS) {
+      // 着地して小さく 1 回弾む（着いた瞬間は少しつぶれる）
+      const u = (age - DROP_POP_MS) / DROP_BOUNCE_MS;
+      z = 4 * 6 * u * (1 - u);
+      const sq = u < 0.25 ? (0.25 - u) * 0.8 : 0;
+      sx = 1 + sq;
+      sy = 1 - sq;
+    } else if (age >= DROP_REST_END_MS) {
+      // プレイヤーの胸へ、だんだん速く吸い込まれて小さくなる
+      const u = clamp01((age - DROP_REST_END_MS) / DROP_SUCK_MS);
+      const e = u ** 2.4;
+      gx = d.lx + (save.player.x * TILE - d.lx) * e;
+      gy = d.ly + (save.player.y * TILE - d.ly) * e;
+      z = restZ + (CHEST_Z - restZ) * e + Math.sin(u * Math.PI) * 10;
+      sx = sy = 1 - 0.55 * e;
+      alpha = u > 0.85 ? (1 - u) / 0.15 : 1;
+      shadow = u < 0.5;
+    }
+    const p = worldToScreen(gx, gy, camera, viewport);
+    const w = spr.w * DROP_ICON_SCALE * p.k;
+    const h = spr.h * DROP_ICON_SCALE * p.k;
+    if (shadow) drawShadow(p.x, p.y, w * 1.25, Math.max(0.35, 1 - z / 30));
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(p.x, p.y - z * p.k * TILT_COS);
+    ctx.scale(sx, sy);
+    ctx.drawImage(spr.canvas, -w / 2, -h, w, h);
+    ctx.restore();
+    if (d.badge != null && age < DROP_REST_END_MS) {
+      ctx.save();
+      ctx.font = `bold ${Math.round(Math.max(11, 12 * p.k))}px sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(70,45,30,0.85)';
+      ctx.fillStyle = '#fffbe6';
+      const tx = p.x + w * 0.3;
+      const ty = p.y - z * p.k * TILT_COS - h * 0.75;
+      ctx.strokeText(`×${d.badge}`, tx, ty);
+      ctx.fillText(`×${d.badge}`, tx, ty);
+      ctx.restore();
+    }
+  };
+
+  // プレイヤーの画面上の矩形（見え隠れ判定用。主人公はおよそ 30×42 ワールド px）
   const pp = worldToScreen(save.player.x * TILE, save.player.y * TILE, camera, viewport);
   const playerRect: Rect = {
-    left: pp.x - (playerSpr.w * pp.k) / 2,
-    right: pp.x + (playerSpr.w * pp.k) / 2,
-    top: pp.y - playerSpr.h * pp.k,
+    left: pp.x - (PLAYER_BOX_W * pp.k) / 2,
+    right: pp.x + (PLAYER_BOX_W * pp.k) / 2,
+    top: pp.y - PLAYER_BOX_H * pp.k,
     bottom: pp.y,
   };
+
+  // 行動の揺れは、行動が終わってもしばらく続ける（最後の当たりの余韻）
+  if (state.action) recentAction = state.action;
+  else if (recentAction && now - recentAction.endsAt > SWAY_MS) recentAction = null;
+  const swayAction = recentAction;
+
+  // 歩きの位相（歩いた時間だけ進める）
+  if (state.moving && !state.action) walkPhase += occlusionDtSec * WALK_RAD_PER_SEC;
 
   // --- 地面 ---
   if (state.terrain) {
@@ -437,11 +803,10 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     ctx.save();
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = GRID_LINE;
+    ctx.fillStyle = GRID_FILL;
     for (let ty = minTy; ty <= maxTy; ty++) {
       for (let tx = minTx; tx <= maxTx; tx++) {
         if (!isBuildable(world, save, tx, ty)) continue;
-        const rgb = (tx + ty) % 2 === 0 ? DIAMOND_LIGHT : DIAMOND_DARK;
-        ctx.fillStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.92)`;
         polygonPath(ctx, tileQuad(tx, ty, 1, 1, camera, viewport));
         ctx.fill();
         ctx.stroke();
@@ -490,15 +855,14 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
   type Drawable = { y: number; draw: () => void };
   const drawables: Drawable[] = [];
 
-  for (const node of world.nodes) {
+  for (const node of allNodes(world, save, now)) {
     if (node.x < minTx - 1 || node.x > maxTx + 1 || node.y < minTy - 3 || node.y > maxTy + 1) continue;
     const alive = nodeAlive(save, node, now);
-    if (alive && save.nodes[node.id]?.stump) {
-      drawables.push({ y: node.y + 1, draw: () => drawAtTile('stump' as SpriteName, node.x, node.y) });
-    } else if (alive) {
+    if (alive) {
+      const acting = swayAction && swayAction.x === node.x && swayAction.y === node.y ? swayAction : null;
       drawables.push({
         y: node.y + 1,
-        draw: () => drawNode(node, now, state, drawOccludable, drawAtTile),
+        draw: () => drawNode(node, now, state, acting, drawOccludable, drawAtTile),
       });
     } else if (NODES[node.kind].respawnMs !== null) {
       const stump = NODE_TO_STUMP[node.kind];
@@ -515,22 +879,19 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
   for (const d of world.decor ?? []) {
     const name = DECOR_SPRITE[d.kind];
     const wx = (d.x + d.w / 2) * TILE;
-    const wy = (d.y + d.h) * TILE;
-    if (d.kind === 'pillar') {
-      drawables.push({ y: d.y + d.h, draw: () => drawOccludable(`decor:${d.x},${d.y}`, name, wx, wy) });
-    } else {
-      drawables.push({ y: d.y + d.h, draw: () => drawUpright(name, wx, wy) });
-    }
+    const wy = (d.y + d.h - (1 - BASE_IN_TILE)) * TILE;
+    const fit = d.kind === 'ship' ? null : Math.max(1, d.w); // 船は大物なので縮めない
+    drawables.push({ y: d.y + d.h, draw: () => drawUpright(name, wx, wy, true, 1, fit) });
   }
 
-  // --- 設備（遺跡・作業台・船着き場・家の跡地） ---
+  // --- 設備（遺跡・船着き場・家の跡地）。作業台・たき火などは置いた家具として下で描く ---
   for (const station of world.stations) {
     const spriteName = STATION_SPRITE[station.kind];
     drawables.push({
       y: station.y + 1,
       draw: () => {
         if (spriteName) {
-          if (station.kind === 'ruins') drawOccludable(`station:${station.x},${station.y}`, spriteName, (station.x + 0.5) * TILE, (station.y + 1) * TILE);
+          if (station.kind === 'ruins') drawOccludable(`station:${station.x},${station.y}`, spriteName, (station.x + 0.5) * TILE, (station.y + BASE_IN_TILE) * TILE);
           else drawAtTile(spriteName, station.x, station.y);
         }
         if (station.kind === 'ruins') drawRuinsGlow(station.x, station.y, now, camera, viewport);
@@ -557,7 +918,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     }
     drawables.push({
       y: r.y + r.size,
-      draw: () => drawFurnitureAtWorld(furnitureId, (r.x + r.size / 2) * TILE, (r.y + r.size) * TILE),
+      draw: () => drawFurnitureAtWorld(furnitureId, (r.x + r.size / 2) * TILE, (r.y + r.size - (1 - BASE_IN_TILE)) * TILE, r.size),
     });
   }
 
@@ -567,30 +928,53 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     drawables.push({ y: d.flat ? -1000 : d.y - 0.5, draw: () => drawUpright(d.sprite, d.x * TILE, d.y * TILE, false) });
   }
 
-  // --- 遺跡入口のアーチ・広場のかがり火（見た目だけの置物） ---
-  drawables.push({ y: RUINS_ARCH.y, draw: () => drawUpright('decor_arch' as SpriteName, RUINS_ARCH.x * TILE, RUINS_ARCH.y * TILE) });
-  drawables.push({ y: PLAZA_CAMPFIRE.y, draw: () => drawUpright('decor_campfire' as SpriteName, PLAZA_CAMPFIRE.x * TILE, PLAZA_CAMPFIRE.y * TILE) });
+  // --- 倒れる木・ぽんと消える幹や花（幹の絵より手前に重ねる） ---
+  for (const f of effects.fells) {
+    const t = clamp01((now - f.startedAt) / (f.kind === 'topple' ? TOPPLE_MS : POP_MS));
+    drawables.push({
+      y: f.tileY + 1.01,
+      draw: () => {
+        if (f.kind === 'topple') {
+          // 根元を軸に、最初はゆっくり・だんだん速く倒れ、地面で小さく跳ねて消える
+          const fallT = clamp01(t / 0.72);
+          let rot = f.sign * 1.42 * fallT ** 2.2;
+          if (t > 0.72) rot -= f.sign * Math.sin(((t - 0.72) / 0.28) * Math.PI) * 0.1;
+          const alpha = t < 0.6 ? 1 : 1 - (t - 0.6) / 0.4;
+          drawUpright(f.sprite, f.x, f.y, false, 1, f.maxTiles, f.crown, { rot, alpha });
+        } else {
+          const sc = 1 + 0.35 * easeOutCubic(t);
+          drawUpright(f.sprite, f.x, f.y, false, 1, f.maxTiles, f.crown, { sx: sc, sy: sc * (1 - 0.15 * t), alpha: 1 - t });
+        }
+      },
+    });
+  }
 
-  // プレイヤー: 立ち絵は向きごとに 1 枚。歩行は「はずみ＋ゆれ」で表す（止まっているときはゆっくり呼吸）。
-  const moving = state.moving;
+  // --- 出てきたアイテム（地面にあるあいだは y ソート。吸い込み中はプレイヤーの手前） ---
+  for (const d of effects.drops) {
+    const age = now - d.startedAt;
+    if (age < 0) continue;
+    const sucking = age >= DROP_REST_END_MS;
+    drawables.push({
+      y: sucking ? save.player.y + 0.01 : age < DROP_POP_MS ? d.ly / TILE + 0.6 : d.ly / TILE,
+      draw: () => drawDrop(d, age),
+    });
+  }
+
+  // プレイヤー（コードで描くピグ風の主人公）。行動中は対象のほうを向いて道具を振る。
+  const act = state.action;
   drawables.push({
     y: save.player.y,
     draw: () => {
-      const spr = getSprite(`player_${save.player.dir}0` as SpriteName);
       const p = worldToScreen(save.player.x * TILE, save.player.y * TILE, camera, viewport);
-      const w = spr.w * p.k;
-      const h = spr.h * p.k;
-      const phase = now / 95;
-      const bob = moving ? Math.abs(Math.sin(phase)) * 2.6 * p.k : Math.sin(now / 520) * 0.5 * p.k;
-      const tilt = moving ? Math.sin(phase) * 0.07 : 0;
-      const squash = moving ? 1 - Math.abs(Math.cos(phase)) * 0.03 : 1;
-      drawShadow(p.x, p.y - h * 0.02, w * (moving ? 1.05 - bob / (p.k * 40) : 1.05));
-      ctx.save();
-      ctx.translate(p.x, p.y - bob);
-      ctx.rotate(tilt);
-      ctx.scale(1 / squash, squash);
-      ctx.drawImage(spr.canvas, -w / 2, -h, w, h);
-      ctx.restore();
+      let dir: AvatarDir = save.player.dir;
+      let action: AvatarPose['action'] = null;
+      if (act) {
+        dir = facingDir(act.x + 0.5 - save.player.x, act.y + 0.5 - save.player.y, dir);
+        action = { tool: toolForAction(act), t: clamp01((now - act.startedAt) / Math.max(1, act.endsAt - act.startedAt)) };
+      }
+      const walking = state.moving && !act;
+      drawShadow(p.x, p.y - 0.5 * p.k, PLAYER_BOX_W * p.k * 1.05);
+      drawAvatar(ctx, p.x, p.y, p.k, { dir, walkPhase: walking ? walkPhase : null, idleT: now, action });
     },
   });
 
@@ -600,8 +984,9 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
       d.draw();
     } catch (e) {
       // 1 個の描画の失敗で、残りの物が全部消えないようにする（初回だけ知らせる）
-      if (!drawErrorLogged) {
-        drawErrorLogged = true;
+      const msg = String(e);
+      if (!drawErrorLogged.has(msg)) {
+        drawErrorLogged.add(msg);
         // eslint-disable-next-line no-console
         console.error('[render] drawable failed', e);
       }
@@ -643,29 +1028,130 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     }
   }
 
-  // --- パーティクル（木くず・土ぼこり） ---
+  // --- パーティクル（木の葉・木くず・土ぼこり）。地面の位置 (x,y) と高さ z で飛ばす ---
   for (const p of effects.particles) {
-    const t = (now - p.startedAt) / p.lifeMs;
+    const ageMs = now - p.startedAt;
+    if (ageMs < 0) continue;
+    const t = ageMs / p.lifeMs;
     if (t > 1) continue;
-    const px = p.x + (p.vx * (t * p.lifeMs)) / 1000;
-    const py = p.y + (p.vy * (t * p.lifeMs)) / 1000 + 60 * t * t;
+    const sec = ageMs / 1000;
+    const drag = p.flutter > 0 ? 1 - Math.min(0.7, sec * 0.9) : 1;
+    const px = p.x + p.vx * sec * drag + (p.flutter ? Math.sin(sec * 9 + p.startedAt) * p.flutter * Math.min(1, sec * 3) : 0);
+    const py = p.y + p.vy * sec * drag;
+    const z = Math.max(0, p.z + p.vz * sec - 0.5 * p.gravity * sec * sec);
     const s = worldToScreen(px, py, camera, viewport);
     const spr = getSprite(p.sprite);
-    const shrink = 1 - t * 0.4;
-    const w = Math.max(1, spr.w * s.k * 0.6 * shrink);
-    const h = Math.max(1, spr.h * s.k * 0.6 * shrink);
-    ctx.globalAlpha = 1 - t;
-    ctx.drawImage(spr.canvas, s.x - w / 2, s.y - h / 2, w, h);
-    ctx.globalAlpha = 1;
+    const shrink = 1 - t * 0.35;
+    const w = Math.max(1, spr.w * s.k * p.size * shrink);
+    const h = Math.max(1, spr.h * s.k * p.size * shrink);
+    ctx.save();
+    ctx.globalAlpha = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
+    ctx.translate(s.x, s.y - z * s.k * TILT_COS);
+    if (p.flutter) ctx.rotate(Math.sin(sec * 7 + p.startedAt) * 0.8);
+    ctx.drawImage(spr.canvas, -w / 2, -h / 2, w, h);
+    ctx.restore();
+  }
+
+  // --- 当たりの閃光（「コン」） ---
+  for (const b of effects.bursts) {
+    const t = (now - b.startedAt) / BURST_MS;
+    if (t < 0 || t > 1) continue;
+    const s = worldToScreen(b.x, b.y, camera, viewport);
+    const cx = s.x;
+    const cy = s.y - b.z * s.k * TILT_COS;
+    const tl = Math.min(1, t * 1.6); // 閃光は文字より早く消える
+    const r0 = 4 * s.k + 10 * s.k * easeOutCubic(tl);
+    ctx.save();
+    ctx.globalAlpha = 1 - tl;
+    ctx.strokeStyle = '#fff6c8';
+    ctx.lineCap = 'round';
+    ctx.lineWidth = Math.max(1.5, 2.2 * s.k * (1 - tl * 0.5));
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const ang = (i / 8) * Math.PI * 2 + 0.2;
+      const len = i % 2 === 0 ? 1 : 0.6;
+      ctx.moveTo(cx + Math.cos(ang) * r0 * 0.45, cy + Math.sin(ang) * r0 * 0.45);
+      ctx.lineTo(cx + Math.cos(ang) * r0 * len, cy + Math.sin(ang) * r0 * len);
+    }
+    ctx.stroke();
+    if (b.text) {
+      const fs = Math.round(Math.max(12, 13 * s.k));
+      ctx.font = `bold ${fs}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.lineWidth = 3.5;
+      ctx.strokeStyle = 'rgba(90,55,30,0.9)';
+      // 文字はプレイヤーと反対側の斜め上へ（顔や頭の上のゲージと重ならないように）。消えるのは最後だけ
+      const ty = cy - r0 - fs * 0.6 - 12 * easeOutCubic(t);
+      const pop = t < 0.15 ? 0.7 + 2 * t : 1;
+      ctx.globalAlpha = t < 0.65 ? 1 : 1 - (t - 0.65) / 0.35;
+      ctx.translate(cx - b.side * (r0 * 0.6 + fs * 0.8), ty);
+      ctx.scale(pop, pop);
+      ctx.strokeText(b.text, 0, 0);
+      ctx.fillStyle = '#fffbe6';
+      ctx.fillText(b.text, 0, 0);
+    }
+    ctx.restore();
+  }
+
+  // --- 作業中のまるいゲージ（プレイヤーの頭の上） ---
+  if (state.action) {
+    const a = state.action;
+    const t = clamp01((now - a.startedAt) / Math.max(1, a.endsAt - a.startedAt));
+    const s = worldToScreen(save.player.x * TILE, save.player.y * TILE, camera, viewport);
+    const r = Math.max(8, 7.5 * s.k);
+    const gx = s.x;
+    const gy = s.y - (PLAYER_BOX_H + 3) * s.k - r;
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,251,236,0.95)';
+    ctx.strokeStyle = 'rgba(110,75,50,0.9)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(gx, gy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#8fd16a';
+    ctx.beginPath();
+    ctx.moveTo(gx, gy);
+    ctx.arc(gx, gy, r - 2.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * t);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
   }
 
   // --- トースト ---
+  let followIndex = 0;
   for (const toast of effects.toasts) {
-    const t = (now - toast.startedAt) / TOAST_LIFE_MS;
+    const t = (now - toast.startedAt) / (toast.follow ? FOLLOW_TOAST_MS : TOAST_LIFE_MS);
     if (t > 1) continue;
     const alpha = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
     let sx: number;
     let sy: number;
+    if (toast.follow) {
+      // 拾ったアイテム：頭の上に「+n 名前」。複数あれば上へ積む
+      const s = worldToScreen(save.player.x * TILE, save.player.y * TILE, camera, viewport);
+      const pop = t < 0.12 ? 0.6 + (t / 0.12) * 0.4 : 1;
+      sx = s.x;
+      sy = s.y - (PLAYER_BOX_H + 2) * s.k - 18 * t - followIndex * 24;
+      followIndex++;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, alpha);
+      ctx.translate(sx, sy);
+      ctx.scale(pop, pop);
+      const icon = getSprite(`item_${toast.follow.item}` as SpriteName);
+      ctx.font = 'bold 18px sans-serif';
+      const tw = ctx.measureText(toast.text).width;
+      const iw = 24;
+      const left = -(tw + iw + 3) / 2;
+      ctx.drawImage(icon.canvas, left, -iw + 6, iw, iw);
+      ctx.textAlign = 'left';
+      ctx.lineWidth = 3.5;
+      ctx.strokeStyle = 'rgba(80,50,30,0.85)';
+      ctx.strokeText(toast.text, left + iw + 3, 0);
+      ctx.fillStyle = '#fffbe6';
+      ctx.fillText(toast.text, left + iw + 3, 0);
+      ctx.restore();
+      continue;
+    }
     if (toast.x < 0) {
       sx = W / 2;
       sy = H * 0.3;
@@ -741,6 +1227,7 @@ function targetLabel(t: Target): string | null {
   if (t.kind === 'station') return STATIONS[t.station.kind].name;
   if (t.kind === 'sign') return '看板';
   if (t.kind === 'chest') return '宝箱';
+  if (t.kind === 'furniture') return FURNITURE_BY_ID[t.furnitureId]?.name ?? null;
   return null;
 }
 
@@ -759,57 +1246,83 @@ function drawRuinsGlow(tx: number, ty: number, now: number, camera: CameraState,
   ctx.restore();
 }
 
-let drawErrorLogged = false;
+/** 描画の失敗は、同じ内容を 1 度だけ知らせる。 */
+const drawErrorLogged = new Set<string>();
 
-const SWING_MS = 220;
-
-/** 見た目の選び分け：砂浜の木はヤシ、森の木は 2 種を場所でばらす。 */
-function spriteForNode(node: MapNode, world: World): SpriteName {
-  if (node.kind === 'tree') {
-    const g = world.ground[node.y * world.width + node.x];
-    if (g === 'sand') return 'palm' as SpriteName;
-  }
-  if (node.kind === 'forestTree') return (hash2(node.x, node.y) < 0.32 ? 'wallPine' : 'wallOak') as SpriteName;
-  return node.kind as SpriteName;
+/** 花の見た目は場所で 4 種にばらす。 */
+function flowerSprite(x: number, y: number): SpriteName {
+  return `flower${Math.min(3, (hash2(x, y) * 4) | 0)}` as SpriteName;
 }
 
-type OccludableDraw = (key: string, name: SpriteName, wx: number, wy: number, shadow?: boolean) => void;
-type TileDraw = (name: SpriteName, tx: number, ty: number, shadow?: boolean, alpha?: number) => void;
+/** 見た目の選び分け：砂浜の木はヤシ、森の木は 2 種を場所でばらす。 */
+function spriteForNode(kind: NodeKind, x: number, y: number, world: World): SpriteName {
+  if (kind === 'tree') {
+    const g = world.ground[y * world.width + x];
+    if (g === 'sand') return 'palm' as SpriteName;
+  }
+  if (kind === 'forestTree') return (hash2(x, y) < 0.32 ? 'wallPine' : 'wallOak') as SpriteName;
+  if (kind === 'flower') return flowerSprite(x, y);
+  return kind as SpriteName;
+}
 
-function drawNode(node: MapNode, now: number, state: RenderState, drawOccludable: OccludableDraw, drawAtTile: TileDraw): void {
-  const last = store.lastAction();
-  const isTarget = last !== null && last.x === node.x && last.y === node.y && now - last.at < SWING_MS && last.kind === 'hit';
-  const shakeT = isTarget ? 1 - (now - last!.at) / SWING_MS : 0;
-  const shakeX = isTarget ? Math.sin(shakeT * Math.PI * 6) * 2 : 0;
-  const spriteName = spriteForNode(node, state.world);
+/** 根元を軸にした変形（揺れ・倒れる・伸び縮み）。dx はワールド px の横ずれ。 */
+interface SpriteXf {
+  rot?: number;
+  sx?: number;
+  sy?: number;
+  dx?: number;
+  alpha?: number;
+}
 
-  const ctx = currentCtx;
-  const draw = () => {
-    if (TALL_NODES.has(node.kind)) drawOccludable(`node:${node.id}`, spriteName, (node.x + 0.5) * TILE, (node.y + 1) * TILE);
-    else drawAtTile(spriteName, node.x, node.y);
-  };
-  if (ctx && shakeX !== 0) {
-    ctx.save();
-    ctx.translate(shakeX, 0);
-    draw();
-    ctx.restore();
+type OccludableDraw = (key: string, name: SpriteName, wx: number, wy: number, shadow?: boolean, maxTiles?: number | null, crown?: boolean, xf?: SpriteXf | null) => void;
+type TileDraw = (name: SpriteName, tx: number, ty: number, shadow?: boolean, alpha?: number, xf?: SpriteXf | null) => void;
+
+/** 資源を 1 つ描く。acting は「この資源に今（または直前まで）している行動」で、揺れに使う。 */
+function drawNode(node: LiveNode, now: number, state: RenderState, acting: TimedAction | null, drawOccludable: OccludableDraw, drawAtTile: TileDraw): void {
+  const stump = state.save.nodes[node.id]?.stump === true;
+  let spriteName: SpriteName;
+  if (node.growing) spriteName = (node.kind === 'flower' ? 'flowerSprout' : 'sapling') as SpriteName;
+  else if (stump) spriteName = 'stump' as SpriteName;
+  else spriteName = spriteForNode(node.kind, node.x, node.y, state.world);
+  const standingTree = TALL_NODES.has(node.kind) && !stump && !node.growing;
+
+  let xf: SpriteXf | null = null;
+  if (acting) {
+    if (node.kind === 'flower') {
+      const tug = tugFor(acting, now);
+      if (tug !== 0) xf = { sx: 1 - 0.12 * tug, sy: 1 + 0.22 * tug };
+    } else {
+      const sway = swayFor(acting, now);
+      if (sway !== 0) {
+        // 梢はプレイヤーと反対側へ傾く。幹・岩は横に小さく震える
+        const away = state.save.player.x < node.x + 0.5 ? 1 : -1;
+        if (standingTree) xf = { rot: away * sway * 0.075, sx: 1 + Math.abs(sway) * 0.01 };
+        else xf = { dx: away * sway * 1.6 };
+      }
+    }
+  }
+
+  if (standingTree) {
+    drawOccludable(`node:${node.id}`, spriteName, (node.x + 0.5) * TILE, (node.y + BASE_IN_TILE) * TILE, true, CROWN_FIT_TILES, true, xf);
   } else {
-    draw();
+    drawAtTile(spriteName, node.x, node.y, true, 1, xf);
   }
+}
 
-  if (isTarget && ctx) {
-    const tool = NODE_TOOL[node.kind];
-    const toolSprite = getSprite((tool === 'axe' ? 'tool_axe' : 'tool_pick') as SpriteName);
-    const angle = (-Math.PI / 3) * (1 - shakeT);
-    const s = worldToScreen((node.x + 0.85) * TILE, (node.y + 0.7) * TILE, state.camera, state.viewport);
-    ctx.save();
-    ctx.translate(s.x, s.y);
-    ctx.rotate(angle);
-    const w = toolSprite.w * s.k;
-    const h = toolSprite.h * s.k;
-    ctx.drawImage(toolSprite.canvas, -w / 2, -h, w, h);
-    ctx.restore();
-  }
+/** 主人公の当たり判定の箱（ワールド px）。見え隠れ・ゲージの位置に使う。 */
+const PLAYER_BOX_W = 30;
+const PLAYER_BOX_H = 42;
+/** 歩きの位相の進み（ラジアン/秒）。半周 = 1 歩。 */
+const WALK_RAD_PER_SEC = 10.5;
+let walkPhase = 0;
+/** 揺れの余韻のために、最後の行動を少しのあいだ覚えておく。 */
+let recentAction: TimedAction | null = null;
+
+/** (dx,dy) の向き。ほぼ 0 なら今の向きのまま。 */
+function facingDir(dx: number, dy: number, fallback: AvatarDir): AvatarDir {
+  if (Math.abs(dx) < 0.05 && Math.abs(dy) < 0.05) return fallback;
+  if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 'right' : 'left';
+  return dy > 0 ? 'down' : 'up';
 }
 
 // draw() 実行中だけ保持する現在の ctx（drawNode などへ引き回さないため）。

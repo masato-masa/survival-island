@@ -12,7 +12,11 @@
 
 - **家具はどの種類でも、歩ける全マスに自由に置ける**（配置スペースと属性の制限は廃止）。ランドマークだけ 2×2。
   `rules.ts` の `isBuildable` / `canPlaceAt` / `placementAt`。セーブの `placements` は `"x,y"`（左上）→ 家具。
-- **木は切ると幹（切り株）になり、幹を切ると消える。** 森の木・境界の木は復活しない。跡地には家具を置ける。
+- **木は切ると幹（切り株）になり、幹を切ると消える。** 木は 1 本も復活しない。幹を消すと苗木が出て、模様替えでマスを選んで植え直す（`save.planted`）。跡地には家具を置ける。
+- **フィールドの物はすべて「採取できる物」か「動かせる家具」。** 花も資源（`flower`、3 回摘むと消えて花びら・種を落とす）。作業台・たき火・遺跡のアーチ・古い柱は最初から置いてある家具。固定なのは遺跡・看板/畑・宝箱・桟橋・船だけ。
+- **行動は約 3 秒（ピグ風）。** `store.actOnTarget()` で始まり `store.update()`（毎フレーム）で終わる。その間は動けない。手に入れた物は地面にアイコンで落ち、3 秒後に主人公へ吸い込まれる（見た目だけ。持ち物には終わった時点で入る）。
+- **主人公はアメーバピグ風で、コードで描く**（`src/render/avatar.ts` の `drawAvatar`）。木・花・苗木も `plantArt.ts` のベクター絵。
+- **砂浜に木・花を置かない、海に睡蓮を置かない。** 地面の飾りは草の上の葉先と水辺の葦だけ。
 
 - **視点は斜め（遠近法）。** `camera.ts` の `TILT_DEG`・`CAMERA_DISTANCE`。地面は横線ごとの帯で奥ほど細く貼り、立つ物は足元に立てて `k` 倍で描く。
   マスの見た目は台形、背の高い物が後ろのマスを隠す。`worldToScreen` は `{x,y,k}`、`screenToWorld` はその逆。
@@ -41,11 +45,11 @@
    再切り出しで戻ってしまう。`git checkout` で戻すこと）。
    ChatGPT で生成した絵（`pigg_ship` `pigg_tower` `pigg_arch`）は、ダウンロードしたものを
    `node scripts/import-generated.mjs <入力> <出力>` で透過・トリミングして `src/assets/pigg/` に入れる（元画像は `refs/`）。
-2. `src/render/sprites.ts` の `PAINTERS` に書いたコード描画のベクター絵（作物・アイテム・道具・エフェクト・看板・
+2. `src/render/sprites.ts` の `PAINTERS` に書いたコード描画のベクター絵（主人公・木・花・作物・アイテム・道具・エフェクト・看板・
    道タイルなど、提供素材に無いもの）。
 
 地面は画像を使わず `src/render/terrainCore.ts` が色を計算する（重いので `terrainWorker.ts` = Web Worker で焼き、
-使えない環境ではメインスレッドで区切って焼く）。草の葉先・花・小石は `forestTrees.ts` の `buildGroundDecor` が
+使えない環境ではメインスレッドで区切って焼く）。草の葉先・葦は `forestTrees.ts` の `buildGroundDecor` が
 見た目だけの物体として散らす。
 
 - スプライトは名前で引く（`getSprite('tree')`）。対応表は `sprites.ts` の `SHEET_TARGET`（サイズはワールド px 幅）。

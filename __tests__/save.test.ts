@@ -46,4 +46,21 @@ describe('migrate', () => {
     expect(() => migrate('garbage')).not.toThrow();
     expect(() => migrate(42)).not.toThrow();
   });
+
+  it('古いセーブには植えたもの {} を足し、最初からある家具を一度だけ入れる（埋まっているマスは飛ばす）', () => {
+    const bench = world.initialFurniture.find((f) => f.furniture === 'woodWorkbench');
+    const pillar = world.initialFurniture.find((f) => f.furniture === 'oldPillar');
+    if (!bench || !pillar) throw new Error('no initial furniture');
+    const old = { placements: { [`${bench.x},${bench.y}`]: 'woodFence' } };
+    const save = migrate(old, world);
+    expect(save.planted).toEqual({});
+    expect(save.seededV2).toBe(true);
+    expect(save.placements[`${bench.x},${bench.y}`]).toBe('woodFence');
+    expect(save.placements[`${pillar.x},${pillar.y}`]).toBe('oldPillar');
+
+    // 一度入れたら、しまっても次の読み込みで戻らない
+    delete save.placements[`${pillar.x},${pillar.y}`];
+    const again = migrate(JSON.parse(JSON.stringify(save)), world);
+    expect(again.placements[`${pillar.x},${pillar.y}`]).toBeUndefined();
+  });
 });

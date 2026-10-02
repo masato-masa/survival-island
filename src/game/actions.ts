@@ -1,10 +1,12 @@
 // プレイヤーの行動。すべて save を書き換えて Result を返す。
-// クールダウンはここでは見ない（store.ts が見る）。
+// 行動にかかる時間（約 3 秒）はここでは見ない（store.ts が始めて、終わったときにここの関数で結果を出す）。
 
 import {
   FARM_RANGE,
   FURNITURE_BY_ID,
   NODES,
+  PLANT_STAMINA,
+  SAPLING_DROPS,
   STUMP_DROPS,
   STUMP_HP,
   SKILLS,
@@ -12,13 +14,26 @@ import {
   XP_PER_STAMINA,
   harvestAmount,
 } from './data';
-import { canHit, canPlaceAt, damageFor, isAreaOpen, knownCrops, knownRecipes, nodeAlive, placementAt, skillCap } from './rules';
+import {
+  canHit,
+  canPlaceAt,
+  damageFor,
+  isAreaOpen,
+  isBuildable,
+  knownCrops,
+  knownRecipes,
+  nodeAlive,
+  placementAt,
+  plantedNodeId,
+  skillCap,
+} from './rules';
 import { isReady, normalizeStamina } from './time';
 import { updateMaxPoints } from './score';
 import { key } from './world';
 import type {
   Chest,
   CropId,
+  Fail,
   FurnitureId,
   GameEvent,
   ItemId,
@@ -44,6 +59,12 @@ function addItem(save: SaveState, item: ItemId, amount: number): void {
   save.inventory[item] = (save.inventory[item] ?? 0) + amount;
 }
 
+type Drops = Partial<Record<ItemId, number>>;
+
+function addDrops(save: SaveState, drops: Drops): void {
+  for (const [item, amount] of Object.entries(drops) as [ItemId, number][]) addItem(save, item, amount);
+}
+
 function xpEvent(amount: number): GameEvent {
   return { type: 'xp', amount };
 }
@@ -51,7 +72,28 @@ function xpEvent(amount: number): GameEvent {
 /** 切ると「木 → 幹 → 消える」の 2 段階になる資源。 */
 const TREE_KINDS = new Set<string>(['tree', 'bigTree', 'borderTree', 'forestTree']);
 
-export function hitNode(world: World, save: SaveState, node: MapNode, now: number): Result {
+/** 叩ける資源（地図の資源、または allNodes が返す植えたもの）。growing は育っている途中。 */
+type HittableNode = MapNode & { growing?: boolean };
+
+const isPlantedId = (id: string): boolean => id.startsWith('p:');
+
+/** 資源が消えた。植えたものは記録ごと消す（跡地に家具・次の苗を置ける）。 */
+function removeNode(save: SaveState, node: MapNode, now: number): void {
+  if (isPlantedId(node.id)) {
+    delete save.nodes[node.id];
+    delete save.planted[node.id.slice(2)];
+  } else {
+    save.nodes[node.id] = { hp: 0, destroyedAt: now };
+  }
+}
+
+/**
+ * 資源を 1 回叩く（花は 1 回摘む）。スタミナ 1。
+ * 木は体力 0 で幹になり（木材）、幹の体力 0 で消える（木材＋苗木）。
+ * 花は摘むたびに花びら・種が出て、FLOWER_GATHERS 回で消える。
+ */
+export function hitNode(world: World, save: SaveState, node: HittableNode, now: number): Result {
+  if (node.growing) return { ok: false, reason: 'notReady' };
   if (!nodeAlive(save, node, now)) return { ok: false, reason: 'notReady' };
   if (!canHit(save, node)) return { ok: false, reason: 'needSkill' };
   if (!spend(save, 1, now)) return { ok: false, reason: 'noStamina' };
@@ -64,27 +106,132 @@ export function hitNode(world: World, save: SaveState, node: MapNode, now: numbe
   const damage = damageFor(save, node);
   const hpAfter = hpBefore - damage;
 
-  const events: GameEvent[] = [{ type: 'hit', x: node.x, y: node.y, kind: node.kind, damage }, xpEvent(1)];
+  const events: GameEvent[] = [];
+
+  if (def.tool === 'gather') {
+    // 花を摘む：摘むたびに drops が出る
+    addDrops(save, def.drops);
+    const remaining = Math.max(0, hpAfter);
+    events.push({ type: 'gathered', x: node.x, y: node.y, kind: node.kind, remaining }, xpEvent(1));
+    events.push({ type: 'dropped', x: node.x, y: node.y, items: { ...def.drops } });
+    if (remaining > 0) {
+      save.nodes[node.id] = { hp: remaining, destroyedAt: null };
+    } else {
+      removeNode(save, node, now);
+      events.push({ type: 'broke', x: node.x, y: node.y, kind: node.kind, drops: {} });
+    }
+    return { ok: true, events };
+  }
+
+  events.push({ type: 'hit', x: node.x, y: node.y, kind: node.kind, damage }, xpEvent(1));
 
   if (hpAfter > 0) {
     save.nodes[node.id] = { hp: hpAfter, destroyedAt: null, ...(isStump ? { stump: true } : {}) };
   } else if (isTree && !isStump) {
     // 木を切り倒した → 幹（切り株）が残る。幹をもう一度切ると木は消える。
     save.nodes[node.id] = { hp: STUMP_HP, destroyedAt: null, stump: true };
-    for (const [item, amount] of Object.entries(def.drops) as [ItemId, number][]) addItem(save, item, amount);
+    addDrops(save, def.drops);
     events.push({ type: 'broke', x: node.x, y: node.y, kind: node.kind, drops: def.drops });
+    events.push({ type: 'dropped', x: node.x, y: node.y, items: { ...def.drops } });
   } else {
     const wasOpen = isAreaOpen(world, save, node.area);
-    save.nodes[node.id] = { hp: 0, destroyedAt: now };
-    const drops = isStump ? STUMP_DROPS : def.drops;
-    for (const [item, amount] of Object.entries(drops) as [ItemId, number][]) addItem(save, item, amount);
+    removeNode(save, node, now);
+    let drops: Drops = isStump ? { ...STUMP_DROPS } : { ...def.drops };
+    // 木が消えると苗木が出る（木は復活しないので、これを植えて増やす）
+    const saplings = isTree ? SAPLING_DROPS[node.kind] ?? 0 : 0;
+    if (saplings > 0) drops = { ...drops, sapling: (drops.sapling ?? 0) + saplings };
+    addDrops(save, drops);
     events.push({ type: 'broke', x: node.x, y: node.y, kind: node.kind, drops });
+    events.push({ type: 'dropped', x: node.x, y: node.y, items: drops });
     const isOpenNow = isAreaOpen(world, save, node.area);
     if (!wasOpen && isOpenNow) events.push({ type: 'areaOpened', area: node.area });
   }
 
   return { ok: true, events };
 }
+
+/** 資源の「段階」（立っている / 幹 / 消えた）。 */
+function nodeStage(save: SaveState, node: MapNode): string {
+  if (isPlantedId(node.id) && !save.planted[node.id.slice(2)]) return 'gone';
+  const st = save.nodes[node.id];
+  if (st?.destroyedAt != null) return 'gone';
+  return st?.stump ? 'stump' : 'standing';
+}
+
+/**
+ * 時間のかかる行動 1 回ぶんの作業。伐採・採掘は段階が変わる（木 → 幹、幹 → 消える）まで hitNode を繰り返す。
+ * スタミナは 1 回叩くごとに 1（パワー系スキルが高いほど少なく済む）。途中でスタミナが尽きたらそこで止め、
+ * 削った体力は残す（1 回でも叩けていれば成功）。花は 1 回摘むだけ。
+ * 伐採の hit はまとめて 1 つ（damage は合計）、xp も合計 1 つにして返す。
+ */
+export function workNode(world: World, save: SaveState, node: HittableNode, now: number): Result {
+  if (NODES[node.kind].tool === 'gather') return hitNode(world, save, node, now);
+  const stageBefore = nodeStage(save, node);
+  const events: GameEvent[] = [];
+  let damage = 0;
+  let xp = 0;
+  let hits = 0;
+  // 体力の合計を超えて叩くことはないが、念のため上限を置く
+  for (let guard = 0; guard < 100; guard++) {
+    const r = hitNode(world, save, node, now);
+    if (!r.ok) {
+      if (hits === 0) return r;
+      break;
+    }
+    hits++;
+    for (const e of r.events) {
+      if (e.type === 'hit') damage += e.damage;
+      else if (e.type === 'xp') xp += e.amount;
+      else events.push(e);
+    }
+    if (nodeStage(save, node) !== stageBefore) break;
+  }
+  return {
+    ok: true,
+    events: [{ type: 'hit', x: node.x, y: node.y, kind: node.kind, damage }, ...events, xpEvent(xp)],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 植える（苗木 → 木、花の種 → 花）
+
+/** 苗木・花の種を植えられるマスか（家具を置けるマスで、家具・植えたもの・プレイヤーがいない）。 */
+export function canPlantAt(
+  world: World,
+  save: SaveState,
+  x: number,
+  y: number,
+  playerTile?: { x: number; y: number },
+): boolean {
+  if (!isBuildable(world, save, x, y)) return false; // 植えたもののあるマスもここで弾かれる
+  if (placementAt(save, x, y)) return false;
+  if (playerTile && playerTile.x === x && playerTile.y === y) return false;
+  return true;
+}
+
+/** 苗木・花の種を植える。種 1 個とスタミナ PLANT_STAMINA を使う。育つまでは固いが叩けない。 */
+export function plant(
+  world: World,
+  save: SaveState,
+  x: number,
+  y: number,
+  item: 'sapling' | 'flowerSeed',
+  now: number,
+  playerTile?: { x: number; y: number },
+): Result {
+  if ((save.inventory[item] ?? 0) < 1) return { ok: false, reason: 'notEnoughItems' };
+  if (!canPlantAt(world, save, x, y, playerTile)) return { ok: false, reason: 'cannotPlace' };
+  if (!spend(save, PLANT_STAMINA, now)) return { ok: false, reason: 'noStamina' };
+  save.inventory[item] = (save.inventory[item] ?? 0) - 1;
+  const kind = item === 'sapling' ? 'tree' : 'flower';
+  const tileKey = key(x, y);
+  save.planted[tileKey] = { kind, plantedAt: now };
+  delete save.nodes[plantedNodeId(tileKey)];
+  return { ok: true, events: [{ type: 'sowed', x, y, plant: kind }, xpEvent(PLANT_STAMINA)] };
+}
+
+// ---------------------------------------------------------------------------
+// 畑
 
 function plotState(save: SaveState, plot: Plot) {
   let state = save.plots[plot.id];
@@ -107,6 +254,20 @@ function rangeTiles(world: World, save: SaveState, plot: Plot, x: number, y: num
     if (plotTileKeys.has(key(tx, ty))) result.push({ x: tx, y: ty });
   }
   return result;
+}
+
+/** 畑の行動を始めてよいか（3 秒かけて空振りしないよう、始める前に見る）。null なら始めてよい。 */
+export function checkFarm(save: SaveState, plot: Plot, x: number, y: number, now: number): Fail | null {
+  const state = save.plots[plot.id];
+  const tile = state?.tiles[key(x, y)];
+  if (tile) {
+    if (!isReady(tile, now)) return 'notReady';
+  } else if (!state?.selected) {
+    return 'noCrop';
+  }
+  normalizeStamina(save, now);
+  if (save.stamina.value < 1) return 'noStamina';
+  return null;
 }
 
 export function farmAction(world: World, save: SaveState, plot: Plot, x: number, y: number, now: number): Result {
@@ -175,6 +336,7 @@ function harvestTiles(world: World, save: SaveState, plot: Plot, x: number, y: n
   const events: GameEvent[] = [];
   for (const [crop, { tiles, amount }] of byCrop) {
     events.push({ type: 'harvested', tiles, crop, amount });
+    for (const t of tiles) events.push({ type: 'dropped', x: t.x, y: t.y, items: { [crop]: amountPerTile } });
   }
   events.push(xpEvent(xpGained));
   return { ok: true, events };

@@ -65,10 +65,9 @@ describe('buildWorld', () => {
 });
 
 describe('設備', () => {
-  it('遺跡は遺跡エリア、作業台と家の跡地は開けた土地、船着き場は浜にある', () => {
+  it('遺跡は遺跡エリア、家の跡地は開けた土地、船着き場は浜にある', () => {
     const byKind = new Map(world.stations.map((s) => [s.kind, s]));
     expect(byKind.get('ruins')?.area).toBe('ruins');
-    expect(byKind.get('workbench')?.area).toBe('plaza');
     expect(byKind.get('housePlot')?.area).toBe('plaza');
     expect(byKind.get('dock')?.area).toBe('beach');
   });
@@ -80,6 +79,48 @@ describe('設備', () => {
       if (s.kind === 'housePlot') expect(solid).toBe(false);
       else expect(solid).toBe(true);
     }
+  });
+});
+
+describe('最初から置く家具・花・砂浜', () => {
+  const at = (x: number, y: number) => world.ground[worldIndex(x, y, world.width)];
+
+  it('作業台は開けた土地の家具、古い柱は柱の数だけ、たき火と遺跡のアーチも 1 つずつ', () => {
+    const count = (id: string) => world.initialFurniture.filter((f) => f.furniture === id).length;
+    const bench = world.initialFurniture.find((f) => f.furniture === 'woodWorkbench');
+    expect(bench).toBeTruthy();
+    if (bench) expect(world.area[worldIndex(bench.x, bench.y, world.width)]).toBe('plaza');
+    expect(count('woodWorkbench')).toBe(1);
+    expect(count('oldPillar')).toBeGreaterThan(0);
+    expect(world.initialFurniture).toContainEqual({ x: 15, y: 17, furniture: 'campfire' });
+    expect(world.initialFurniture).toContainEqual({ x: 7, y: 14, furniture: 'ruinArch' });
+    expect(world.decor.some((d) => (d.kind as string) === 'pillar')).toBe(false);
+    expect(world.stations.some((s) => (s.kind as string) === 'workbench')).toBe(false);
+  });
+
+  it('新規セーブには最初から置く家具がすべて入っている（置けないマスは無い）', () => {
+    const save = newSave(world, 0);
+    for (const f of world.initialFurniture) expect(save.placements[`${f.x},${f.y}`]).toBe(f.furniture);
+  });
+
+  it('花は草の上にあり、砂浜には無い。10 本以上ある', () => {
+    const flowers = world.nodes.filter((n) => n.kind === 'flower');
+    expect(flowers.length).toBeGreaterThanOrEqual(10);
+    for (const f of flowers) {
+      expect(at(f.x, f.y)).toBe('grass');
+      expect(f.area).not.toBe('beach');
+    }
+  });
+
+  it('砂の上に木は無い', () => {
+    const trees = world.nodes.filter((n) => n.kind === 'tree' || n.kind === 'bigTree');
+    expect(trees.length).toBeGreaterThan(0);
+    for (const t of trees) expect(at(t.x, t.y)).not.toBe('sand');
+  });
+
+  it('最初から入れるエリアに、斧なしで切れる木がある', () => {
+    const early = world.nodes.filter((n) => n.kind === 'tree' && ['woods', 'plaza'].includes(n.area));
+    expect(early.length).toBeGreaterThanOrEqual(5);
   });
 });
 

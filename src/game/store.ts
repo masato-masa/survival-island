@@ -3,13 +3,24 @@
 
 import { ISLAND_LEVEL_POINTS, NODES, WALK_SPEED } from './data';
 import * as Actions from './actions';
-import { islandLevel as islandLevelOf, cooldownMs, staminaMax } from './rules';
+import { actionMs, islandLevel as islandLevelOf, liveNodeById, staminaMax } from './rules';
 import { applyRespawns, currentStamina } from './time';
 import { islandPoints } from './score';
 import { findTarget, tryMove } from './target';
 import { clearSave, loadSave, newSave, writeSave } from './save';
 import { getWorld } from './world';
-import type { CropId, Fail, FurnitureId, GameEvent, Result, SaveState, SkillId, Target, World } from './types';
+import type {
+  CropId,
+  Fail,
+  FurnitureId,
+  GameEvent,
+  Result,
+  SaveState,
+  SkillId,
+  Target,
+  TimedAction,
+  World,
+} from './types';
 
 const DEV_OFFSET_KEY = 'survival-island:devOffset';
 
@@ -24,7 +35,18 @@ export interface GameStore {
   move(dx: number, dy: number, dtSec: number): void;
   target(): (Target & { blocked?: Fail }) | null;
   tick(): void;
+  /**
+   * 目の前の対象に行動する。伐採・採取・畑は約 3 秒かかる行動を「始める」だけ（結果は update() が出す）。
+   * 宝箱はその場で開く。看板・設備・作業台は ok を返すだけ（画面を開くのは UI 側）。
+   * 行動中は 'cooldown' で失敗する。
+   */
   actOnTarget(): Result;
+  /** 今やっている時間のかかる行動。無ければ null。行動中はプレイヤーが動けない。 */
+  currentAction(): TimedAction | null;
+  /** 毎フレーム呼ぶ。行動の終わる時刻を過ぎていたら結果を出す（保存・イベント）。 */
+  update(): void;
+  /** 苗木・花の種を (x, y) に植える。 */
+  plant(x: number, y: number, item: 'sapling' | 'flowerSeed'): Result;
   chooseCrop(plotId: string, crop: CropId | null): Result;
   buySkill(id: SkillId): Result;
   craft(id: FurnitureId): Result;
@@ -33,6 +55,7 @@ export interface GameStore {
   stamina(): { value: number; max: number; nextInMs: number };
   islandLevel(): number;
   points(): { total: number; base: number; bonus: number };
+  /** 今の行動が終わる時刻（行動していなければ 0）。 */
   cooldownUntil(): number;
   lastAction(): { at: number; x: number; y: number; kind: 'hit' | 'farm' | 'other' } | null;
   dev: {
@@ -84,7 +107,8 @@ export function createStore(opts: CreateStoreOptions = {}): GameStore {
   const eventListeners = new Set<(events: GameEvent[]) => void>();
   const failListeners = new Set<(reason: Fail, detail?: string) => void>();
 
-  let nextActionAt = 0;
+  /** 時間のかかる行動と、終わったときに結果を出す関数。 */
+  let pending: { action: TimedAction; resolve: (t: number) => Result } | null = null;
   let lastActionInfo: { at: number; x: number; y: number; kind: 'hit' | 'farm' | 'other' } | null = null;
   let lastPositionSaveAt = now();
   let lastStaminaValue = currentStamina(save, now()).value;
@@ -113,6 +137,14 @@ export function createStore(opts: CreateStoreOptions = {}): GameStore {
       for (const fn of failListeners) fn(result.reason, result.detail);
     }
     return result;
+  };
+
+  const startAction = (action: TimedAction, resolve: (t: number) => Result): Result => {
+    pending = { action, resolve };
+    const events: GameEvent[] = [{ type: 'actionStarted', action }];
+    notify();
+    for (const fn of eventListeners) fn(events);
+    return { ok: true, events };
   };
 
   if (storageEnabled && typeof document !== 'undefined') {
@@ -146,6 +178,7 @@ export function createStore(opts: CreateStoreOptions = {}): GameStore {
     },
 
     move(dx, dy, dtSec) {
+      if (pending) return; // 作業中は動けない
       const mag = Math.hypot(dx, dy);
       if (mag > 0.1) {
         save.player.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up';
@@ -182,13 +215,14 @@ export function createStore(opts: CreateStoreOptions = {}): GameStore {
     },
 
     actOnTarget() {
+      if (pending) return fail('cooldown');
       const t = now();
       const tgt = findTarget(world, save, save.player.x, save.player.y, save.player.dir, t);
       if (!tgt) return fail('notReady');
       if (tgt.blocked) return fail(tgt.blocked);
 
-      // 看板・設備は画面を開くだけ。開くのは UI 側（target().kind を見て判断する）。
-      if (tgt.kind === 'sign' || tgt.kind === 'station') return { ok: true, events: [] };
+      // 看板・設備・作業台は画面を開くだけ。開くのは UI 側（target().kind を見て判断する）。
+      if (tgt.kind === 'sign' || tgt.kind === 'station' || tgt.kind === 'furniture') return { ok: true, events: [] };
 
       if (tgt.kind === 'chest') {
         const result = Actions.openChest(world, save, tgt.chest);
@@ -196,25 +230,53 @@ export function createStore(opts: CreateStoreOptions = {}): GameStore {
         return runAction(result);
       }
 
+      // 3 秒振って空振り、にならないよう、スタミナは始める前に見る
+      if (currentStamina(save, t).value < 1) return fail('noStamina');
+
       if (tgt.kind === 'node') {
-        if (t < nextActionAt) return fail('cooldown');
-        const tool = NODES[tgt.node.kind].tool;
-        const result = Actions.hitNode(world, save, tgt.node, t);
-        if (result.ok) {
-          nextActionAt = t + cooldownMs(save, tool);
-          lastActionInfo = { at: t, x: tgt.x, y: tgt.y, kind: 'hit' };
-        }
-        return runAction(result);
+        const node = tgt.node;
+        const tool = NODES[node.kind].tool;
+        const action: TimedAction = {
+          kind: tool === 'gather' ? 'gather' : 'chop',
+          x: node.x,
+          y: node.y,
+          nodeId: node.id,
+          nodeKind: node.kind,
+          startedAt: t,
+          endsAt: t + actionMs(save, tool),
+        };
+        return startAction(action, (tt) => {
+          const live = liveNodeById(world, save, node.id, tt);
+          if (!live) return { ok: false, reason: 'notReady' };
+          return Actions.workNode(world, save, live, tt);
+        });
       }
 
       // farm
-      if (t < nextActionAt) return fail('cooldown');
-      const result = Actions.farmAction(world, save, tgt.plot, tgt.x, tgt.y, t);
-      if (result.ok) {
-        nextActionAt = t + cooldownMs(save, 'farm');
-        lastActionInfo = { at: t, x: tgt.x, y: tgt.y, kind: 'farm' };
-      }
-      return runAction(result);
+      const blocked = Actions.checkFarm(save, tgt.plot, tgt.x, tgt.y, t);
+      if (blocked) return fail(blocked);
+      const plot = tgt.plot;
+      const action: TimedAction = { kind: 'farm', x: tgt.x, y: tgt.y, startedAt: t, endsAt: t + actionMs(save, 'farm') };
+      return startAction(action, (tt) => Actions.farmAction(world, save, plot, action.x, action.y, tt));
+    },
+
+    currentAction: () => pending?.action ?? null,
+
+    update() {
+      if (!pending) return;
+      const t = now();
+      if (t < pending.action.endsAt) return;
+      const { action, resolve } = pending;
+      pending = null;
+      const result = resolve(t);
+      if (result.ok) lastActionInfo = { at: t, x: action.x, y: action.y, kind: action.kind === 'farm' ? 'farm' : 'hit' };
+      else notify(); // 失敗でも「行動中」が終わったことは知らせる
+      runAction(result);
+    },
+
+    plant(x, y, item) {
+      const playerTile = { x: Math.floor(save.player.x), y: Math.floor(save.player.y) };
+      return runAction(Actions.plant(world, save, x, y, item, now(), playerTile));
     },
 
     chooseCrop(plotId, crop) {
@@ -252,7 +314,7 @@ export function createStore(opts: CreateStoreOptions = {}): GameStore {
       return { total, base, bonus };
     },
 
-    cooldownUntil: () => nextActionAt,
+    cooldownUntil: () => pending?.action.endsAt ?? 0,
 
     lastAction: () => lastActionInfo,
 
@@ -270,7 +332,7 @@ export function createStore(opts: CreateStoreOptions = {}): GameStore {
         notify();
       },
       addItems(n) {
-        for (const item of ['wood', 'stone', 'copper', 'turnip', 'sunflower', 'tomato'] as const) {
+        for (const item of ['wood', 'stone', 'copper', 'sapling', 'flowerSeed', 'petal', 'turnip', 'sunflower', 'tomato'] as const) {
           save.inventory[item] = (save.inventory[item] ?? 0) + n;
         }
         persist();
@@ -291,7 +353,7 @@ export function createStore(opts: CreateStoreOptions = {}): GameStore {
       reset() {
         if (storageEnabled) clearSave();
         save = newSave(world, now());
-        nextActionAt = 0;
+        pending = null;
         lastActionInfo = null;
         lastStaminaValue = currentStamina(save, now()).value;
         persist();

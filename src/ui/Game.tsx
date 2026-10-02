@@ -5,7 +5,7 @@
 import { AnimatePresence } from 'motion/react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
-import { AREAS, CROPS, FURNITURE, ISLAND_LEVEL_POINTS, NODES } from '@/game/data';
+import { AREAS, CROPS, FURNITURE, FURNITURE_FUNCTION, ISLAND_LEVEL_POINTS } from '@/game/data';
 import { store } from '@/game/store';
 import { placementAt } from '@/game/rules';
 import { spriteDataUrl } from '@/render/sprites';
@@ -27,7 +27,7 @@ import { isHapticsEnabled, isSoundEnabled, setHapticsEnabled, setSoundEnabled } 
 import { SignSheet } from './SignSheet';
 import { SkillSheet } from './SkillSheet';
 import { StationInfoSheet } from './StationInfoSheet';
-import { playBreak, playChop, playCraft, playFail, playHarvest, playLevelUp, playMine, playPlace, playPlant } from './sound';
+import { playBreak, playCraft, playFail, playHarvest, playLevelUp, playPlace, playPlant } from './sound';
 
 type SheetState =
   | { kind: 'inventory' }
@@ -42,10 +42,6 @@ type SheetState =
   | { kind: 'dev' }
   | { kind: 'intro' }
   | null;
-
-function isPickNode(kind: keyof typeof NODES): boolean {
-  return NODES[kind].tool === 'pick';
-}
 
 const FAIL_MESSAGES: Record<Fail, string> = {
   noStamina: 'スタミナが足りません',
@@ -115,16 +111,17 @@ export function Game() {
     const handleEvents = (events: GameEvent[]) => {
       for (const ev of events) {
         switch (ev.type) {
-          case 'hit':
-            if (isPickNode(ev.kind)) playMine();
-            else playChop();
-            hapticHit();
-            break;
+          // 'hit' の音・振動は、道具が当たる瞬間ごとに WorldView が出す（ここで鳴らすと 1 回多くなる）
           case 'broke':
             playBreak();
             hapticHit();
             break;
+          case 'gathered':
+            playHarvest();
+            hapticHarvest();
+            break;
           case 'planted':
+          case 'sowed':
             playPlant();
             hapticTap();
             break;
@@ -219,9 +216,20 @@ export function Game() {
   const onStationTap = (kind: StationKind) => {
     if (sheet !== null) return; // シートが開いている間は二重に開かない
     if (kind === 'ruins') setSheet({ kind: 'skill' });
-    else if (kind === 'workbench') setSheet({ kind: 'craft' });
     else setSheet({ kind: 'stationInfo', station: kind });
     hapticTap();
+  };
+
+  /** 機能のある家具に触れた（作業台 → クラフト）。 */
+  const onFurnitureTap = (furnitureId: FurnitureId) => {
+    if (sheet !== null) return;
+    if (FURNITURE_FUNCTION[furnitureId] === 'craft') setSheet({ kind: 'craft' });
+    hapticTap();
+  };
+
+  const plant = (x: number, y: number, item: 'sapling' | 'flowerSeed') => {
+    const r = store.plant(x, y, item);
+    if (r.ok) closeSheet();
   };
 
   const staminaPct = Math.max(0, Math.min(1, stamina.value / stamina.max)) * 100;
@@ -236,6 +244,7 @@ export function Game() {
           onSignTap={(plotId) => setSheet({ kind: 'sign', plotId })}
           onSlotTap={(x, y) => setSheet({ kind: 'place', x, y })}
           onStationTap={onStationTap}
+          onFurnitureTap={onFurnitureTap}
         />
       </div>
 
@@ -376,6 +385,7 @@ export function Game() {
             x={sheet.x}
             y={sheet.y}
             onPlace={(furnitureId) => place(sheet.x, sheet.y, furnitureId)}
+            onPlant={(item) => plant(sheet.x, sheet.y, item)}
             onClose={closeSheet}
           />
         ) : null}

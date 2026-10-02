@@ -2,9 +2,9 @@
 // マップの記号の意味は data.ts の MAP_LEGEND を見る。
 // マップと AREA_MAP そのものは map.ts（scripts/build-map.mjs の生成物）から来る。
 
-import { AREAS, CHEST_RECIPES, STATION_CHARS } from './data';
+import { AREAS, CHEST_RECIPES, EXTRA_INITIAL_FURNITURE, FURNITURE_CHARS, STATION_CHARS } from './data';
 import { AREA_MAP, MAP } from './map';
-import type { AreaId, Chest, Decor, DecorKind, Ground, MapNode, NodeKind, Plot, Station, World } from './types';
+import type { AreaId, Chest, Decor, DecorKind, Ground, InitialFurniture, MapNode, NodeKind, Plot, Station, World } from './types';
 
 /** "x,y" 形式のキーを作る。 */
 export const key = (x: number, y: number): string => `${x},${y}`;
@@ -42,6 +42,7 @@ const DIRECT_GROUND: Record<string, Ground> = {
   ':': 'dirt',
   '=': 'paving',
   '#': 'grass', // 森の木は資源（ノード）。切ったあとは歩ける草地
+  v: 'grass', // 花の下は草
   D: 'dock',
   F: 'foundation',
   f: 'soil',
@@ -103,7 +104,7 @@ function bboxOf(tiles: { x: number; y: number }[]): { minX: number; minY: number
   return { minX, minY, maxX, maxY };
 }
 
-function buildFrom(map: string[], areaMap: string[]): World {
+function buildFrom(map: string[], areaMap: string[], extraFurniture: InitialFurniture[]): World {
   const height = map.length;
   const width = map[0]?.length ?? 0;
   const at = (x: number, y: number): string => map[y]?.[x] ?? '~';
@@ -169,6 +170,7 @@ function buildFrom(map: string[], areaMap: string[]): World {
     if (ch === 'R') return 'rock';
     if (ch === 'H') return 'hardRock';
     if (ch === '#') return 'forestTree';
+    if (ch === 'v') return 'flower';
     if (isBorderChar(ch) && a) return AREAS[a].border?.kind ?? null;
     return null;
   };
@@ -233,7 +235,7 @@ function buildFrom(map: string[], areaMap: string[]): World {
     }
   }
 
-  // --- 設備（遺跡・作業台・船着き場の係留柱） ---
+  // --- 設備（遺跡・船着き場の係留柱） ---
   const stations: Station[] = [];
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
@@ -255,7 +257,21 @@ function buildFrom(map: string[], areaMap: string[]): World {
     stations.push({ id: key(x, y), x, y, kind: 'housePlot', area: a });
   }
 
-  // --- 飾り（歩けない瓦礫・柱、歩ける瓦礫、商船） ---
+  // --- 最初から置く家具（W 作業台・P 古い柱、と既定マップだけの追加分） ---
+  const initialFurniture: InitialFurniture[] = [];
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const furniture = FURNITURE_CHARS[at(x, y)];
+      if (furniture) initialFurniture.push({ x, y, furniture });
+    }
+  }
+  for (const f of extraFurniture) {
+    if (f.x < 0 || f.y < 0 || f.x >= width || f.y >= height) continue;
+    if (initialFurniture.some((g) => g.x === f.x && g.y === f.y)) continue;
+    initialFurniture.push(f);
+  }
+
+  // --- 飾り（歩けない崩れた石、歩ける瓦礫、商船） ---
   const decor: Decor[] = [];
   const pushDecor = (x: number, y: number, w: number, h: number, kind: DecorKind, solid: boolean): void => {
     decor.push({ id: key(x, y), x, y, w, h, kind, solid });
@@ -265,7 +281,6 @@ function buildFrom(map: string[], areaMap: string[]): World {
       const ch = at(x, y);
       if (ch === 'r') pushDecor(x, y, 1, 1, 'rubble', false);
       else if (ch === 'B') pushDecor(x, y, 1, 1, 'brokenStone', true);
-      else if (ch === 'P') pushDecor(x, y, 1, 1, 'pillar', true);
     }
   }
   // 商船（7x8）：'S' の連結成分ごとに 1 つ
@@ -275,7 +290,7 @@ function buildFrom(map: string[], areaMap: string[]): World {
     pushDecor(minX, minY, maxX - minX + 1, maxY - minY + 1, 'ship', true);
   }
 
-  return { width, height, ground: resolvedGround, area, nodes, plots, chests, stations, decor, start };
+  return { width, height, ground: resolvedGround, area, nodes, plots, chests, stations, decor, initialFurniture, start };
 }
 
 /** テスト用に小さな独立マップを渡すとき、area は省略できる（全マス beach 扱いにする）。 */
@@ -285,7 +300,8 @@ function defaultAreaMap(map: string[]): string[] {
 
 export function buildWorld(map: string[] = MAP, areaMap?: string[]): World {
   const resolvedAreaMap = areaMap ?? (map === MAP ? AREA_MAP : defaultAreaMap(map));
-  return buildFrom(map, resolvedAreaMap);
+  // たき火・遺跡のアーチは既定マップの座標で決め打ちなので、テスト用の小さなマップには置かない。
+  return buildFrom(map, resolvedAreaMap, map === MAP ? EXTRA_INITIAL_FURNITURE : []);
 }
 
 let cached: World | null = null;

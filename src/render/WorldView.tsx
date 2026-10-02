@@ -7,7 +7,7 @@ import type { JSX } from 'react';
 
 import { store } from '@/game/store';
 import { isBuildable, placementAt } from '@/game/rules';
-import type { Fail, GameEvent, StationKind, Target } from '@/game/types';
+import type { Fail, GameEvent, StationKind, Target, TimedAction } from '@/game/types';
 
 import {
   baseScaleFor,
@@ -18,8 +18,14 @@ import {
   TILE,
   type CameraState,
   type Viewport,
+  effectiveScale,
+  TILT_DEG,
+  worldToScreen,
 } from './camera';
-import { draw, effects, type RenderState, type Vec2 } from './renderer';
+import { draw, effects, IMPACT_TIMES, type RenderState, type Vec2 } from './renderer';
+import { NODES } from '@/game/data';
+import { playChop, playMine, playPlant, playUiTap } from '@/ui/sound';
+import { hapticHit } from '@/ui/haptics';
 import { paintTerrainAsync, type PaintedTerrain } from './terrain';
 import { buildGroundDecor, type TreeInstance } from './forestTrees';
 import { PointerController } from '@/input/pointer';
@@ -29,14 +35,19 @@ export interface WorldViewProps {
   onSignTap: (plotId: string) => void;
   onSlotTap: (x: number, y: number) => void;
   onStationTap: (kind: StationKind) => void;
+  /** 機能のある家具（作業台）に触れた。 */
+  onFurnitureTap: (furnitureId: string) => void;
   paused: boolean;
 }
 
 const MAX_DT_MS = 50;
+const TILT_COS = Math.cos((TILT_DEG * Math.PI) / 180);
 
 // pigg 風の低いカメラ: プレイヤーを画面中央ではなくやや下に固定し、進行方向側を
 // 広く見せる。PiggTestField（絵柄テスト）で詰めた値をそのまま本編にも適用する。
 const CAMERA_ANCHOR_Y = 0.62;
+/** 主人公の足元を画面のこの高さより下に置かない（下のボタン列に隠れないように）。 */
+const PLAYER_MAX_Y = 0.8;
 
 export function WorldView(props: WorldViewProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -100,7 +111,16 @@ export function WorldView(props: WorldViewProps): JSX.Element {
     let moveVector: Vec2 = { x: 0, y: 0 };
     let stickVisual: { anchor: Vec2; finger: Vec2 } | null = null;
     let zoom = 1;
-    let queuedTap: { screenX: number; screenY: number } | null = null;
+
+    /** 目の前の対象に触れる。看板・設備・作業台は画面を開き、それ以外は store に任せる（伐採などは約 3 秒の行動を始める）。 */
+    const actOnTarget = () => {
+      const target = store.target();
+      if (!target) return;
+      if (target.kind === 'sign') propsRef.current.onSignTap(target.plot.id);
+      else if (target.kind === 'station') propsRef.current.onStationTap(target.station.kind);
+      else if (target.kind === 'furniture') propsRef.current.onFurnitureTap(target.furnitureId);
+      else store.actOnTarget(); // 作業中なら 'cooldown' で何もしない
+    };
 
     const handleTapAt = (screenX: number, screenY: number) => {
       const decorate = propsRef.current.decorate;
@@ -111,22 +131,7 @@ export function WorldView(props: WorldViewProps): JSX.Element {
         if (isBuildable(store.world, store.get(), tx, ty) || placementAt(store.get(), tx, ty)) propsRef.current.onSlotTap(tx, ty);
         return;
       }
-      const target = store.target();
-      if (!target) return;
-      if (target.kind === 'sign') {
-        propsRef.current.onSignTap(target.plot.id);
-        return;
-      }
-      if (target.kind === 'station') {
-        propsRef.current.onStationTap(target.station.kind);
-        return;
-      }
-      if (store.cooldownUntil() > store.now()) {
-        // クールダウン中：1 件だけキューに積んで、明けたら自動で撃つ（連打のリズムを崩さない）。
-        queuedTap = { screenX, screenY };
-        return;
-      }
-      store.actOnTarget();
+      actOnTarget();
     };
 
     const pointerCtl = new PointerController(canvas, {
@@ -146,6 +151,30 @@ export function WorldView(props: WorldViewProps): JSX.Element {
     const unsubEvents = store.onEvents((events: GameEvent[]) => {
       effects.pushEvents(events, store.now());
     });
+    effects.onCollect = () => playUiTap();
+
+    // 道具が当たる瞬間（約 1 秒ごと）に音・振動・パーティクルを出す。行動ごとに何回目まで出したかを持つ。
+    let fired: { startedAt: number; idx: number } | null = null;
+    const onImpact = (a: TimedAction, i: number, now: number) => {
+      if (a.kind === 'chop') {
+        if (a.nodeKind && NODES[a.nodeKind].tool === 'pick') playMine();
+        else playChop();
+      } else {
+        playPlant(); // 花を引く・鍬を入れる：やわらかい音
+      }
+      hapticHit();
+      effects.impact(a, i, now);
+    };
+    const fireImpacts = (now: number) => {
+      const a = store.currentAction();
+      if (!a) return;
+      if (!fired || fired.startedAt !== a.startedAt) fired = { startedAt: a.startedAt, idx: 0 };
+      const t = (now - a.startedAt) / Math.max(1, a.endsAt - a.startedAt);
+      while (fired.idx < IMPACT_TIMES.length && t >= IMPACT_TIMES[fired.idx]!) {
+        onImpact(a, fired.idx, now);
+        fired.idx++;
+      }
+    };
 
     let raf = 0;
     let lastT = performance.now();
@@ -159,35 +188,25 @@ export function WorldView(props: WorldViewProps): JSX.Element {
 
       const paused = propsRef.current.paused;
 
-      if (!paused) {
-        // キューされたタップ：クールダウンが明けたら発火
-        if (queuedTap && store.cooldownUntil() <= now) {
-          const q = queuedTap;
-          queuedTap = null;
-          const target = store.target();
-          if (target && target.kind === 'station') propsRef.current.onStationTap(target.station.kind);
-          else if (target && target.kind !== 'sign') store.actOnTarget();
-          void q;
-        }
+      // 当たりの演出は結果より先に出し切る（フレームが飛んでも最後の 1 回を落とさない）
+      fireImpacts(now);
+      // 時間のかかる行動（伐採など）が終わっていれば結果を出す（シートが開いていても進める）
+      store.update();
+      const action = store.currentAction();
 
+      if (!paused) {
         const kbVector = pointerCtl.getKeyboardVector();
         const dx = moveVector.x !== 0 || moveVector.y !== 0 ? moveVector.x : kbVector.x;
         const dy = moveVector.x !== 0 || moveVector.y !== 0 ? moveVector.y : kbVector.y;
         if (dx !== 0 || dy !== 0) store.move(dx, dy, dtSec);
 
-        if (pointerCtl.consumeAction()) {
-          const target = store.target();
-          if (target) {
-            if (target.kind === 'sign') propsRef.current.onSignTap(target.plot.id);
-            else if (target.kind === 'station') propsRef.current.onStationTap(target.station.kind);
-            else if (store.cooldownUntil() <= now) store.actOnTarget();
-          }
-        }
+        if (pointerCtl.consumeAction()) actOnTarget();
       }
 
       const player = store.get().player;
       const moving = !paused && (moveVector.x !== 0 || moveVector.y !== 0 || pointerCtl.getKeyboardVector().x !== 0 || pointerCtl.getKeyboardVector().y !== 0);
 
+      const viewScale = effectiveScale(camera, viewport.baseScale);
       const newCam = stepCamera(
         camera,
         (player.x) * TILE,
@@ -195,8 +214,9 @@ export function WorldView(props: WorldViewProps): JSX.Element {
         dtSec,
         world.width * TILE,
         world.height * TILE,
-        viewport.widthCssPx,
-        viewport.heightCssPx,
+        // 端の制限はワールド px で比べる（画面 px のまま渡すと、拡大しているぶん左右にほとんど動けない）
+        viewport.widthCssPx / viewScale,
+        viewport.heightCssPx / (viewScale * TILT_COS),
         0.09, // halfLifeSec（既定値。以前と同じ追従の締まり具合）
         0.5, // anchorX（左右は今までどおり中央）
         CAMERA_ANCHOR_Y,
@@ -204,10 +224,16 @@ export function WorldView(props: WorldViewProps): JSX.Element {
       camera.x = newCam.x;
       camera.y = newCam.y;
       camera.zoom = zoom;
+      // 端の制限は平らな地図で計算しているので、斜め視点では手前（南）の端で主人公が画面の下へはみ出す。
+      // 足元が画面の下 PLAYER_MAX_Y より下に来るなら、カメラを手前へずらして必ず見えるようにする。
+      const foot = worldToScreen(player.x * TILE, player.y * TILE, camera, viewport);
+      const maxFootY = viewport.heightCssPx * PLAYER_MAX_Y;
+      if (foot.y > maxFootY) camera.y += (foot.y - maxFootY) / Math.max(0.01, foot.k);
 
       effects.prune(now);
 
-      const target: (Target & { blocked?: Fail }) | null = propsRef.current.decorate ? null : store.target();
+      // 作業中はハイライトを消す（頭の上のゲージだけにする）
+      const target: (Target & { blocked?: Fail }) | null = propsRef.current.decorate || action ? null : store.target();
 
       const state: RenderState = {
         world,
@@ -217,7 +243,8 @@ export function WorldView(props: WorldViewProps): JSX.Element {
         viewport,
         decorate: propsRef.current.decorate,
         target,
-        moving,
+        moving: moving && !action,
+        action,
         dpr,
         stick: stickVisual,
         terrain,
@@ -233,6 +260,7 @@ export function WorldView(props: WorldViewProps): JSX.Element {
       ro.disconnect();
       pointerCtl.dispose();
       unsubEvents();
+      effects.onCollect = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -64,8 +64,8 @@ describe('findTarget', () => {
     const save = freshSave(0);
     const tree = world.nodes.find((n) => n.kind === 'tree');
     if (!tree) throw new Error('no tree');
-    const px = tree.x + 0.5 + 0.3; // 木のすぐ近く
-    const py = tree.y + 0.5;
+    const px = tree.x + 0.5 + 0.3; // 木のすぐ近く（体の中心が木の中心と同じ高さ）
+    const py = tree.y + 1.0;
     const target = findTarget(world, save, px, py, 'right', 0);
     expect(target).not.toBeNull();
     expect(target?.kind).toBe('node');
