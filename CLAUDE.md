@@ -56,3 +56,13 @@
 - 足りない絵は `PAINTERS` に描くか、素材シートに足して `SHEET_TARGET` に載せる。ChatGPT で作る場合も、
   スクリプトで切り出して `src/assets/refimg/` に入れる流れに乗せる。
 - 確認用に `sprites.html`（`npm run dev` 中に `/survival-island/sprites.html`）で全スプライトを一覧できる。
+
+## 効果音
+
+**全アプリ共通の「WebAudio で合成・ファイルを持たない」の例外**（ユーザー指定）。ElevenLabs の Sound Effects API で生成した
+短い mp3 を `src/assets/sfx/` に置き、`src/ui/sound.ts` が AudioBuffer に読み込んで WebAudio で鳴らす
+（頭の無音を切り、ピークをそろえ、鳴らすたびに音程・音量を少しゆらす）。無い音は合成音で代わりに鳴らす。
+
+- 生成: `node scripts/gen-sfx.mjs`（API キーは環境変数 `ELEVENLABS_API_KEY`。指示文の一覧はスクリプト内の `SFX`）。
+  候補は `refs/sfx/`（git 管理外）に 3 本ずつ。未採用の音は候補 1 が仮に入る。
+- 聴き比べ: `npm run dev` 中に `/survival-island/sfx.html`。採用は `node scripts/gen-sfx.mjs --pick chop=2`。

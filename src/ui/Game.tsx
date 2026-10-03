@@ -27,7 +27,7 @@ import { isHapticsEnabled, isSoundEnabled, setHapticsEnabled, setSoundEnabled } 
 import { SignSheet } from './SignSheet';
 import { SkillSheet } from './SkillSheet';
 import { StationInfoSheet } from './StationInfoSheet';
-import { playBreak, playCraft, playFail, playHarvest, playLevelUp, playPlace, playPlant } from './sound';
+import { playCraft, playFell, playPop, playFail, playHarvest, playLevelUp, playPlace, playPlant } from './sound';
 
 type SheetState =
   | { kind: 'inventory' }
@@ -112,10 +112,14 @@ export function Game() {
       for (const ev of events) {
         switch (ev.type) {
           // 'hit' の音・振動は、道具が当たる瞬間ごとに WorldView が出す（ここで鳴らすと 1 回多くなる）
-          case 'broke':
-            playBreak();
+          case 'broke': {
+            // 木が幹になった → 倒れる音。幹・花・岩が消えた → ポン
+            const ns = store.get().nodes;
+            if (ns[`${ev.x},${ev.y}`]?.stump || ns[`p:${ev.x},${ev.y}`]?.stump) playFell();
+            else playPop();
             hapticHit();
             break;
+          }
           case 'gathered':
             playHarvest();
             hapticHarvest();

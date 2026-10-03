@@ -24,7 +24,7 @@ import {
 } from './camera';
 import { draw, effects, IMPACT_TIMES, type RenderState, type Vec2 } from './renderer';
 import { NODES } from '@/game/data';
-import { playChop, playMine, playPlant, playUiTap } from '@/ui/sound';
+import { playChop, playCollect, playDig, playMine, playPick } from '@/ui/sound';
 import { hapticHit } from '@/ui/haptics';
 import { paintTerrainAsync, type PaintedTerrain } from './terrain';
 import { buildGroundDecor, type TreeInstance } from './forestTrees';
@@ -151,7 +151,7 @@ export function WorldView(props: WorldViewProps): JSX.Element {
     const unsubEvents = store.onEvents((events: GameEvent[]) => {
       effects.pushEvents(events, store.now());
     });
-    effects.onCollect = () => playUiTap();
+    effects.onCollect = () => playCollect();
 
     // 道具が当たる瞬間（約 1 秒ごと）に音・振動・パーティクルを出す。行動ごとに何回目まで出したかを持つ。
     let fired: { startedAt: number; idx: number } | null = null;
@@ -160,7 +160,8 @@ export function WorldView(props: WorldViewProps): JSX.Element {
         if (a.nodeKind && NODES[a.nodeKind].tool === 'pick') playMine();
         else playChop();
       } else {
-        playPlant(); // 花を引く・鍬を入れる：やわらかい音
+        if (a.kind === 'gather') playPick();
+        else playDig();
       }
       hapticHit();
       effects.impact(a, i, now);
