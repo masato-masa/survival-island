@@ -87,10 +87,11 @@ const enum K {
 const isPathLike = (k: number): boolean => k === K.Dirt || k === K.Paving || k === K.Dock;
 const isSoft = (k: number): boolean => k === K.Grass || k === K.Forest || k === K.Sand;
 
-// 色（参考画像から実測した値を基準にしたやわらかい配色）
-const GRASS_A: RGB = [126, 190, 80];
-const GRASS_B: RGB = [104, 166, 62];
-const GRASS_C: RGB = [148, 206, 96];
+// 色（ピグライフのスクリーンショットから実測。草はほぼ一様な #92cb6e で、広い範囲で
+// #8ac469〜#96ce73 の幅しか揺れない。濃淡を強くすると「ピグの平らな地面」にならない）
+const GRASS_A: RGB = [146, 203, 110];
+const GRASS_B: RGB = [138, 196, 105];
+const GRASS_C: RGB = [150, 206, 115];
 const FOREST_A: RGB = [136, 197, 102];
 const FOREST_B: RGB = [122, 185, 90];
 const SAND_A: RGB = [242, 226, 172];
@@ -102,8 +103,9 @@ const PAVE_A: RGB = [214, 210, 200];
 const PAVE_MORTAR: RGB = [176, 171, 158];
 const SOIL_A: RGB = [122, 80, 54];
 const SOIL_B: RGB = [158, 110, 76];
-const WATER_SHALLOW: RGB = [92, 190, 196];
-const WATER_DEEP: RGB = [24, 92, 120];
+// 海: ピグアイランドの海 #1b96d5（沖）と、浅瀬は明るい水色（ピグライフの池 #aef7ef 寄り）
+const WATER_SHALLOW: RGB = [104, 212, 230];
+const WATER_DEEP: RGB = [27, 150, 213];
 const FOAM: RGB = [246, 253, 252];
 const WOOD_TONES: RGB[] = [
   [214, 172, 116],
@@ -198,7 +200,7 @@ function baseColor(k: number, px: number, py: number, depth: number, out: RGB): 
       const n = n1 * 0.6 + n2 * 0.4;
       if (n < 0.5) mix(GRASS_A, GRASS_B, (0.5 - n) * 1.7, out);
       else mix(GRASS_A, GRASS_C, (n - 0.5) * 1.6, out);
-      const f = (valueNoise2D(px, py, 88, 0.5 * TERRAIN_PX) - 0.5) * 5;
+      const f = (valueNoise2D(px, py, 88, 0.5 * TERRAIN_PX) - 0.5) * 2;
       out[0] += f;
       out[1] += f;
       out[2] += f;

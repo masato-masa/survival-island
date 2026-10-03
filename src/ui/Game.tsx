@@ -18,7 +18,7 @@ import { GoalSheet } from './GoalSheet';
 import { formatCountdown } from './format';
 import { HelpSheet } from './HelpSheet';
 import { hapticCraft, hapticFail, hapticHarvest, hapticHit, hapticLevelUp, hapticPlace, hapticTap } from './haptics';
-import { BagIcon, BrushIcon, GoalIcon, HelpIcon, SettingsIcon } from './icons';
+import { BagIcon, BrushIcon, GoalIcon, HeartIcon, HelpIcon, SettingsIcon, SproutIcon, StarIcon } from './icons';
 import { IntroSheet } from './IntroSheet';
 import { InventorySheet } from './InventorySheet';
 import { PlaceSheet } from './PlaceSheet';
@@ -253,69 +253,77 @@ export function Game() {
       </div>
 
       <div className="hud-layer">
-        {/* 左上: 顔アイコン + いるエリアの名前 */}
-        <div className="hud-topleft-pill">
-          <span className="hud-avatar">
+        {/* 左上: 木の輪の顔アイコン + いるエリアの名前（ピグライフの左上の顔・上部の案内札） */}
+        <div className="hud-topleft">
+          <span className="hud-portrait">
             <img src={spriteDataUrl('player_down0')} alt="" />
           </span>
           <span className="hud-area-name">{areaName}</span>
         </div>
 
-        {/* 右上: スタミナ・島レベル・設定・ヘルプ */}
+        {/* 右上: ? と設定（木の丸ボタン）。その下にゲージを縦に積む（ピグライフの右上と同じ並び） */}
         <div className="hud-topright">
-          <div className="hud-stat" aria-label={`スタミナ ${stamina.value}/${stamina.max}`}>
-            <span className="hud-stat-icon is-heart">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 21s-8-5.2-8-11a4.6 4.6 0 0 1 8-3 4.6 4.6 0 0 1 8 3c0 5.8-8 11-8 11z" fill="#ff6a3d" stroke="#fff" strokeWidth="1.6" />
-              </svg>
-            </span>
-            <span className="hud-stat-body">
-              <span className="hud-stat-label">スタミナ</span>
-              <span className="hud-stat-bar">
-                <span className="hud-stat-fill is-stamina" style={{ width: `${staminaPct}%` }} />
-                <span className="hud-stat-num">
+          <div className="hud-topbtns">
+            <button className="wood-btn is-small" aria-label="あそびかた" onClick={() => setSheet({ kind: 'help' })}>
+              <HelpIcon />
+            </button>
+            <button className="wood-btn is-small" aria-label="設定" onClick={() => setSheet({ kind: 'settings' })}>
+              <SettingsIcon />
+            </button>
+          </div>
+
+          <div className="hud-gauges">
+            <div className="gauge is-stamina" aria-label={`スタミナ ${stamina.value}/${stamina.max}`}>
+              <span className="gauge-icon">
+                <HeartIcon />
+              </span>
+              <span className="gauge-bar">
+                <span className="gauge-track"><span className="gauge-fill" style={{ width: `${staminaPct}%` }} /></span>
+                <span className="gauge-text">
                   {stamina.value} / {stamina.max}
                 </span>
               </span>
-              <span className="hud-stat-sub" style={{ visibility: stamina.value < stamina.max ? 'visible' : 'hidden' }}>
-                スタミナ回復まで {formatCountdown(stamina.value < stamina.max ? stamina.nextInMs : 0)}
+            </div>
+            {/* 回復までの残り時間（満タンでも高さを取って、下のゲージが上下に動かないようにする） */}
+            <span className="gauge-note" style={{ visibility: stamina.value < stamina.max ? 'visible' : 'hidden' }}>
+              回復まで {formatCountdown(stamina.value < stamina.max ? stamina.nextInMs : 0)}
+            </span>
+
+            <div className="gauge is-level" aria-label={`島レベル ${islandLevel}`}>
+              <span className="gauge-icon">
+                <SproutIcon />
+                <span className="gauge-badge">{islandLevel}</span>
               </span>
-            </span>
-          </div>
-          <div className="hud-stat">
-            <span className="hud-stat-icon is-palm">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 22V11" stroke="#a8743c" strokeWidth="2.4" strokeLinecap="round" />
-                <path d="M12 11C8 11 4 9 3 5c4-1 7 1 9 6zm0 0c4 0 8-2 9-6-4-1-7 1-9 6zm0 0c-1-4 0-7 3-9 1 4 0 7-3 9zm0 0c1-4 0-7-3-9-1 4 0 7 3 9z" fill="#5cc44a" stroke="#2f7a2c" strokeWidth="0.8" />
-              </svg>
-            </span>
-            <span className="hud-stat-body">
-              <span className="hud-stat-label">島レベル</span>
-              <span className="hud-stat-bar">
-                <span className="hud-stat-fill is-level" style={{ width: `${levelProgress * 100}%` }} />
-                <span className="hud-stat-num">Lv {islandLevel}</span>
+              <span className="gauge-bar">
+                <span className="gauge-track"><span className="gauge-fill" style={{ width: `${levelProgress * 100}%` }} /></span>
+                <span className="gauge-text">
+                  {nextThreshold ? `あと${Math.max(0, nextThreshold - points.total)}pt` : 'MAX'}
+                </span>
               </span>
-              <span className="hud-stat-sub">経験値 {save.xp}</span>
-            </span>
+            </div>
+
+            <div className="gauge is-xp" aria-label={`経験値 ${save.xp}`}>
+              <span className="gauge-icon">
+                <StarIcon />
+              </span>
+              <span className="gauge-bar">
+                <span className="gauge-track"><span className="gauge-fill" style={{ width: '100%' }} /></span>
+                <span className="gauge-text">{save.xp}</span>
+              </span>
+            </div>
           </div>
-          <button className="icon-btn" aria-label="あそびかた" onClick={() => setSheet({ kind: 'help' })}>
-            <HelpIcon />
-          </button>
-          <button className="icon-btn" aria-label="設定" onClick={() => setSheet({ kind: 'settings' })}>
-            <SettingsIcon />
-          </button>
         </div>
 
         {/* 右辺中央: もちもの・もくひょう・模様替え */}
         <div className="hud-rightcol">
           <button className="hud-tool" aria-label="もちもの" onClick={() => setSheet({ kind: 'inventory' })}>
-            <span className="hud-tool-btn">
+            <span className="wood-btn">
               <BagIcon />
             </span>
             <span className="hud-tool-label">もちもの</span>
           </button>
           <button className="hud-tool" aria-label="もくひょう" onClick={() => setSheet({ kind: 'goal' })}>
-            <span className="hud-tool-btn">
+            <span className="wood-btn">
               <GoalIcon />
             </span>
             <span className="hud-tool-label">もくひょう</span>
@@ -326,10 +334,10 @@ export function Game() {
             aria-pressed={decorate}
             onClick={() => setDecorate((v) => !v)}
           >
-            <span className="hud-tool-btn">
+            <span className="wood-btn">
               <BrushIcon />
             </span>
-            <span className="hud-tool-label">模様替え</span>
+            <span className="hud-tool-label">{decorate ? 'おわる' : '模様替え'}</span>
           </button>
         </div>
 

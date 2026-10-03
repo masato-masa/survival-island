@@ -47,7 +47,7 @@ export function SkillSheet({
                   <p className="skill-desc">
                     {atMax ? '最大まで習得しました' : locked ? `島Lv ${level + 1} で解放` : def.levelText[level]}
                   </p>
-                  <button className="sheet-btn quiet skill-buy" disabled={!canBuy} onClick={() => onBuy(id)}>
+                  <button className="sheet-btn skill-buy" disabled={!canBuy} onClick={() => onBuy(id)}>
                     {atMax ? '習得済み' : locked ? `島Lv ${level + 1} で解放` : `獲得（経験値 ${nextCost}）`}
                   </button>
                 </div>

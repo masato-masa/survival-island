@@ -802,14 +802,23 @@ const paintStonePath: Painter = (ctx) => {
   }
 };
 
-// 草の葉先（参考画像の地面に散っている小さな「ᴗ」の印）。細い葉 3〜5 枚の束。
+// 草の葉先。ピグライフの地面の印と同じ、輪郭なしの細いギザギザ（「W」の字）を 1 色だけで描く。
+// 色は実測 #78b862（地の草 #92cb6e より一段だけ濃い）。
 function paintTuft(variant: 0 | 1): Painter {
   return (ctx) => {
-    const blades: [number, number, number][] =
+    const pts: [number, number][] =
       variant === 0
-        ? [[-0.55, 6.5, 1.1], [0, 8.5, 1.3], [0.5, 6, 1.1]]
-        : [[-0.8, 5, 1], [-0.3, 7.5, 1.2], [0.25, 8, 1.3], [0.75, 5.5, 1]];
-    for (const [ang, len, wid] of blades) leaf(ctx, 8 + ang * 1.6, 10, len, ang * 0.9, wid, '#78bb58', '#5ea146');
+        ? [[3, 11], [5.2, 4], [7.6, 10], [9.6, 2.4], [12, 10], [14.2, 5], [16, 11]]
+        : [[4, 11], [6.4, 3.4], [9, 10], [11.4, 4.6], [14, 11]];
+    ctx.save();
+    ctx.strokeStyle = '#78b862';
+    ctx.lineWidth = 1.7;
+    ctx.lineJoin = 'miter';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+    ctx.stroke();
+    ctx.restore();
   };
 }
 

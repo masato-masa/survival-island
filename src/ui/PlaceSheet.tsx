@@ -84,7 +84,7 @@ export function PlaceSheet({
               <span>
                 {ITEMS[item].name}（{grows}になる）×{count}
               </span>
-              <button className="sheet-btn quiet" disabled={!plantable || count < 1} onClick={() => onPlant(item)}>
+              <button className="sheet-btn" disabled={!plantable || count < 1} onClick={() => onPlant(item)}>
                 植える
               </button>
             </div>

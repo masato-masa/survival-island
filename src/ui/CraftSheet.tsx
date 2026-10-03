@@ -59,7 +59,7 @@ export function CraftSheet({
                   </div>
                 )}
               </div>
-              <button className="sheet-btn quiet craft-btn" disabled={!isKnown || !canAfford} onClick={() => onCraft(f.id)}>
+              <button className="sheet-btn craft-btn" disabled={!isKnown || !canAfford} onClick={() => onCraft(f.id)}>
                 作る
               </button>
             </div>

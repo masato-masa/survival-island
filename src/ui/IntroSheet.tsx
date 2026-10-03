@@ -15,7 +15,7 @@ export function IntroSheet({ onReceive }: { onReceive: () => void }) {
       <p className="sheet-text">
         「まずはこれを授けよう。斧にも、つるはしにも、くわにもなる、万能の道具だ。」
       </p>
-      <button className="home-btn primary" onClick={onReceive}>
+      <button className="sheet-btn" onClick={onReceive}>
         うけとる
       </button>
     </Sheet>

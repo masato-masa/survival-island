@@ -439,7 +439,10 @@ function hash2(x: number, y: number): number {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
 }
 
-const OCEAN = '#1b5f7c'; // 地図の外（海）
+/** キャンバスに描く文字の書体。HUD と同じピグの丸ゴシック（index.html で読み込む）。 */
+const CANVAS_FONT = "'M PLUS Rounded 1c', 'Hiragino Maru Gothic ProN', sans-serif";
+
+const OCEAN = '#1b96d5'; // 地図の外（海）。terrainCore.ts の WATER_DEEP と同じ色
 
 const DECOR_SPRITE: Record<DecorKind, SpriteName> = {
   rubble: 'decor_rubble' as SpriteName,
@@ -761,7 +764,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     ctx.restore();
     if (d.badge != null && age < DROP_REST_END_MS) {
       ctx.save();
-      ctx.font = `bold ${Math.round(Math.max(11, 12 * p.k))}px sans-serif`;
+      ctx.font = `800 ${Math.round(Math.max(11, 12 * p.k))}px ${CANVAS_FONT}`;
       ctx.textAlign = 'left';
       ctx.lineWidth = 3;
       ctx.strokeStyle = 'rgba(70,45,30,0.85)';
@@ -812,6 +815,23 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
         ctx.stroke();
       }
     }
+    ctx.restore();
+  }
+
+  // --- 狙っているマスの印（地面に敷く）。ピグライフの置き場所の印と同じ、黄緑 #d3ea2e の平らなマス。
+  //     地面に貼るので、木や人の足元に隠れる（上から枠を描くと物に重なって浮いて見える）。
+  if (!state.decorate && state.target) {
+    const t = state.target;
+    const pulse = 0.5 + 0.5 * Math.sin(now / 220);
+    ctx.save();
+    polygonPath(ctx, tileQuad(t.x, t.y, 1, 1, camera, viewport), 0.06);
+    ctx.globalAlpha = 0.78 + 0.17 * pulse;
+    ctx.fillStyle = t.blocked ? '#ff9c99' : '#d3ea2e';
+    ctx.fill();
+    polygonPath(ctx, tileQuad(t.x, t.y, 1, 1, camera, viewport), 0.26);
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = t.blocked ? '#ffd0ce' : '#ecf695';
+    ctx.fill();
     ctx.restore();
   }
 
@@ -995,36 +1015,55 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
 
   // --- ハイライト（通常モードのみ） ---
   if (!state.decorate && state.target) {
+    // ピグライフの「出現位置」の矢印: 橙 #fe741b → 赤橙 #ff4536 の太い下向き矢印 + 白の縁。
+    // 名前は色文字 + 白の太いふち（ピグの文字の付け方。黒いふちは使わない）。
     const t = state.target;
-    const pulse = 0.5 + 0.5 * Math.sin(now / 160);
-    ctx.save();
-    ctx.strokeStyle = t.blocked ? `rgba(220,90,90,${0.65 + 0.3 * pulse})` : `rgba(255,250,230,${0.7 + 0.3 * pulse})`;
-    ctx.lineWidth = 2.5;
-    polygonPath(ctx, tileQuad(t.x, t.y, 1, 1, camera, viewport), 0.08);
-    ctx.stroke();
-    ctx.restore();
-
     const s = worldToScreen((t.x + 0.5) * TILE, (t.y + 0.5) * TILE, camera, viewport);
     const topY = s.y - 0.55 * TILE * s.k - 1.1 * TILE * s.k * 0.35;
     const bounce = Math.sin(now / 140) * 3;
-    const ay = topY - 10 - bounce;
-    ctx.fillStyle = t.blocked ? '#d65a5a' : '#fffbe6';
+    const ay = topY - 8 - bounce; // 矢印の先
+    const aw = 9; // 矢じりの半幅
+    const ah = 9; // 矢じりの高さ
+    const sw = 4; // 軸の半幅
+    const sh = 7; // 軸の高さ
+    ctx.save();
     ctx.beginPath();
-    ctx.moveTo(s.x, ay + 7);
-    ctx.lineTo(s.x - 6, ay - 2);
-    ctx.lineTo(s.x + 6, ay - 2);
+    ctx.moveTo(s.x, ay);
+    ctx.lineTo(s.x - aw, ay - ah);
+    ctx.lineTo(s.x - sw, ay - ah);
+    ctx.lineTo(s.x - sw, ay - ah - sh);
+    ctx.lineTo(s.x + sw, ay - ah - sh);
+    ctx.lineTo(s.x + sw, ay - ah);
+    ctx.lineTo(s.x + aw, ay - ah);
     ctx.closePath();
+    const g = ctx.createLinearGradient(0, ay - ah - sh, 0, ay);
+    if (t.blocked) {
+      g.addColorStop(0, '#b9b1a8');
+      g.addColorStop(1, '#8f867d');
+    } else {
+      g.addColorStop(0, '#fe741b');
+      g.addColorStop(1, '#ff4536');
+    }
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#ffffff';
+    ctx.stroke();
+    ctx.fillStyle = g;
     ctx.fill();
+    ctx.restore();
 
     const label = targetLabel(t);
     if (label) {
-      ctx.font = 'bold 14px sans-serif';
+      ctx.save();
+      ctx.font = `800 14px ${CANVAS_FONT}`;
       ctx.textAlign = 'center';
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-      ctx.strokeText(label, s.x, ay - 10);
-      ctx.fillStyle = '#fffbe6';
-      ctx.fillText(label, s.x, ay - 10);
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 4.5;
+      ctx.strokeStyle = '#ffffff';
+      ctx.strokeText(label, s.x, ay - ah - sh - 6);
+      ctx.fillStyle = '#8a6640';
+      ctx.fillText(label, s.x, ay - ah - sh - 6);
+      ctx.restore();
     }
   }
 
@@ -1076,7 +1115,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     ctx.stroke();
     if (b.text) {
       const fs = Math.round(Math.max(12, 13 * s.k));
-      ctx.font = `bold ${fs}px sans-serif`;
+      ctx.font = `800 ${fs}px ${CANVAS_FONT}`;
       ctx.textAlign = 'center';
       ctx.lineWidth = 3.5;
       ctx.strokeStyle = 'rgba(90,55,30,0.9)';
@@ -1138,7 +1177,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
       ctx.translate(sx, sy);
       ctx.scale(pop, pop);
       const icon = getSprite(`item_${toast.follow.item}` as SpriteName);
-      ctx.font = 'bold 18px sans-serif';
+      ctx.font = `800 18px ${CANVAS_FONT}`;
       const tw = ctx.measureText(toast.text).width;
       const iw = 24;
       const left = -(tw + iw + 3) / 2;
@@ -1155,19 +1194,21 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     if (toast.x < 0) {
       sx = W / 2;
       sy = H * 0.3;
-      ctx.font = 'bold 22px sans-serif';
+      ctx.font = `800 22px ${CANVAS_FONT}`;
     } else {
       const s = worldToScreen(toast.x, toast.y, camera, viewport);
       sx = s.x;
       sy = s.y - 24 * t - 0.8 * TILE * s.k;
-      ctx.font = '15px sans-serif';
+      ctx.font = `700 15px ${CANVAS_FONT}`;
     }
     ctx.textAlign = 'center';
     ctx.globalAlpha = Math.max(0, alpha);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+    // ピグの文字の付け方: 茶の色文字 + 白の太いふち
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 4.5;
+    ctx.strokeStyle = '#ffffff';
     ctx.strokeText(toast.text, sx, sy);
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = '#8a6640';
     ctx.fillText(toast.text, sx, sy);
     ctx.globalAlpha = 1;
   }

@@ -1,6 +1,8 @@
 import { motion } from 'motion/react';
 import type { ReactNode } from 'react';
 
+import { CloseIcon } from './icons';
+
 /** 下から出て下へ帰るシート。呼び出し側で <AnimatePresence> に包み、
  *  一意な key を付けること（閉じるときの退場アニメーションのため）。
  *  閉じている最中は pointerEvents: 'none' にして、フェード中の見えない
@@ -33,6 +35,10 @@ export function Sheet({
         animate={{ opacity: 1, y: 0, transition: { type: 'spring', stiffness: 440, damping: 40 } }}
         exit={{ opacity: 0, y: '14%', pointerEvents: 'none', transition: { duration: 0.18, ease: 'easeIn' } }}
       >
+        {/* ピグの画面と同じ、右上の赤い丸の ×（木の縁取り）。シートの角に半分かかる位置に浮かせる */}
+        <button className="close-btn" aria-label="とじる" onClick={onClose}>
+          <CloseIcon />
+        </button>
         <h2 className="sheet-title">{title}</h2>
         {subtitle ? <p className="sheet-subtitle">{subtitle}</p> : null}
         {children}
