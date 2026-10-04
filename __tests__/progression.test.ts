@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { FURNITURE, NODES, STAMINA_REGEN_MS, TREE_GROW_MS } from '../src/game/data';
-import { buySkill, craft, place, plant, workNode } from '../src/game/actions';
+import { FURNITURE, NODES, craftMs, STAMINA_REGEN_MS, TREE_GROW_MS } from '../src/game/data';
+import { buySkill, collectCraft, craft, place, plant, workNode } from '../src/game/actions';
 import { actionMs, allNodes, canHit, isAreaOpen, islandLevel, nodeAlive } from '../src/game/rules';
 import { applyRespawns } from '../src/game/time';
 import { newSave } from '../src/game/save';
@@ -123,6 +123,10 @@ function createSim() {
       if (!def) throw new Error(`no furniture ${id}`);
       for (const [item, amount] of Object.entries(def.cost) as [ItemId, number][]) ensureItem(item, amount);
       act((n) => craft(save, def.id, n));
+      // クラフトは実時間がかかる。終わるまで待ってから受け取る。
+      advance(craftMs(def.id));
+      const got = collectCraft(save, now);
+      if (!got.ok) throw new Error(`受け取りに失敗: ${got.reason}`);
       const [slot] = freeTiles(save, 1);
       if (!slot) throw new Error('空きマスが無い');
       const r = place(world, save, slot.x, slot.y, def.id);
@@ -194,7 +198,7 @@ describe('進行シミュレーション: 4 エリア開放 + 島レベル3', ()
     ).length;
     // eslint-disable-next-line no-console
     console.log(
-      `[進行測定] 4 エリア開放 + 島レベル${islandLevel(save)} 到達: ゲーム内経過 ${hours.toFixed(1)} 時間 / ` +
+      `[進行測定] 4 エリア開放 + 島レベル${islandLevel(save)} 到達: ゲーム内経過 ${hours.toFixed(2)} 時間 / ` +
         `合計スタミナ消費 ${totalStamina} / 行動 ${sim.actions} 回 / 地図の木を切り倒した数 ${treesCut} / 植え直し ${sim.replants} 回`,
     );
     expect(hours).toBeGreaterThan(0);

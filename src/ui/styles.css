@@ -221,6 +221,104 @@ button.wood-btn:active,
   display: block;
 }
 
+button.hud-portrait {
+  padding: 0;
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+
+button.hud-portrait:active {
+  transform: scale(0.94);
+}
+
+/* 顔アイコンから落ちるメニュー（ピグ風の木枠の札）。幕は透明で、外側のタップを受けて閉じる */
+.menu-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: transparent;
+}
+
+.menu-pop {
+  position: absolute;
+  top: 60px;
+  left: 0;
+  z-index: 2;
+  width: 188px;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+  background: repeating-linear-gradient(90deg, var(--panel) 0 6.5px, var(--panel-stripe) 6.5px 11.5px);
+  border: 4px solid var(--wood);
+  border-radius: var(--radius-l);
+  box-shadow:
+    inset 0 0 0 1.5px var(--wood-line),
+    0 3px 0 #c9a46c,
+    0 8px 20px rgb(70 45 20 / 0.3);
+  transform-origin: 26px -8px;
+  animation: menu-drop 0.16s ease-out;
+}
+
+.menu-pop::before {
+  content: '';
+  position: absolute;
+  top: -11px;
+  left: 20px;
+  width: 14px;
+  height: 14px;
+  background: var(--panel);
+  border-left: 4px solid var(--wood);
+  border-top: 4px solid var(--wood);
+  transform: rotate(45deg);
+  border-radius: 3px 0 0 0;
+}
+
+@keyframes menu-drop {
+  from {
+    opacity: 0;
+    transform: scale(0.85) translateY(-6px);
+  }
+}
+
+.menu-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: var(--hit);
+  padding: 6px 12px 6px 8px;
+  border: 2.5px solid var(--card-edge);
+  border-radius: var(--radius-m);
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-row:active {
+  background: #fbf5e4;
+}
+
+.menu-row-icon {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 3px solid var(--wood);
+  border-radius: 50%;
+  background: var(--wood-face-2);
+}
+
+.menu-row-icon svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
 .hud-portrait img {
   position: absolute;
   left: 50%;
@@ -630,6 +728,62 @@ button.wood-btn:active,
   color: #8ccf4e;
 }
 
+/* あそびかた: 見出しつきの節。本文はスクロールする */
+.help-body {
+  overflow-y: auto;
+  display: grid;
+  gap: 14px;
+  padding: 2px 2px 4px;
+  margin: 0 -2px;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--wood) transparent;
+}
+
+.help-sec {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px 12px;
+  border: 2.5px solid var(--card-edge);
+  border-radius: var(--radius-m);
+  background: var(--card);
+}
+
+.help-sec h3 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink-strong);
+}
+
+.help-sec h3 svg {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  display: block;
+}
+
+.help-sec p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.help-sec .help-list {
+  font-size: 13px;
+  gap: 4px;
+}
+
+.help-sec b {
+  font-weight: 800;
+  color: var(--ink-strong);
+}
+
 /* 白いカードの行（ピグの一覧のマス: 面 #fff・縁 #f1eada 2.5px・角丸 12px） */
 .sheet-row {
   display: flex;
@@ -985,6 +1139,16 @@ button.wood-btn:active,
 .stamina-chip {
   color: #3b8fc9;
   background: #e8f6ff;
+}
+
+/* 作業中のカード（一覧の上。緑の縁で目立たせる） */
+.craft-job {
+  margin-bottom: 8px;
+  border-color: #7ce87d;
+}
+
+.craft-job-bar {
+  height: 14px;
 }
 
 .craft-btn {

@@ -14,18 +14,18 @@ import type {
   LiveNode,
   NodeKind,
   SaveState,
-  StationKind,
   Target,
   TimedAction,
   World,
 } from '@/game/types';
-import { FURNITURE_BY_ID, FURNITURE_DISPLAY_SIZE, ITEMS, NODES, STATIONS } from '@/game/data';
+import { FURNITURE_BY_ID, ITEMS, NODES, STATIONS } from '@/game/data';
 import { cropProgress } from '@/game/time';
-import { allNodes, isBuildable, nodeAlive, placementRect } from '@/game/rules';
+import { allNodes, isBuildable, nodeAlive, nodeRequirement, placementRect } from '@/game/rules';
 import { store } from '@/game/store';
 
 import { followFactor, screenToWorld, TILE, TILT_DEG, type CameraState, type Viewport, worldToScreen } from './camera';
 import { getGroundFurnitureSprite, getSprite, type SpriteName } from './sprites';
+import { drawCraftBubble, drawModel, getModel, modelScreenRect, SIGN_ICON_AT, type ModelExtra, type Project } from './models';
 import type { PaintedTerrain } from './terrain';
 import { TERRAIN_PX } from './terrainCore';
 import type { TreeInstance } from './forestTrees';
@@ -329,7 +329,7 @@ class Effects {
         this.spawnParticles(x + sign * 34, y, 6, 'fx_leaf' as SpriteName, now, 9, { speed: 50, up: 40, gravity: 120, flutter: 12, size: 0.85, delay: TOPPLE_MS * 0.55, life: 900 });
         this.spawnParticles(x + sign * 30, y, 2, 'fx_dust' as SpriteName, now, 6, { speed: 46, up: 30, size: 0.8, delay: TOPPLE_MS * 0.55 });
       } else {
-        this.fells.push({ sprite: 'stump' as SpriteName, x, y, tileY: ev.y, kind: 'pop', sign, maxTiles: 1, crown: false, startedAt: now });
+        this.fells.push({ sprite: stumpForNode(ev.kind, ev.x, ev.y, world), x, y, tileY: ev.y, kind: 'pop', sign, maxTiles: 1, crown: false, startedAt: now });
         this.spawnParticles(x, y, 6, 'fx_dust' as SpriteName, now, 7, { speed: 44, up: 50, size: 0.75 });
       }
     } else if (ev.kind === 'flower') {
@@ -448,11 +448,6 @@ const DECOR_SPRITE: Record<DecorKind, SpriteName> = {
   rubble: 'decor_rubble' as SpriteName,
   brokenStone: 'decor_brokenStone' as SpriteName,
   ship: 'decor_ship' as SpriteName,
-};
-
-const STATION_SPRITE: Partial<Record<StationKind, SpriteName>> = {
-  ruins: 'station_ruins' as SpriteName,
-  dock: 'station_dock' as SpriteName,
 };
 
 // 模様替えのマス目（ピグの模様替えのように、うすい白の面にくっきりした白線）
@@ -580,7 +575,6 @@ function polygonPath(ctx: CanvasRenderingContext2D, pts: Vec2[], inset = 0): voi
 
 export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
   const { world, save, now, camera, viewport, dpr } = state;
-  currentCtx = ctx;
 
   const occlusionDtSec = lastFrameNow == null ? 0 : Math.max(0, Math.min(0.2, (now - lastFrameNow) / 1000));
   lastFrameNow = now;
@@ -685,32 +679,25 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     drawUpright(name, wx, wy, shadow, alpha, maxTiles, crown, xf);
   };
 
-  /** 家具を「デザインで決めた表示サイズ」に contain-fit して、footprint の下辺中央 (wx,wy) に立てる。幅は footprint(size マス)×0.92 以内。 */
-  const drawFurnitureAtWorld = (furnitureId: string, wx: number, wy: number, tiles: number) => {
-    const spr = getSprite(`f_${furnitureId}` as SpriteName);
-    const size = FURNITURE_DISPLAY_SIZE[furnitureId] ?? { w: 1, h: 1 };
-    const p = worldToScreen(wx, wy, camera, viewport);
-    const boxW = Math.min(size.w, tiles) * TILE * p.k;
-    const boxH = size.h * TILE * p.k * 1.15; // 立てて見るぶん縦を少し高く取る
-    const artAspect = spr.w / spr.h || 1;
-    let drawW: number;
-    let drawH: number;
-    if (artAspect > boxW / boxH) {
-      drawW = boxW;
-      drawH = boxW / artAspect;
-    } else {
-      drawH = boxH;
-      drawW = boxH * artAspect;
-    }
-    const allowed = tiles * TILE * p.k * FOOT_FIT;
-    if (drawW > allowed) {
-      const f = allowed / drawW;
-      drawW *= f;
-      drawH *= f;
-    }
-    drawCastShadow(spr.canvas, p.x, p.y, drawW, drawH);
-    drawShadow(p.x, p.y - drawH * 0.01, drawW * 0.9, 1.1);
-    ctx.drawImage(spr.canvas, p.x - drawW / 2, p.y - drawH, drawW, drawH);
+  /**
+   * 3D 模型（models.ts）を、左上のマス (tx,ty) から tiles×tiles の上に置いて描く。各頂点を本物のカメラで
+   * 投影するので、マス目にぴったり沿う。プレイヤーが後ろに重なれば半透明にする。描けたら画面の矩形を返す。
+   */
+  const drawModelAt = (name: string, tx: number, ty: number, tiles: number, key: string, extra?: ModelExtra) => {
+    const m = getModel(name, tiles);
+    if (!m) return null;
+    const ox = tx * TILE;
+    const oy = ty * TILE;
+    const P: Project = (x, y, z) => {
+      const s = worldToScreen(ox + x, oy + y, camera, viewport);
+      return { x: s.x, y: s.y - z * s.k };
+    };
+    const rect = modelScreenRect(m, P);
+    if (rect.right < -20 || rect.left > W + 20 || rect.bottom < -20 || rect.top > H + 20) return null;
+    const k = worldToScreen(ox + (tiles * TILE) / 2, oy + (tiles * TILE) / 2, camera, viewport).k;
+    const alpha = occlusionFor(key, rect, (ty + tiles) * TILE, save.player.y * TILE, playerRect, occlusionEase);
+    drawModel({ ctx, P, k, now, extra }, m, alpha);
+    return { rect, P, k };
   };
 
   /** 出てきたアイテム 1 個。age は飛び出してからの ms。 */
@@ -858,22 +845,12 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     }
   }
 
-  // --- 看板（選んでいる作物のアイコンを小さく載せる） ---
-  for (const plot of world.plots) {
-    drawAtTile('sign' as SpriteName, plot.sign.x, plot.sign.y);
-    const ps = save.plots[plot.id];
-    if (ps?.selected) {
-      const s = worldToScreen((plot.sign.x + 0.5) * TILE, (plot.sign.y + 0.55) * TILE, camera, viewport);
-      const spr = getSprite(`item_${ps.selected}` as SpriteName);
-      const w = spr.w * s.k * 0.5;
-      const h = spr.h * s.k * 0.5;
-      ctx.drawImage(spr.canvas, s.x - w / 2, s.y - h / 2 - 0.6 * TILE * s.k * 0.6, w, h);
-    }
-  }
-
   // --- y ソート対象（資源・宝箱・置いた家具・飾り・プレイヤー）。sortY は足元のタイル y。 ---
   type Drawable = { y: number; draw: () => void };
   const drawables: Drawable[] = [];
+  /** 物の上に重ねる吹き出しなど（y ソートのあと、すべての物の上に描く）。 */
+  const overlays: (() => void)[] = [];
+  const craftJob = (store as { craftJob?: () => { furnitureId: string; startedAt: number; endsAt: number } | null }).craftJob?.() ?? null;
 
   for (const node of allNodes(world, save, now)) {
     if (node.x < minTx - 1 || node.x > maxTx + 1 || node.y < minTy - 3 || node.y > maxTy + 1) continue;
@@ -890,9 +867,27 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     }
   }
 
+  // --- 宝箱（3D 模型。開いたものはふたが後ろへ倒れる） ---
   for (const chest of world.chests) {
     const opened = save.chestsOpened.includes(chest.id);
-    drawables.push({ y: chest.y + 1, draw: () => drawAtTile((opened ? 'chestOpen' : 'chest') as SpriteName, chest.x, chest.y) });
+    drawables.push({ y: chest.y + 1, draw: () => void drawModelAt(opened ? 'chestOpen' : 'chest', chest.x, chest.y, 1, `chest:${chest.id}`) });
+  }
+
+  // --- 畑の看板（3D 模型。選んでいる作物のアイコンを板の手前の面に貼る） ---
+  for (const plot of world.plots) {
+    drawables.push({
+      y: plot.sign.y + 1,
+      draw: () => {
+        const drawn = drawModelAt('sign', plot.sign.x, plot.sign.y, 1, `sign:${plot.id}`);
+        const ps = save.plots[plot.id];
+        if (!drawn || !ps?.selected) return;
+        const s = drawn.P(SIGN_ICON_AT[0], SIGN_ICON_AT[1], SIGN_ICON_AT[2]);
+        const spr = getSprite(`item_${ps.selected}` as SpriteName);
+        const w = spr.w * drawn.k * 0.55;
+        const h = spr.h * drawn.k * 0.55;
+        ctx.drawImage(spr.canvas, s.x - w / 2, s.y - h / 2, w, h);
+      },
+    });
   }
 
   // --- 昔の暮らしの名残・商船。ship のような大物は w×h の矩形の下辺中央に据える。 ---
@@ -906,16 +901,10 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
 
   // --- 設備（遺跡・船着き場・家の跡地）。作業台・たき火などは置いた家具として下で描く ---
   for (const station of world.stations) {
-    const spriteName = STATION_SPRITE[station.kind];
+    if (station.kind !== 'ruins' && station.kind !== 'dock') continue; // 家の跡地は地面だけ
     drawables.push({
       y: station.y + 1,
-      draw: () => {
-        if (spriteName) {
-          if (station.kind === 'ruins') drawOccludable(`station:${station.x},${station.y}`, spriteName, (station.x + 0.5) * TILE, (station.y + BASE_IN_TILE) * TILE);
-          else drawAtTile(spriteName, station.x, station.y);
-        }
-        if (station.kind === 'ruins') drawRuinsGlow(station.x, station.y, now, camera, viewport);
-      },
+      draw: () => void drawModelAt(`station:${station.kind}`, station.x, station.y, 1, `station:${station.x},${station.y}`),
     });
   }
 
@@ -936,9 +925,22 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
       });
       continue;
     }
+    // 作業台はクラフト中ならトントン叩く演出と、上に吹き出し（アイコン・進みの輪・残り時間）を出す
+    const craft = furnitureId === 'woodWorkbench' ? craftJob : null;
     drawables.push({
       y: r.y + r.size,
-      draw: () => drawFurnitureAtWorld(furnitureId, (r.x + r.size / 2) * TILE, (r.y + r.size - (1 - BASE_IN_TILE)) * TILE, r.size),
+      draw: () => {
+        const drawn = drawModelAt(furnitureId, r.x, r.y, r.size, `furn:${anchor}`, craft ? { craft } : undefined);
+        if (drawn && craft) {
+          const top = drawn.P(r.size * TILE * 0.5, r.size * TILE * 0.5, 40);
+          overlays.push(() => {
+            const icon = getSprite(`f_${craft.furnitureId}` as SpriteName).canvas;
+            const total = Math.max(1, craft.endsAt - craft.startedAt);
+            const scale = Math.max(0.9, Math.min(1.35, drawn.k / 2.2));
+            drawCraftBubble(ctx, top.x, top.y, scale, icon, clamp01((now - craft.startedAt) / total), craft.endsAt - now, now, CANVAS_FONT);
+          });
+        }
+      },
     });
   }
 
@@ -1012,6 +1014,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
       }
     }
   }
+  for (const o of overlays) o();
 
   // --- ハイライト（通常モードのみ） ---
   if (!state.decorate && state.target) {
@@ -1231,7 +1234,6 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
 
   void inView;
   ctx.restore();
-  currentCtx = null;
 }
 
 /** 水面のきらめき（やわらかい楕円）。可視範囲の水タイルだけを軽く処理する。 */
@@ -1272,21 +1274,6 @@ function targetLabel(t: Target): string | null {
   return null;
 }
 
-/** 遺跡の紋様をゆっくり明滅させる。 */
-function drawRuinsGlow(tx: number, ty: number, now: number, camera: CameraState, viewport: Viewport): void {
-  const ctx = currentCtx;
-  if (!ctx) return;
-  const s = worldToScreen((tx + 0.5) * TILE, (ty + 0.5) * TILE, camera, viewport);
-  const pulse = 0.5 + 0.5 * Math.sin(now / 500);
-  ctx.save();
-  ctx.globalAlpha = 0.35 + 0.35 * pulse;
-  ctx.fillStyle = '#5fe3c9';
-  ctx.beginPath();
-  ctx.arc(s.x, s.y - 0.5 * TILE * s.k, (4 + 2 * pulse) * s.k * 1.2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
-
 /** 描画の失敗は、同じ内容を 1 度だけ知らせる。 */
 const drawErrorLogged = new Set<string>();
 
@@ -1295,15 +1282,50 @@ function flowerSprite(x: number, y: number): SpriteName {
   return `flower${Math.min(3, (hash2(x, y) * 4) | 0)}` as SpriteName;
 }
 
-/** 見た目の選び分け：砂浜の木はヤシ、森の木は 2 種を場所でばらす。 */
-function spriteForNode(kind: NodeKind, x: number, y: number, world: World): SpriteName {
-  if (kind === 'tree') {
-    const g = world.ground[y * world.width + x];
-    if (g === 'sand') return 'palm' as SpriteName;
+// 木の樹種は「切るのに要る斧の段階」で決める（見た目だけで段階が読めるように）。
+// Lv0 若木 / Lv1 カシの木 / Lv2 スギの大木 / Lv3 以上 森の主。境界の木は同じ樹種にツタを巻いた絵。
+const nodeAtCache = new WeakMap<World, Map<number, World['nodes'][number]>>();
+
+function nodeAt(world: World, x: number, y: number): World['nodes'][number] | undefined {
+  let m = nodeAtCache.get(world);
+  if (!m) {
+    m = new Map();
+    for (const n of world.nodes) m.set(n.y * world.width + n.x, n);
+    nodeAtCache.set(world, m);
   }
-  if (kind === 'forestTree') return (hash2(x, y) < 0.32 ? 'wallPine' : 'wallOak') as SpriteName;
+  return m.get(y * world.width + x);
+}
+
+/** 木を切るのに要る axePower の段階（植えた木などマップに無いものは種類だけで決める）。 */
+function treeLevel(kind: NodeKind, x: number, y: number, world: World): number {
+  if (kind === 'tree') return 0;
+  const node = nodeAt(world, x, y);
+  const req = nodeRequirement(world, node && node.kind === kind ? node : { id: '', kind, x, y, area: 'beach' });
+  return req?.level ?? 0;
+}
+
+/** 見た目の選び分け：砂浜の若木はヤシ、木は必要な斧の段階で樹種を変える。 */
+function spriteForNode(kind: NodeKind, x: number, y: number, world: World): SpriteName {
   if (kind === 'flower') return flowerSprite(x, y);
-  return kind as SpriteName;
+  if (!TREE_KIND_SET.has(kind)) return kind as SpriteName;
+  const level = treeLevel(kind, x, y, world);
+  const gate = kind === 'borderTree';
+  if (level <= 0) {
+    if (world.ground[y * world.width + x] === 'sand') return 'palm';
+    return 'tree';
+  }
+  if (level === 1) return gate ? 'gateOak' : 'bigTree';
+  if (level === 2) return gate ? 'gateCedar' : 'cedarTree';
+  return hash2(x, y) < 0.5 ? 'ancientTree' : 'ancientTree2';
+}
+
+/** 幹（切り株）の絵。幹を切るのにも同じ段階が要るので、樹種ごとに分ける。 */
+function stumpForNode(kind: NodeKind, x: number, y: number, world: World): SpriteName {
+  const level = treeLevel(kind, x, y, world);
+  if (level <= 0) return 'stump';
+  if (level === 1) return 'stumpOak';
+  if (level === 2) return 'stumpCedar';
+  return 'stumpAncient';
 }
 
 /** 根元を軸にした変形（揺れ・倒れる・伸び縮み）。dx はワールド px の横ずれ。 */
@@ -1323,7 +1345,7 @@ function drawNode(node: LiveNode, now: number, state: RenderState, acting: Timed
   const stump = state.save.nodes[node.id]?.stump === true;
   let spriteName: SpriteName;
   if (node.growing) spriteName = (node.kind === 'flower' ? 'flowerSprout' : 'sapling') as SpriteName;
-  else if (stump) spriteName = 'stump' as SpriteName;
+  else if (stump) spriteName = stumpForNode(node.kind, node.x, node.y, state.world);
   else spriteName = spriteForNode(node.kind, node.x, node.y, state.world);
   const standingTree = TALL_NODES.has(node.kind) && !stump && !node.growing;
 
@@ -1366,5 +1388,3 @@ function facingDir(dx: number, dy: number, fallback: AvatarDir): AvatarDir {
   return dy > 0 ? 'down' : 'up';
 }
 
-// draw() 実行中だけ保持する現在の ctx（drawNode などへ引き回さないため）。
-let currentCtx: CanvasRenderingContext2D | null = null;

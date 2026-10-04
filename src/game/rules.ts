@@ -20,6 +20,7 @@ import {
   damageForLevel,
   furnitureSize,
   skillCapForIslandLevel,
+  treeSpeciesName,
 } from './data';
 import type { AreaId, CropId, FurnitureId, LiveNode, MapNode, SaveState, SkillId, World } from './types';
 
@@ -55,6 +56,14 @@ function requirementFor(node: MapNode): { skill: SkillId; level: number } | null
 export function nodeRequirement(world: World, node: MapNode): { skill: SkillId; level: number } | null {
   void world;
   return requirementFor(node);
+}
+
+/** 叩けないときの説明（「スギの大木には パワーアップ Lv2」）。UI が「〜 が必要です」を付ける。 */
+export function needSkillDetail(node: MapNode): string | undefined {
+  const req = requirementFor(node);
+  if (!req) return undefined;
+  const what = NODES[node.kind].tool === 'axe' && req.skill === 'axePower' ? treeSpeciesName(req.level) : NODES[node.kind].name;
+  return `${what}には ${SKILLS[req.skill].name} Lv${req.level}`;
 }
 
 export function canHit(save: SaveState, node: MapNode): boolean {

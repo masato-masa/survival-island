@@ -12,6 +12,7 @@ import {
   SKILLS,
   SKILL_COST,
   XP_PER_STAMINA,
+  craftMs,
   harvestAmount,
 } from './data';
 import {
@@ -375,6 +376,7 @@ export function craft(save: SaveState, furnitureId: FurnitureId, now: number): R
   const def = FURNITURE_BY_ID[furnitureId];
   if (!def) return { ok: false, reason: 'notLearned' };
   if (!knownRecipes(save).includes(furnitureId)) return { ok: false, reason: 'notLearned' };
+  if (save.crafting) return { ok: false, reason: 'busy' };
   for (const [item, amount] of Object.entries(def.cost) as [ItemId, number][]) {
     if ((save.inventory[item] ?? 0) < amount) return { ok: false, reason: 'notEnoughItems' };
   }
@@ -382,8 +384,18 @@ export function craft(save: SaveState, furnitureId: FurnitureId, now: number): R
   for (const [item, amount] of Object.entries(def.cost) as [ItemId, number][]) {
     save.inventory[item] = (save.inventory[item] ?? 0) - amount;
   }
-  save.furniture[furnitureId] = (save.furniture[furnitureId] ?? 0) + 1;
-  return { ok: true, events: [{ type: 'crafted', furniture: furnitureId }, xpEvent(def.stamina)] };
+  // 素材とスタミナは始めたときに払う。家具は collectCraft で受け取ってから持ち物に入る。
+  save.crafting = { furnitureId, startedAt: now, endsAt: now + craftMs(furnitureId) };
+  return { ok: true, events: [xpEvent(def.stamina)] };
+}
+
+/** 終わったクラフトを受け取る。まだなら 'notReady'、作業が無ければ 'notReady'。 */
+export function collectCraft(save: SaveState, now: number): Result {
+  const job = save.crafting;
+  if (!job || now < job.endsAt) return { ok: false, reason: 'notReady' };
+  save.furniture[job.furnitureId] = (save.furniture[job.furnitureId] ?? 0) + 1;
+  save.crafting = null;
+  return { ok: true, events: [{ type: 'crafted', furniture: job.furnitureId }] };
 }
 
 /** (x, y) に家具を置く（null ならそのマスの家具をしまう）。どのマスにも自由に置ける。 */

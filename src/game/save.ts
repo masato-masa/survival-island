@@ -55,6 +55,7 @@ function newSaveBare(world: World, now: number): SaveState {
     buffs: [],
     planted: {},
     seededV2: false,
+    crafting: null,
   };
 }
 
@@ -84,6 +85,7 @@ export function migrate(raw: unknown, world: World = getWorld()): SaveState {
     buffs: r.buffs ?? [],
     planted: r.planted ?? {},
     seededV2: r.seededV2 ?? false,
+    crafting: r.crafting ?? null,
   };
   if (!save.seededV2) seedInitialFurniture(world, save);
   return save;

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { CROPS, NODES, damageForLevel } from '../src/game/data';
+import { CROPS, NODES, craftMs, damageForLevel } from '../src/game/data';
+import { migrate } from '../src/game/save';
 import {
   buySkill,
   chooseCrop,
+  collectCraft,
   craft,
   farmAction,
   hitNode,
@@ -125,13 +127,48 @@ describe('スキル購入', () => {
 });
 
 describe('クラフト', () => {
-  it('素材を消費して家具ができる', () => {
+  it('素材を消費して作業が始まり、時間が経つと受け取れる', () => {
     const save = freshSave(0);
     save.inventory.wood = 2;
     const r = craft(save, 'woodFence', 0);
     expect(r.ok).toBe(true);
     expect(save.inventory.wood).toBe(0);
+    expect(save.furniture.woodFence ?? 0).toBe(0);
+    expect(save.crafting).toEqual({ furnitureId: 'woodFence', startedAt: 0, endsAt: craftMs('woodFence') });
+
+    // 途中では受け取れない
+    const early = collectCraft(save, craftMs('woodFence') - 1);
+    expect(early.ok).toBe(false);
+    expect(save.crafting).not.toBeNull();
+
+    const done = collectCraft(save, craftMs('woodFence'));
+    expect(done.ok).toBe(true);
     expect(save.furniture.woodFence).toBe(1);
+    expect(save.crafting).toBeNull();
+    // 二重に受け取れない
+    expect(collectCraft(save, craftMs('woodFence')).ok).toBe(false);
+    expect(save.furniture.woodFence).toBe(1);
+  });
+
+  it('作業中は別の家具を作れない（素材は減らない）', () => {
+    const save = freshSave(0);
+    save.inventory.wood = 4;
+    expect(craft(save, 'woodFence', 0).ok).toBe(true);
+    const r = craft(save, 'woodPath', 1);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe('busy');
+    expect(save.inventory.wood).toBe(2);
+  });
+
+  it('クラフト時間は島ポイントに比例する', () => {
+    expect(craftMs('woodFence')).toBe(30_000);
+    expect(craftMs('woodTower')).toBe(240_000);
+    expect(craftMs('stoneStatue')).toBe(300_000);
+  });
+
+  it('古いセーブ（crafting なし）は null で読み込まれる', () => {
+    const save = migrate({});
+    expect(save.crafting).toBeNull();
   });
 
   it('素材が足りなければ失敗', () => {

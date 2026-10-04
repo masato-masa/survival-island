@@ -39,6 +39,12 @@ function renderCell(name: SpriteName): HTMLElement {
 }
 
 async function main() {
+  // ?avatar で主人公だけを大きく並べる（見た目の確認用）。?avatar=10 のように倍率も指定できる。
+  const q = new URLSearchParams(location.search);
+  if (q.has('avatar')) {
+    root!.appendChild(avatarZoom(Number(q.get('avatar')) || 9));
+    return;
+  }
   await loadArt();
   const list = document.createElement('div');
   list.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;padding:8px';
@@ -69,6 +75,39 @@ function poseCanvas(pose: AvatarPose, label: string): HTMLElement {
   cell.appendChild(c);
   cell.append(label);
   return cell;
+}
+
+/** 主人公を大きく描く（正面・3/4・背面の立ち姿と、歩き・作業の代表ポーズ）。 */
+function avatarZoom(K: number): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;padding:4px';
+  const impact = chopImpactTimes()[0]!;
+  const poses: AvatarPose[] = [
+    ...DIRS.slice(0, 3).map((dir) => ({ dir, walkPhase: null, idleT: 0, action: null })),
+    { dir: 'down', walkPhase: Math.PI / 2, idleT: 0, action: null },
+    { dir: 'right', walkPhase: Math.PI / 2, idleT: 0, action: null },
+    { dir: 'right', walkPhase: null, idleT: 0, action: { tool: 'axe', t: 0.14 } },
+    { dir: 'right', walkPhase: null, idleT: 0, action: { tool: 'axe', t: impact } },
+    { dir: 'down', walkPhase: null, idleT: 0, action: { tool: 'axe', t: 0.14 } },
+    { dir: 'down', walkPhase: null, idleT: 0, action: { tool: 'hoe', t: impact } },
+    { dir: 'up', walkPhase: null, idleT: 0, action: { tool: 'axe', t: impact } },
+    { dir: 'right', walkPhase: null, idleT: 0, action: { tool: 'hand', t: impact } },
+    { dir: 'down', walkPhase: null, idleT: 0, action: { tool: 'hand', t: 0.12 } },
+  ];
+  for (const pose of poses) {
+    const c = document.createElement('canvas');
+    c.width = 46 * K;
+    c.height = 50 * K;
+    c.style.cssText = `width:${46 * K}px;height:${50 * K}px;background:#bfe3a0`;
+    const ctx = c.getContext('2d')!;
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.beginPath();
+    ctx.ellipse(c.width / 2, c.height - 5 * K, 9 * K, 3 * K, 0, 0, Math.PI * 2);
+    ctx.fill();
+    drawAvatar(ctx, c.width / 2, c.height - 5 * K, K, pose);
+    wrap.appendChild(c);
+  }
+  return wrap;
 }
 
 function avatarSheet(): HTMLElement {

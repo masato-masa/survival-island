@@ -3,13 +3,14 @@
 
 import { ISLAND_LEVEL_POINTS, NODES, WALK_SPEED } from './data';
 import * as Actions from './actions';
-import { actionMs, islandLevel as islandLevelOf, liveNodeById, staminaMax } from './rules';
+import { actionMs, islandLevel as islandLevelOf, liveNodeById, needSkillDetail, staminaMax } from './rules';
 import { applyRespawns, currentStamina } from './time';
 import { islandPoints } from './score';
 import { findTarget, tryMove } from './target';
 import { clearSave, loadSave, newSave, writeSave } from './save';
 import { getWorld } from './world';
 import type {
+  CraftJob,
   CropId,
   Fail,
   FurnitureId,
@@ -49,7 +50,12 @@ export interface GameStore {
   plant(x: number, y: number, item: 'sapling' | 'flowerSeed'): Result;
   chooseCrop(plotId: string, crop: CropId | null): Result;
   buySkill(id: SkillId): Result;
+  /** 作業台のクラフトを始める（素材・スタミナはここで払う）。作業中は 'busy'。 */
   craft(id: FurnitureId): Result;
+  /** 作業中（または受け取り待ち）のクラフト。無ければ null。endsAt <= now() なら完成。 */
+  craftJob(): CraftJob | null;
+  /** 完成したクラフトを受け取って持ち物に入れる。まだなら 'notReady'。 */
+  collectCraft(): Result;
   place(x: number, y: number, furnitureId: FurnitureId | null): Result;
   markIntroSeen(): void;
   stamina(): { value: number; max: number; nextInMs: number };
@@ -219,7 +225,7 @@ export function createStore(opts: CreateStoreOptions = {}): GameStore {
       const t = now();
       const tgt = findTarget(world, save, save.player.x, save.player.y, save.player.dir, t);
       if (!tgt) return fail('notReady');
-      if (tgt.blocked) return fail(tgt.blocked);
+      if (tgt.blocked) return fail(tgt.blocked, tgt.kind === 'node' ? needSkillDetail(tgt.node) : undefined);
 
       // 看板・設備・作業台は画面を開くだけ。開くのは UI 側（target().kind を見て判断する）。
       if (tgt.kind === 'sign' || tgt.kind === 'station' || tgt.kind === 'furniture') return { ok: true, events: [] };
@@ -289,6 +295,12 @@ export function createStore(opts: CreateStoreOptions = {}): GameStore {
 
     craft(id) {
       return runAction(Actions.craft(save, id, now()));
+    },
+
+    craftJob: () => save.crafting,
+
+    collectCraft() {
+      return runAction(Actions.collectCraft(save, now()));
     },
 
     place(x, y, furnitureId) {

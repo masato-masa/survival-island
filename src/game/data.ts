@@ -93,8 +93,8 @@ export const CROPS: Record<CropId, CropDef> = {
 
 export const NODES: Record<NodeKind, NodeDef> = {
   // 木は復活しない（幹を切ると苗木が出るので、それを植えて増やす）。
-  tree: { kind: 'tree', name: '木', hp: 2, drops: { wood: 2 }, respawnMs: null, tool: 'axe' },
-  bigTree: { kind: 'bigTree', name: '太い木', hp: 4, drops: { wood: 5 }, respawnMs: null, tool: 'axe' },
+  tree: { kind: 'tree', name: '若木', hp: 2, drops: { wood: 2 }, respawnMs: null, tool: 'axe' },
+  bigTree: { kind: 'bigTree', name: 'カシの木', hp: 4, drops: { wood: 5 }, respawnMs: null, tool: 'axe' },
   rock: { kind: 'rock', name: '岩', hp: 2, drops: { stone: 2 }, respawnMs: 10 * 60 * 1000, tool: 'pick' },
   hardRock: {
     kind: 'hardRock',
@@ -104,18 +104,34 @@ export const NODES: Record<NodeKind, NodeDef> = {
     respawnMs: 15 * 60 * 1000,
     tool: 'pick',
   },
-  borderTree: { kind: 'borderTree', name: '境界の大木', hp: 3, drops: { wood: 4 }, respawnMs: null, tool: 'axe' },
+  borderTree: { kind: 'borderTree', name: '境界の木', hp: 3, drops: { wood: 4 }, respawnMs: null, tool: 'axe' },
   borderRock: { kind: 'borderRock', name: '境界の大岩', hp: 3, drops: { stone: 4 }, respawnMs: null, tool: 'pick' },
-  forestTree: { kind: 'forestTree', name: '森の木', hp: 4, drops: { wood: 3 }, respawnMs: null, tool: 'axe' },
+  forestTree: { kind: 'forestTree', name: '森の主', hp: 4, drops: { wood: 3 }, respawnMs: null, tool: 'axe' },
   // 花は 1 回摘むごとに drops が出て、hp（= 摘める回数）が 1 減る。
   flower: { kind: 'flower', name: '花', hp: FLOWER_GATHERS, drops: { petal: 2, flowerSeed: 1 }, respawnMs: null, tool: 'gather' },
 };
 
-/** 太い木・硬い岩を叩くのに必要な段階。境界は AREAS 側で決める。 */
+/**
+ * 木の樹種。切るのに要る axePower の段階ごとに決まっていて、絵（plantArt.ts）もこれで描き分ける。
+ * 段階が上がるほど大きく・古く・暗い木になるので、見ただけで必要な段階が分かる。
+ * 境界の木は、そのエリアの段階の樹種（ツタが巻いている）。
+ */
+export const TREE_SPECIES: Readonly<Record<number, string>> = { 0: '若木', 1: 'カシの木', 2: 'スギの大木', 5: '森の主' };
+
+/** その段階で切れる木の樹種名（段階ちょうどの樹種が無ければ、それより下で一番近いもの）。 */
+export function treeSpeciesName(level: number): string {
+  for (let l = level; l >= 0; l--) {
+    const name = TREE_SPECIES[l];
+    if (name) return name;
+  }
+  return '木';
+}
+
+/** カシの木・硬い岩を叩くのに必要な段階。境界は AREAS 側で決める。 */
 export const NODE_REQUIRES: Partial<Record<NodeKind, { skill: SkillId; level: number }>> = {
   bigTree: { skill: 'axePower', level: 1 },
   hardRock: { skill: 'pickHard', level: 1 },
-  // 森の木は、いちばん高い段階の斧（パワーアップの最大）でしか切れない。
+  // 森の主は、いちばん高い段階の斧（パワーアップの最大）でしか切れない。
   forestTree: { skill: 'axePower', level: 5 },
 };
 
@@ -139,11 +155,11 @@ export const SKILLS: Record<SkillId, SkillDef> = {
     name: 'パワーアップ',
     maxLevel: 5,
     levelText: [
-      '太い木と森の境界の大木を切れる',
-      '叩く回数が減る／丘の境界の大木を切れる',
+      'カシの木（深緑の広葉樹。森の入口の木も）を切れる',
+      'スギの大木（赤い幹の針葉樹。丘の入口の木も）を切れる／叩く回数が減る',
       '叩く回数が減る',
       '叩く回数がさらに減る',
-      '叩く回数がさらに減る',
+      '森の主（森を囲む黒い巨木）を切れる／叩く回数がさらに減る',
     ],
   },
   axeSpeed: {
@@ -259,6 +275,17 @@ export const FURNITURE: FurnitureDef[] = [
 ];
 
 export const FURNITURE_BY_ID: Record<string, FurnitureDef> = Object.fromEntries(FURNITURE.map((f) => [f.id, f]));
+
+/**
+ * クラフトにかかる実時間（ms）。ピグライフの作業台と同じく「始める → 待つ → 受け取る」。
+ * 島ポイントに比例させる（1pt = 30 秒。1pt の柵が 30 秒、ランドマーク 8〜10pt が 4〜5 分）。
+ * 1 度に作れるのは 1 つ。ポイントの高い家具ほど待つので、置くものを選ぶ意味が出る。
+ */
+export const CRAFT_MS_PER_POINT = 30_000;
+export function craftMs(furnitureId: FurnitureId): number {
+  const def = FURNITURE_BY_ID[furnitureId];
+  return def ? Math.max(1, def.points) * CRAFT_MS_PER_POINT : 0;
+}
 
 /** 触ると画面が開く家具（模様替えでないときに対象になる）。 */
 export const FURNITURE_FUNCTION: Partial<Record<FurnitureId, 'craft'>> = { woodWorkbench: 'craft' };

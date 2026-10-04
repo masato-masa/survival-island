@@ -258,6 +258,15 @@ export interface SaveState {
   planted: Record<string, PlantedState>;
   /** 最初から置く家具（作業台・柱など）を placements に入れ終えたか。古いセーブに一度だけ入れるための印。 */
   seededV2: boolean;
+  /** 作業台で作っている最中の家具。1 度に 1 つだけ（M1 では枠 1。ピグライフの作業台も 1 台 1 つずつ作る）。 */
+  crafting: CraftJob | null;
+}
+
+/** 作業台のクラフト作業。終わった（now >= endsAt）あと、受け取るまで残る。 */
+export interface CraftJob {
+  furnitureId: FurnitureId;
+  startedAt: number;
+  endsAt: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -309,7 +318,8 @@ export type Fail =
   | 'levelCap' // 島レベルの上限
   | 'maxLevel'
   | 'noXp'
-  | 'cannotPlace';
+  | 'cannotPlace'
+  | 'busy'; // 作業台がクラフト中
 
 export type Result =
   | { ok: true; events: GameEvent[] }

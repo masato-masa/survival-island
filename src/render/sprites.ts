@@ -12,31 +12,43 @@
 // 縦に長いスプライト（木など）はタイルの「下辺・中央」に合わせて描く。
 
 import { drawAvatar, idlePose, type AvatarDir } from './avatar';
+import { FURNITURE_MODEL_IDS, furnitureTiles, paintModelIcon } from './models';
 import {
+  paintAncientTree,
+  paintAncientTree2,
   paintBigTree,
-  paintBorderTree,
+  paintCedarTree,
   paintFlower,
   paintFlowerSprout,
   paintItemFlowerSeed,
   paintItemPetal,
   paintItemSapling,
+  paintGateCedar,
+  paintGateOak,
   paintSapling,
   paintStump,
+  paintStumpAncient,
+  paintStumpCedar,
+  paintStumpOak,
   paintTree,
-  paintWallOak,
-  paintWallPine,
 } from './plantArt';
 
 export type SpriteName =
+  // 木は斧の必要段階ごとの樹種（plantArt.ts）: Lv0 若木 / Lv1 カシ / Lv2 スギ / Lv5 森の主。gate* は境界の木（ツタ付き）
   | 'tree'
   | 'bigTree'
-  | 'wallOak'
-  | 'wallPine'
+  | 'gateOak'
+  | 'cedarTree'
+  | 'gateCedar'
+  | 'ancientTree'
+  | 'ancientTree2'
   | 'rock'
   | 'hardRock'
-  | 'borderTree'
   | 'borderRock'
   | 'stump'
+  | 'stumpOak'
+  | 'stumpCedar'
+  | 'stumpAncient'
   | 'rubble'
   | 'palm'
   | 'decor_rubble'
@@ -830,12 +842,18 @@ const PLAYER = (dir: AvatarDir): PainterSpec => ({ w: 30, h: 42, paint: paintPla
 
 const PAINTERS: Partial<Record<SpriteName, PainterSpec>> = {
   // 木・花（plantArt.ts）。下辺中央が根元。
-  tree: { w: 40, h: 58, paint: paintTree },
-  bigTree: { w: 46, h: 68, paint: paintBigTree },
-  wallOak: { w: 40, h: 58, paint: paintWallOak },
-  wallPine: { w: 38, h: 62, paint: paintWallPine },
-  borderTree: { w: 40, h: 58, paint: paintBorderTree },
-  stump: { w: 26, h: 18, paint: paintStump },
+  // 樹種（必要な斧の段階が上がるほど大きく・暗く）。梢の幅は描画側で 1.4 マス（44.8px）までに収まる。
+  tree: { w: 32, h: 46, paint: paintTree },
+  bigTree: { w: 42, h: 64, paint: paintBigTree },
+  gateOak: { w: 42, h: 64, paint: paintGateOak },
+  cedarTree: { w: 40, h: 82, paint: paintCedarTree },
+  gateCedar: { w: 40, h: 82, paint: paintGateCedar },
+  ancientTree: { w: 45, h: 80, paint: paintAncientTree },
+  ancientTree2: { w: 45, h: 80, paint: paintAncientTree2 },
+  stump: { w: 22, h: 16, paint: paintStump },
+  stumpOak: { w: 28, h: 20, paint: paintStumpOak },
+  stumpCedar: { w: 26, h: 20, paint: paintStumpCedar },
+  stumpAncient: { w: 30, h: 24, paint: paintStumpAncient },
   sapling: { w: 20, h: 22, paint: paintSapling },
   flower0: { w: 26, h: 26, paint: paintFlower(0) },
   flower1: { w: 26, h: 26, paint: paintFlower(1) },
@@ -893,6 +911,13 @@ const PAINTERS: Partial<Record<SpriteName, PainterSpec>> = {
   slot_decor: { w: 20, h: 20, paint: slotPainter('decor') },
   slot_fence: { w: 20, h: 20, paint: slotPainter('fence') },
 };
+
+// 家具・宝箱・看板のアイコン（models.ts の 3D 模型を 3/4 の固定視点で描く。盤面と同じ形になる）。
+// 素材シートの同名エントリより PAINTERS が優先される。
+for (const id of FURNITURE_MODEL_IDS) {
+  PAINTERS[`f_${id}` as SpriteName] = { w: 40, h: 40, paint: (ctx) => paintModelIcon(ctx, id, furnitureTiles(id), 40, 40) };
+}
+for (const name of ['chest', 'chestOpen', 'sign'] as const) PAINTERS[name] = { w: 34, h: 34, paint: (ctx) => paintModelIcon(ctx, name, 1, 34, 34) };
 
 function bakePainted(spec: PainterSpec): BakedSprite {
   const canvas = makeCanvas(Math.ceil(spec.w * SUPERSAMPLE), Math.ceil(spec.h * SUPERSAMPLE));

@@ -5,7 +5,7 @@
 import { AnimatePresence } from 'motion/react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
-import { AREAS, CROPS, FURNITURE, FURNITURE_FUNCTION, ISLAND_LEVEL_POINTS } from '@/game/data';
+import { AREAS, CROPS, FURNITURE, FURNITURE_FUNCTION, ISLAND_LEVEL_POINTS, TREE_SPECIES } from '@/game/data';
 import { store } from '@/game/store';
 import { placementAt } from '@/game/rules';
 import { spriteDataUrl } from '@/render/sprites';
@@ -18,11 +18,12 @@ import { GoalSheet } from './GoalSheet';
 import { formatCountdown } from './format';
 import { HelpSheet } from './HelpSheet';
 import { hapticCraft, hapticFail, hapticHarvest, hapticHit, hapticLevelUp, hapticPlace, hapticTap } from './haptics';
-import { BagIcon, BrushIcon, GoalIcon, HeartIcon, HelpIcon, SettingsIcon, SproutIcon, StarIcon } from './icons';
+import { BagIcon, BrushIcon, GoalIcon, HeartIcon, SproutIcon, StarIcon } from './icons';
 import { IntroSheet } from './IntroSheet';
 import { InventorySheet } from './InventorySheet';
 import { PlaceSheet } from './PlaceSheet';
 import { SettingsSheet } from './SettingsSheet';
+import { MenuPopover } from './MenuSheet';
 import { isHapticsEnabled, isSoundEnabled, setHapticsEnabled, setSoundEnabled } from './settings';
 import { SignSheet } from './SignSheet';
 import { SkillSheet } from './SkillSheet';
@@ -55,6 +56,7 @@ const FAIL_MESSAGES: Record<Fail, string> = {
   maxLevel: 'もう最大まで上げています',
   noXp: '経験値が足りません',
   cannotPlace: 'この場所には置けません',
+  busy: '作業台はいま使っています',
 };
 
 /** 島レベルが上がったときに何が増えたかを一言でまとめる。 */
@@ -75,6 +77,7 @@ export function Game() {
   useSyncExternalStore(store.subscribe, store.version, store.version);
 
   const [sheet, setSheet] = useState<SheetState>(() => (store.get().seenIntro ? null : { kind: 'intro' }));
+  const [menuOpen, setMenuOpen] = useState(false);
   const [decorate, setDecorate] = useState(false);
   const [failMsg, setFailMsg] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
@@ -142,10 +145,19 @@ export function Game() {
             playPlace();
             hapticPlace();
             break;
-          case 'skill':
-            playCraft();
-            hapticTap();
+          case 'skill': {
+            // 斧のパワーが新しい樹種に届いたら知らせる（どの木が切れるかは見た目＝樹種で分かる）
+            const species = ev.skill === 'axePower' ? TREE_SPECIES[ev.level] : undefined;
+            if (species) {
+              showBanner(`${species}を伐採できるようになった！`);
+              playLevelUp();
+              hapticLevelUp();
+            } else {
+              playCraft();
+              hapticTap();
+            }
             break;
+          }
           case 'areaOpened':
             showBanner(`${AREAS[ev.area].name}が開放されました！`);
             playLevelUp();
@@ -205,6 +217,7 @@ export function Game() {
 
   const buySkill = (id: SkillId) => store.buySkill(id);
   const craft = (id: FurnitureId) => store.craft(id);
+  const collectCraft = () => store.collectCraft();
   const chooseCrop = (plotId: string, crop: CropId | null) => {
     store.chooseCrop(plotId, crop);
     closeSheet();
@@ -255,23 +268,33 @@ export function Game() {
       <div className="hud-layer">
         {/* 左上: 木の輪の顔アイコン + いるエリアの名前（ピグライフの左上の顔・上部の案内札） */}
         <div className="hud-topleft">
-          <span className="hud-portrait">
+          <button
+            className="hud-portrait"
+            aria-label="メニュー"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((v) => !v)}
+          >
             <img src={spriteDataUrl('player_down0')} alt="" />
-          </span>
+          </button>
           <span className="hud-area-name">{areaName}</span>
+          {menuOpen ? (
+            <MenuPopover
+              onClose={() => setMenuOpen(false)}
+              onHelp={() => {
+                setMenuOpen(false);
+                setSheet({ kind: 'help' });
+              }}
+              onSettings={() => {
+                setMenuOpen(false);
+                setSheet({ kind: 'settings' });
+              }}
+            />
+          ) : null}
         </div>
 
-        {/* 右上: ? と設定（木の丸ボタン）。その下にゲージを縦に積む（ピグライフの右上と同じ並び） */}
+        {/* 右上: ゲージを縦に積む（ピグライフの右上と同じ並び） */}
         <div className="hud-topright">
-          <div className="hud-topbtns">
-            <button className="wood-btn is-small" aria-label="あそびかた" onClick={() => setSheet({ kind: 'help' })}>
-              <HelpIcon />
-            </button>
-            <button className="wood-btn is-small" aria-label="設定" onClick={() => setSheet({ kind: 'settings' })}>
-              <SettingsIcon />
-            </button>
-          </div>
-
           <div className="hud-gauges">
             <div className="gauge is-stamina" aria-label={`スタミナ ${stamina.value}/${stamina.max}`}>
               <span className="gauge-icon">
@@ -367,7 +390,7 @@ export function Game() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {sheet?.kind === 'craft' ? <CraftSheet key="craft" save={save} onCraft={craft} onClose={closeSheet} /> : null}
+        {sheet?.kind === 'craft' ? <CraftSheet key="craft" save={save} now={store.now} onCraft={craft} onCollect={collectCraft} onClose={closeSheet} /> : null}
       </AnimatePresence>
 
       <AnimatePresence>
