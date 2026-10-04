@@ -1,4 +1,4 @@
-// 効果音。ElevenLabs で生成して採用した短い音声（src/assets/sfx/*.mp3、scripts/gen-sfx.mjs）を
+// 効果音。ElevenLabs で生成して選んだ短い音声（src/assets/sfx/*.wav、scripts/build-sfx.mjs）を
 // AudioContext を作った時点で読み込み、AudioBuffer にして WebAudio で鳴らす（再生の遅延はゼロ）。
 // 読み込み時に頭の無音を切り、音量（ピーク）をそろえる。鳴らすたびに音程・音量を少しゆらして、
 // 同じ音が続いても機械的に聞こえないようにする。音声が無い・読み込めていない音は合成音で代わりに鳴らす。
@@ -55,7 +55,7 @@ export function primeAudio(): void {
 // ---------------------------------------------------------------------------
 // 生成した音声
 
-const sampleUrls = import.meta.glob('../assets/sfx/*.mp3', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
+const sampleUrls = import.meta.glob('../assets/sfx/*.wav', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
 const samples = new Map<string, AudioBuffer>();
 
 /** 音ごとの音量（ピークをそろえたあとに掛ける）。 */
@@ -64,8 +64,14 @@ const SAMPLE_GAIN: Record<string, number> = {
   collect: 0.4, craft: 0.55, place: 0.55, levelUp: 0.6, fail: 0.45, tap: 0.3,
 };
 
+/** 音ごとの最大の長さ（ms）。生成した音は余韻が長いことがあるので、ここで切ってフェードする。 */
+const SAMPLE_MAX_MS: Record<string, number> = {
+  chop: 450, mine: 550, fell: 1800, pop: 400, pick: 600, dig: 500, plant: 800, harvest: 800,
+  collect: 500, craft: 1400, place: 500, levelUp: 2200, fail: 800, tap: 220,
+};
+
 /** 頭の無音を切り、ピークを 1 にそろえた AudioBuffer を作る。 */
-function tidy(c: AudioContext, buf: AudioBuffer): AudioBuffer {
+function tidy(c: AudioContext, buf: AudioBuffer, name: string): AudioBuffer {
   const ch = buf.getChannelData(0);
   let peak = 0;
   for (let i = 0; i < ch.length; i++) peak = Math.max(peak, Math.abs(ch[i]!));
@@ -76,14 +82,15 @@ function tidy(c: AudioContext, buf: AudioBuffer): AudioBuffer {
   start = Math.max(0, start - Math.floor(buf.sampleRate * 0.004));
   let end = ch.length;
   while (end > start && Math.abs(ch[end - 1]!) < th * 0.5) end--;
-  const len = Math.max(1, end - start);
+  const maxLen = Math.floor((buf.sampleRate * (SAMPLE_MAX_MS[name] ?? 1500)) / 1000);
+  const len = Math.max(1, Math.min(end - start, maxLen));
   const out = c.createBuffer(buf.numberOfChannels, len, buf.sampleRate);
   for (let k = 0; k < buf.numberOfChannels; k++) {
     const src = buf.getChannelData(k);
     const dst = out.getChannelData(k);
     for (let i = 0; i < len; i++) dst[i] = src[start + i]! / peak;
-    // 終わりを 15ms でフェードアウト（切り口のプツ音を消す）
-    const fade = Math.min(len, Math.floor(buf.sampleRate * 0.015));
+    // 終わりをフェードアウト（切り口のプツ音を消す。長さで切ったときは長めに）
+    const fade = Math.min(len, Math.floor(buf.sampleRate * (end - start > maxLen ? 0.12 : 0.015)));
     for (let i = 0; i < fade; i++) dst[len - 1 - i]! *= i / fade;
   }
   return out;
@@ -91,11 +98,11 @@ function tidy(c: AudioContext, buf: AudioBuffer): AudioBuffer {
 
 function loadSamples(c: AudioContext): void {
   for (const [path, url] of Object.entries(sampleUrls)) {
-    const name = path.split('/').pop()!.replace(/\.mp3$/, '');
+    const name = path.split('/').pop()!.replace(/\.wav$/, '');
     fetch(url)
       .then((r) => r.arrayBuffer())
       .then((data) => c.decodeAudioData(data))
-      .then((buf) => samples.set(name, tidy(c, buf)))
+      .then((buf) => samples.set(name, tidy(c, buf, name)))
       .catch(() => {
         // 読めなければ合成音のまま
       });

@@ -59,10 +59,11 @@
 
 ## 効果音
 
-**全アプリ共通の「WebAudio で合成・ファイルを持たない」の例外**（ユーザー指定）。ElevenLabs の Sound Effects API で生成した
-短い mp3 を `src/assets/sfx/` に置き、`src/ui/sound.ts` が AudioBuffer に読み込んで WebAudio で鳴らす
-（頭の無音を切り、ピークをそろえ、鳴らすたびに音程・音量を少しゆらす）。無い音は合成音で代わりに鳴らす。
+**全アプリ共通の「WebAudio で合成・ファイルを持たない」の例外**（ユーザー指定）。ElevenLabs の Web 版（Sound Effects）で
+生成した音を `src/assets/sfx/*.wav` に置き、`src/ui/sound.ts` が AudioBuffer に読み込んで WebAudio で鳴らす
+（鳴らすたびに音程・音量を少しゆらす）。無い音は合成音で代わりに鳴らす。
 
-- 生成: `node scripts/gen-sfx.mjs`（API キーは環境変数 `ELEVENLABS_API_KEY`。指示文の一覧はスクリプト内の `SFX`）。
-  候補は `refs/sfx/`（git 管理外）に 3 本ずつ。未採用の音は候補 1 が仮に入る。
-- 聴き比べ: `npm run dev` 中に `/survival-island/sfx.html`。採用は `node scripts/gen-sfx.mjs --pick chop=2`。
+- 候補: `refs/sfx/<名前>_<番号>.ogg`（git 管理外、1 つの音に 4 本）。指示文は `scripts/build-sfx.mjs` の `PROMPTS`。
+- 選定と整形: `node scripts/build-sfx.mjs`。長さと打音の数を測って自動で選び、無音を切ってピークをそろえ、32kHz の WAV にする。
+  耳で選び直すときは `node scripts/build-sfx.mjs chop=3`（`scripts/sfx-picks.json` に残る。`collect=pop_1` のように代用も書ける）。
+- 聴き比べ: `npm run dev` 中に `/survival-island/sfx.html`。
