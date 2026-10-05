@@ -19,7 +19,7 @@ import {
   type CameraState,
   type Viewport,
   effectiveScale,
-  TILT_DEG,
+  GROUND_DEPTH,
   worldToScreen,
 } from './camera';
 import { draw, effects, IMPACT_TIMES, type RenderState, type Vec2 } from './renderer';
@@ -41,13 +41,25 @@ export interface WorldViewProps {
 }
 
 const MAX_DT_MS = 50;
-const TILT_COS = Math.cos((TILT_DEG * Math.PI) / 180);
 
 // pigg 風の低いカメラ: プレイヤーを画面中央ではなくやや下に固定し、進行方向側を
 // 広く見せる。PiggTestField（絵柄テスト）で詰めた値をそのまま本編にも適用する。
 const CAMERA_ANCHOR_Y = 0.62;
 /** 主人公の足元を画面のこの高さより下に置かない（下のボタン列に隠れないように）。 */
 const PLAYER_MAX_Y = 0.8;
+
+// 描画にかかった時間（直近 120 フレーム）。開発中に javascript から window.__frameStats() で読む。
+const drawSamples: number[] = [];
+function recordDrawMs(ms: number): void {
+  drawSamples.push(ms);
+  if (drawSamples.length > 120) drawSamples.shift();
+}
+(window as unknown as { __frameStats?: () => unknown }).__frameStats = () => {
+  const s = [...drawSamples].sort((a, b) => a - b);
+  if (s.length === 0) return null;
+  const avg = s.reduce((a, b) => a + b, 0) / s.length;
+  return { n: s.length, avgMs: +avg.toFixed(2), p50Ms: +s[s.length >> 1]!.toFixed(2), p95Ms: +s[Math.floor(s.length * 0.95)]!.toFixed(2) };
+};
 
 export function WorldView(props: WorldViewProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -217,7 +229,7 @@ export function WorldView(props: WorldViewProps): JSX.Element {
         world.height * TILE,
         // 端の制限はワールド px で比べる（画面 px のまま渡すと、拡大しているぶん左右にほとんど動けない）
         viewport.widthCssPx / viewScale,
-        viewport.heightCssPx / (viewScale * TILT_COS),
+        viewport.heightCssPx / (viewScale * GROUND_DEPTH),
         0.09, // halfLifeSec（既定値。以前と同じ追従の締まり具合）
         0.5, // anchorX（左右は今までどおり中央）
         CAMERA_ANCHOR_Y,
@@ -251,7 +263,9 @@ export function WorldView(props: WorldViewProps): JSX.Element {
         terrain,
         groundDecor,
       };
+      const t0 = performance.now();
       draw(ctx, state);
+      recordDrawMs(performance.now() - t0);
     };
     raf = requestAnimationFrame(loop);
 

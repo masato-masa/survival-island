@@ -24,8 +24,12 @@
 - 設定とあそびかたは、左上の顔アイコンのメニュー（`MenuSheet.tsx`）から開く。画面に ? や歯車のボタンは置かない。
 - **砂浜に木・花を置かない、海に睡蓮を置かない。** 地面の飾りは草の上の葉先と水辺の葦だけ。
 
-- **視点は斜め（遠近法）。** `camera.ts` の `TILT_DEG`・`CAMERA_DISTANCE`。地面は横線ごとの帯で奥ほど細く貼り、立つ物は足元に立てて `k` 倍で描く。
-  マスの見た目は台形、背の高い物が後ろのマスを隠す。`worldToScreen` は `{x,y,k}`、`screenToWorld` はその逆。
+- **視点は斜め上から（ピグくらい）。** `camera.ts` の `ELEV_DEG`（55°）・`GROUND_DEPTH`（sin）・`HEIGHT_SCALE`（cos）・`CAMERA_DISTANCE`（40 マス＝ほぼ平行投影）。
+  3D の点は `project3(x, y, z)`、地面は `worldToScreen`（z=0）、逆は `screenToWorld`。地面は横線ごとの帯で貼り、立てて描く絵は足元に元の縦横比で置く。
+  マス目は縦横そろい（ピグは 45° のひし形だが未対応）。
+- **画面は見ているだけで癒やされるように動かす**（`ambient.ts`）。木・花・作物・草は風でゆっくり揺れる（絵を帯に切って根元から曲げるので、どの絵にも効く）。
+  雲の影・蝶・落ち葉・岸の波・光の呼吸。`window.__ambientOff = true` で止めて比べられる。
+
 - **森の木は資源（`forestTree`）。** 最高段階の斧（axePower 5）でだけ切れる。フィールドに岩は置かない（洞窟を追加するまで、石・銅の入手元は無い）。
   水辺は砂浜（`terrainCore.ts` の `classify`）。
 
@@ -41,7 +45,18 @@
 ## 素材
 
 絵柄は **pigg 風（やわらかい着色イラスト）**。ドット絵・Kenney・旧 ChatGPT ドット絵は 1 つも残していない。
-出どころは 2 つだけ:
+**コードで描いた絵は画面の質を下げるので、基本は生成した素材を使う**（ユーザー指定）。出どころは 3 つ:
+
+0. **ChatGPT で生成した素材シート**（いちばん優先）。ユーザーの ChatGPT（Chrome）で、既存の生成素材（`refs/gen/crops.png` など）を
+   画風の見本として添付し、「真っ白 #FFFFFF の無地背景・格子状に間隔をあけて並べる・線/文字/影なし・正面やや上から」で
+   描かせる。元画像は `refs/gen/<シート名>.png`（git 管理外）、切り出しは `node scripts/slice-gen.mjs [シート名]`
+   （縁から辿れる白を抜き、縁 3px を白から色抜き、連結成分を格子のマスへ振り分けて `src/assets/gen/<名前>.png` に書く）。
+   シートの格子と名前は `slice-gen.mjs` の `SHEETS`。`sprites.ts` の `GEN_TARGET` が `PAINTERS` より優先され、
+   画像が無いときだけコード描画に戻る。大きさは `scale`（同じシートの絵の大小をそのまま保つ。作物）か `fit`（長辺。アイコン）で決める。
+   生成済み: 作物 3 種 × 3 段階、作物・資源のアイテムアイコン 9 個。花 4 種・芽・苗木・幹 4 種は `GEN_TARGET` に
+   枠だけあり（`refs/gen/plants.png` を置いて `slice-gen.mjs plants` を走らせれば切り替わる。`SHEETS.plants` は 5×2）。
+   木（`SHEETS.trees` / `gates`）はまだ。Chrome の窓が裏に回っている（`visibilityState: hidden`）と、生成画像の読み込みも
+   ダウンロードも止まるので、窓を前に出してから取り出す。
 
 1. ユーザー提供の素材シート `src/assets/refimg/`（木・岩・家具・花）と `src/assets/pigg/`（主人公・宝箱・岩）。
    シートからの切り出しは `scripts/slice-refimg.mjs`。切り出し後の後処理は次の 3 本（どれも何度走らせても同じ結果）:

@@ -8,6 +8,8 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   base: '/survival-island/',
   plugins: [react()],
+  // refs/ は生成素材の置き場（画像を書き込み中に監視すると Windows で EBUSY になり開発サーバーが落ちる）
+  server: { watch: { ignored: ['**/refs/**'] } },
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },

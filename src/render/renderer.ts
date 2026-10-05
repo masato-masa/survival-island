@@ -5,6 +5,8 @@
 // 視点は「斜めから見下ろす」遠近法（camera.ts）。地面は画面の横線 1 本ぶんずつの帯に切って
 // 奥ほど細く貼る（＝マスが台形になる）。立っている物は足元の投影点にまっすぐ立てて、
 // その地点の倍率 k で描く。y（足元の奥行き）順に並べるので、背の高い物は後ろのマスを隠す。
+// 高さ z（模型・飛ぶアイテム・葉）は cos(仰角) に縮めて持ち上げる（camera.ts の project3 / HEIGHT_SCALE）。
+// 風の揺れ・雲の影・蝶・落ち葉・岸の波・光の呼吸は ambient.ts（時刻と位置だけで決まる）。
 
 import type {
   DecorKind,
@@ -23,15 +25,26 @@ import { cropProgress } from '@/game/time';
 import { allNodes, isBuildable, nodeAlive, nodeRequirement, placementRect } from '@/game/rules';
 import { store } from '@/game/store';
 
-import { followFactor, screenToWorld, TILE, TILT_DEG, type CameraState, type Viewport, worldToScreen } from './camera';
+import { followFactor, GROUND_DEPTH, HEIGHT_SCALE, project3, screenToWorld, TILE, type CameraState, type Viewport, worldToScreen } from './camera';
 import { getGroundFurnitureSprite, getSprite, type SpriteName } from './sprites';
 import { drawCraftBubble, drawModel, getModel, modelScreenRect, SIGN_ICON_AT, type ModelExtra, type Project } from './models';
 import type { PaintedTerrain } from './terrain';
 import { TERRAIN_PX } from './terrainCore';
 import type { TreeInstance } from './forestTrees';
 import { chopImpactTimes, drawAvatar, type AvatarDir, type AvatarPose, type AvatarTool } from './avatar';
+import {
+  blitSway,
+  butterflyAt,
+  drawButterfly,
+  drawCloudShadows,
+  drawLightBreath,
+  drawShoreWaves,
+  leafAt,
+  liftPx,
+  swayAmpFor,
+  windAt,
+} from './ambient';
 
-const TILT_COS = Math.cos((TILT_DEG * Math.PI) / 180);
 
 // ---------------------------------------------------------------------------
 // 描画に渡す状態
@@ -463,7 +476,7 @@ const BASE_IN_TILE = 0.92;
 
 // 落ち影（光は左手前から → 影は右奥へ伸びる）。スプライトのシルエットを 1 度だけ焼いて使い回す。
 const CAST_SHEAR = 0.5;
-const CAST_SQUASH = 0.3;
+const CAST_SQUASH = 0.42 * GROUND_DEPTH; // 地面に寝かせる影は奥行きと同じだけ縮む（仰角 45° で 0.3）
 const CAST_ALPHA = 0.22;
 const CAST_BAKE_SCALE = 0.5;
 const silhouetteCache = new WeakMap<object, HTMLCanvasElement>();
@@ -575,6 +588,11 @@ function polygonPath(ctx: CanvasRenderingContext2D, pts: Vec2[], inset = 0): voi
 
 export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
   const { world, save, now, camera, viewport, dpr } = state;
+  // 島の空気（風の揺れ・雲・蝶・落ち葉・波・光）。計測のため window.__ambientOff = true で止められる
+  const amb = (globalThis as { __ambient?: Record<string, boolean> }).__ambient ?? {};
+  const ambientOn = !(globalThis as { __ambientOff?: boolean }).__ambientOff;
+  const ambSway = ambientOn && amb.sway !== false;
+  const ambCritters = ambientOn && amb.critters !== false;
 
   const occlusionDtSec = lastFrameNow == null ? 0 : Math.max(0, Math.min(0.2, (now - lastFrameNow) / 1000));
   lastFrameNow = now;
@@ -603,7 +621,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
   // 足元のやわらかい影。sx,sy は足元の画面座標、w は絵の幅（画面 px）。
   const drawShadow = (sx: number, sy: number, w: number, strength = 1) => {
     const rx = w * 0.42;
-    const ry = rx * 0.3;
+    const ry = rx * 0.42 * GROUND_DEPTH;
     const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, rx);
     g.addColorStop(0, `rgba(30,55,30,${(0.28 * strength).toFixed(3)})`);
     g.addColorStop(1, 'rgba(30,55,30,0)');
@@ -632,7 +650,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
    * スプライトを足元 (wx,wy)（ワールド px）にまっすぐ立てて描く。
    * 幅が maxTiles マス × FOOT_FIT（木の梢は maxTiles をそのまま）を超えるなら、全体を一様に縮める。
    */
-  const drawUpright = (name: SpriteName, wx: number, wy: number, shadow = true, alpha = 1, maxTiles: number | null = 1, crown = false, xf: SpriteXf | null = null) => {
+  const drawUpright = (name: SpriteName, wx: number, wy: number, shadow = true, alpha = 1, maxTiles: number | null = 1, crown = false, xf: SpriteXf | null = null, windAmp = 0) => {
     const spr = getSprite(name);
     const p = worldToScreen(wx, wy, camera, viewport);
     let w = spr.w * p.k;
@@ -651,32 +669,34 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
       drawCastShadow(spr.canvas, p.x, p.y, w, h, alpha);
       drawShadow(p.x, p.y - h * 0.01, foot * 0.9, 1.1);
     }
+    // 風の揺れ（梢のずれ、画面 px）。根元は動かない
+    const swayPx = ambSway && windAmp > 0 ? windAmp * windAt(wx, wy, now) * p.k : 0;
     if (xf) {
-      // 根元を軸に回す・伸び縮みさせる（揺れ・倒れる・ぽんと消える）。影は地面に残す。
+      // 根元を軸に回す・伸び縮みさせる（叩かれた揺れ・倒れる・ぽんと消える）。風の揺れはその上に重ねる。影は地面に残す。
       ctx.save();
       ctx.globalAlpha = alpha * (xf.alpha ?? 1);
       ctx.translate(p.x + (xf.dx ?? 0) * p.k, p.y);
       if (xf.rot) ctx.rotate(xf.rot);
       ctx.scale(xf.sx ?? 1, xf.sy ?? 1);
-      ctx.drawImage(spr.canvas, -w / 2, -h, w, h);
+      blitSway(ctx, spr.canvas, -w / 2, -h, w, h, swayPx);
       ctx.restore();
       return;
     }
     if (alpha < 0.999) ctx.globalAlpha = alpha;
-    ctx.drawImage(spr.canvas, p.x - w / 2, p.y - h, w, h);
+    blitSway(ctx, spr.canvas, p.x - w / 2, p.y - h, w, h, swayPx);
     if (alpha < 0.999) ctx.globalAlpha = 1;
   };
 
-  const drawAtTile = (name: SpriteName, tx: number, ty: number, shadow = true, alpha = 1, xf: SpriteXf | null = null) =>
-    drawUpright(name, (tx + 0.5) * TILE, (ty + BASE_IN_TILE) * TILE, shadow, alpha, 1, false, xf);
+  const drawAtTile = (name: SpriteName, tx: number, ty: number, shadow = true, alpha = 1, xf: SpriteXf | null = null, windAmp = 0) =>
+    drawUpright(name, (tx + 0.5) * TILE, (ty + BASE_IN_TILE) * TILE, shadow, alpha, 1, false, xf, windAmp);
 
   /** 見え隠れつきで描く（プレイヤーが後ろに重なれば半透明）。 */
-  const drawOccludable = (key: string, name: SpriteName, wx: number, wy: number, shadow = true, maxTiles: number | null = 1, crown = false, xf: SpriteXf | null = null) => {
+  const drawOccludable = (key: string, name: SpriteName, wx: number, wy: number, shadow = true, maxTiles: number | null = 1, crown = false, xf: SpriteXf | null = null, windAmp = 0) => {
     const spr = getSprite(name);
     const p = worldToScreen(wx, wy, camera, viewport);
     const rect: Rect = { left: p.x - (spr.w * p.k) / 2, right: p.x + (spr.w * p.k) / 2, top: p.y - spr.h * p.k, bottom: p.y };
     const alpha = occlusionFor(key, rect, wy, save.player.y * TILE, playerRect, occlusionEase);
-    drawUpright(name, wx, wy, shadow, alpha, maxTiles, crown, xf);
+    drawUpright(name, wx, wy, shadow, alpha, maxTiles, crown, xf, windAmp);
   };
 
   /**
@@ -688,10 +708,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     if (!m) return null;
     const ox = tx * TILE;
     const oy = ty * TILE;
-    const P: Project = (x, y, z) => {
-      const s = worldToScreen(ox + x, oy + y, camera, viewport);
-      return { x: s.x, y: s.y - z * s.k };
-    };
+    const P: Project = (x, y, z) => project3(ox + x, oy + y, z, camera, viewport);
     const rect = modelScreenRect(m, P);
     if (rect.right < -20 || rect.left > W + 20 || rect.bottom < -20 || rect.top > H + 20) return null;
     const k = worldToScreen(ox + (tiles * TILE) / 2, oy + (tiles * TILE) / 2, camera, viewport).k;
@@ -745,7 +762,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     if (shadow) drawShadow(p.x, p.y, w * 1.25, Math.max(0.35, 1 - z / 30));
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.translate(p.x, p.y - z * p.k * TILT_COS);
+    ctx.translate(p.x, p.y - z * p.k * HEIGHT_SCALE);
     ctx.scale(sx, sy);
     ctx.drawImage(spr.canvas, -w / 2, -h, w, h);
     ctx.restore();
@@ -757,7 +774,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
       ctx.strokeStyle = 'rgba(70,45,30,0.85)';
       ctx.fillStyle = '#fffbe6';
       const tx = p.x + w * 0.3;
-      const ty = p.y - z * p.k * TILT_COS - h * 0.75;
+      const ty = p.y - z * p.k * HEIGHT_SCALE - h * 0.75;
       ctx.strokeText(`×${d.badge}`, tx, ty);
       ctx.fillText(`×${d.badge}`, tx, ty);
       ctx.restore();
@@ -786,6 +803,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     const t = state.terrain;
     drawGroundImage(ctx, t.canvas, t.width * TERRAIN_PX, t.height * TERRAIN_PX, 0, 0, t.width * TILE, t.height * TILE, camera, viewport);
     drawWaterSparkles(ctx, world, camera, viewport, now, minTx, minTy, maxTx, maxTy);
+    if (ambientOn && amb.waves !== false) drawShoreWaves(ctx, world.width, world.height, world.ground, camera, viewport, now, minTx, minTy, maxTx, maxTy);
   }
 
   if (state.terrain && state.decorate) {
@@ -831,7 +849,8 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
       if (!tile) continue;
       const progress = cropProgress(tile, now);
       const stage = progress < 0.34 ? 0 : progress < 1 ? 1 : 2;
-      drawAtTile(`${tile.crop}${stage}` as SpriteName, t.x, t.y, false);
+      const cropName = `${tile.crop}${stage}` as SpriteName;
+      drawAtTile(cropName, t.x, t.y, false, 1, null, swayAmpFor(cropName));
       if (stage === 2) {
         const s = worldToScreen((t.x + 0.5) * TILE, (t.y + 0.4) * TILE, camera, viewport);
         const twinkle = 0.4 + 0.4 * Math.sin(now / 180 + hash2(t.x, t.y) * 10);
@@ -852,6 +871,23 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
   const overlays: (() => void)[] = [];
   const craftJob = (store as { craftJob?: () => { furnitureId: string; startedAt: number; endsAt: number } | null }).craftJob?.() ?? null;
 
+  let butterflies = 0;
+  let leaves = 0;
+  /** 落ちてくる葉 1 枚（木の葉の絵をひらひら回しながら）。 */
+  const drawFallingLeaf = (l: NonNullable<ReturnType<typeof leafAt>>, z: number) => {
+    const s = worldToScreen(l.x, l.y, camera, viewport);
+    const spr = getSprite('fx_leaf' as SpriteName);
+    const w = spr.w * s.k * 0.8;
+    const h = spr.h * s.k * 0.8;
+    if (z < 6) drawShadow(s.x, s.y, w, 0.5 * l.alpha);
+    ctx.save();
+    ctx.globalAlpha = l.alpha;
+    ctx.translate(s.x, s.y - liftPx(z, s.k) - h * 0.3);
+    ctx.rotate(l.rot);
+    ctx.drawImage(spr.canvas, -w / 2, -h / 2, w, h);
+    ctx.restore();
+  };
+
   for (const node of allNodes(world, save, now)) {
     if (node.x < minTx - 1 || node.x > maxTx + 1 || node.y < minTy - 3 || node.y > maxTy + 1) continue;
     const alive = nodeAlive(save, node, now);
@@ -861,6 +897,24 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
         y: node.y + 1,
         draw: () => drawNode(node, now, state, acting, drawOccludable, drawAtTile),
       });
+      const stumpNow = save.nodes[node.id]?.stump === true;
+      if (ambCritters && node.kind === 'flower' && !node.growing && butterflies < MAX_BUTTERFLIES) {
+        // 花のまわりの蝶
+        const b = butterflyAt(node.x, node.y, now);
+        if (b) {
+          butterflies++;
+          drawables.push({ y: b.y / TILE, draw: () => drawButterfly(ctx, b, camera, viewport) });
+        }
+      } else if (ambCritters && TALL_NODES.has(node.kind) && !stumpNow && !node.growing && leaves < MAX_LEAVES) {
+        // 梢からときどき落ちる葉
+        const l = leafAt(node.x, node.y, now);
+        if (l) {
+          leaves++;
+          // 梢の高さ（絵の高さの 6 割）。立てた絵と同じ縮みで持ち上がるよう HEIGHT_SCALE で割っておく
+          const crownZ = (getSprite(spriteForNode(node.kind, node.x, node.y, world)).h * 0.62) / HEIGHT_SCALE;
+          drawables.push({ y: node.y + 1.05, draw: () => drawFallingLeaf(l, crownZ * l.zFrac) });
+        }
+      }
     } else if (NODES[node.kind].respawnMs !== null) {
       const stump = NODE_TO_STUMP[node.kind];
       if (stump) drawables.push({ y: node.y + 1, draw: () => drawAtTile(stump, node.x, node.y) });
@@ -947,7 +1001,8 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
   // --- 地面の飾り（花・草・睡蓮・葦。可視範囲だけ描く） ---
   for (const d of state.groundDecor) {
     if (d.x < minTx - 2 || d.x > maxTx + 3 || d.y < minTy - 2 || d.y > maxTy + 3) continue;
-    drawables.push({ y: d.flat ? -1000 : d.y - 0.5, draw: () => drawUpright(d.sprite, d.x * TILE, d.y * TILE, false) });
+    const amp = d.flat ? 0 : swayAmpFor(d.sprite);
+    drawables.push({ y: d.flat ? -1000 : d.y - 0.5, draw: () => drawUpright(d.sprite, d.x * TILE, d.y * TILE, false, 1, 1, false, null, amp) });
   }
 
   // --- 倒れる木・ぽんと消える幹や花（幹の絵より手前に重ねる） ---
@@ -1014,6 +1069,9 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
       }
     }
   }
+  // 雲の影（物の上にもかかる）と、ゆっくり呼吸するあたたかい光
+  if (ambientOn && amb.clouds !== false) drawCloudShadows(ctx, camera, viewport, now, world.width * TILE, world.height * TILE);
+  if (ambientOn && amb.light !== false) drawLightBreath(ctx, W, H, now);
   for (const o of overlays) o();
 
   // --- ハイライト（通常モードのみ） ---
@@ -1088,7 +1146,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     const h = Math.max(1, spr.h * s.k * p.size * shrink);
     ctx.save();
     ctx.globalAlpha = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
-    ctx.translate(s.x, s.y - z * s.k * TILT_COS);
+    ctx.translate(s.x, s.y - z * s.k * HEIGHT_SCALE);
     if (p.flutter) ctx.rotate(Math.sin(sec * 7 + p.startedAt) * 0.8);
     ctx.drawImage(spr.canvas, -w / 2, -h / 2, w, h);
     ctx.restore();
@@ -1100,7 +1158,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     if (t < 0 || t > 1) continue;
     const s = worldToScreen(b.x, b.y, camera, viewport);
     const cx = s.x;
-    const cy = s.y - b.z * s.k * TILT_COS;
+    const cy = s.y - b.z * s.k * HEIGHT_SCALE;
     const tl = Math.min(1, t * 1.6); // 閃光は文字より早く消える
     const r0 = 4 * s.k + 10 * s.k * easeOutCubic(tl);
     ctx.save();
@@ -1259,7 +1317,7 @@ function drawWaterSparkles(
       const s = worldToScreen((tx + 0.2 + 0.6 * ((seed * 7) % 1)) * TILE, (ty + 0.2 + 0.6 * ((seed * 13) % 1)) * TILE, camera, viewport);
       ctx.fillStyle = `rgba(255,255,255,${(glow * 0.5).toFixed(2)})`;
       ctx.beginPath();
-      ctx.ellipse(s.x, s.y, TILE * s.k * 0.2 * (0.6 + glow * 0.4), TILE * s.k * 0.2 * TILT_COS * 0.3 * (0.6 + glow * 0.4), 0, 0, Math.PI * 2);
+      ctx.ellipse(s.x, s.y, TILE * s.k * 0.2 * (0.6 + glow * 0.4), TILE * s.k * 0.2 * GROUND_DEPTH * 0.3 * (0.6 + glow * 0.4), 0, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -1337,8 +1395,8 @@ interface SpriteXf {
   alpha?: number;
 }
 
-type OccludableDraw = (key: string, name: SpriteName, wx: number, wy: number, shadow?: boolean, maxTiles?: number | null, crown?: boolean, xf?: SpriteXf | null) => void;
-type TileDraw = (name: SpriteName, tx: number, ty: number, shadow?: boolean, alpha?: number, xf?: SpriteXf | null) => void;
+type OccludableDraw = (key: string, name: SpriteName, wx: number, wy: number, shadow?: boolean, maxTiles?: number | null, crown?: boolean, xf?: SpriteXf | null, windAmp?: number) => void;
+type TileDraw = (name: SpriteName, tx: number, ty: number, shadow?: boolean, alpha?: number, xf?: SpriteXf | null, windAmp?: number) => void;
 
 /** 資源を 1 つ描く。acting は「この資源に今（または直前まで）している行動」で、揺れに使う。 */
 function drawNode(node: LiveNode, now: number, state: RenderState, acting: TimedAction | null, drawOccludable: OccludableDraw, drawAtTile: TileDraw): void {
@@ -1365,12 +1423,18 @@ function drawNode(node: LiveNode, now: number, state: RenderState, acting: Timed
     }
   }
 
+  // 風の揺れ。叩かれて揺れているあいだは弱める（叩いた揺れが主役）
+  const wind = stump ? 0 : swayAmpFor(spriteName) * (xf ? 0.35 : 1);
   if (standingTree) {
-    drawOccludable(`node:${node.id}`, spriteName, (node.x + 0.5) * TILE, (node.y + BASE_IN_TILE) * TILE, true, CROWN_FIT_TILES, true, xf);
+    drawOccludable(`node:${node.id}`, spriteName, (node.x + 0.5) * TILE, (node.y + BASE_IN_TILE) * TILE, true, CROWN_FIT_TILES, true, xf, wind);
   } else {
-    drawAtTile(spriteName, node.x, node.y, true, 1, xf);
+    drawAtTile(spriteName, node.x, node.y, true, 1, xf, wind);
   }
 }
+
+/** 1 画面に出す蝶・落ち葉の上限（にぎやかになりすぎないように）。 */
+const MAX_BUTTERFLIES = 4;
+const MAX_LEAVES = 3;
 
 /** 主人公の当たり判定の箱（ワールド px）。見え隠れ・ゲージの位置に使う。 */
 const PLAYER_BOX_W = 30;

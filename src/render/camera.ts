@@ -141,19 +141,32 @@ export function effectiveScale(cam: CameraState, baseScale: number): number {
 }
 
 // ---------------------------------------------------------------------------
-// 斜めから見る視点（遠近法つき）。
+// 斜め上から見下ろす視点（弱い遠近法つき）。
 //
-// 地面は「真上から TILT だけ手前に傾けたカメラ」で見る。焦点（cam.x, cam.y）の地点では 1 ワールド px が
-// scale px（= baseScale × ズーム）になり、そこより奥（北）は小さく、手前（南）は大きく見える。
-// だから縦に並んだマスは台形（奥ほど狭い）になり、背の高い物は手前の物の後ろに隠れる。
-// 立っている物（木・家具・人）は、足元の投影点に「まっすぐ立てた板」として、その地点の倍率 k で描く。
+// カメラは焦点（cam.x, cam.y）の真南・上空にあり、地面から ELEV_DEG だけ見下ろす。
+//   - 地面の奥行き（南北）は sin(仰角) 倍に縮む … マスは横長の台形になる
+//   - 高さ（z）は cos(仰角) 倍に縮む          … 箱の上面が見え、側面は低く見える
+// 焦点の地点では横 1 ワールド px が scale px（= baseScale × ズーム）。奥（北）ほど小さく、手前（南）ほど大きい。
+//
+// 数値はピグライフの画面を実測して決めた（App Store のスクリーンショット 1286×594 のエッジ方向の分布）:
+//   - 地面の線は ±23〜27° に集まる → 2:1 のひし形（ひし形の高さ/幅 = 0.50）＝ 仰角 30° の平行投影
+//   - 遠近は無い（平行投影）
+//   - 1 マスの立方体の見え方は「上面のひし形の高さ 0.71 : 側面の高さ 0.71〜0.87」→ 上面が全高の 45〜50%
+// このゲームのマス目は回さない（縦横そろい）ので、立方体の上面が全高の半分になる仰角は 45°。
+// ただし 45° では地面が 0.71 に縮み、絵のまま立てる木（ビルボード）が相対的に高く見えて、かえって低い視点に
+// 見えた（森が幹の壁になる）。木や人の絵はもともと斜め上から描かれているので、地面をあまりつぶさない 55° にする
+// （地面 0.82・高さ 0.57、立方体の上面は全高の 59%）。
+// 遠近は少しだけ残す（スマホ縦の画面の上端と下端で倍率 0.77〜1.14 倍。前は 0.46〜1.33 倍（約 3 倍）も違って、低い視点に見えた）。
 
-/** カメラの傾き（真上から手前へ）。0 で真上、90° で真横。 */
-export const TILT_DEG = 20;
-const TILT_SIN = Math.sin((TILT_DEG * Math.PI) / 180);
-const TILT_COS = Math.cos((TILT_DEG * Math.PI) / 180);
-/** カメラから焦点までの距離（ワールド px）。小さいほど遠近が強い。 */
-export const CAMERA_DISTANCE = 9 * TILE;
+/** 地面からの見下ろし角（0° で真横、90° で真上）。 */
+export const ELEV_DEG = 55;
+const ELEV_RAD = (ELEV_DEG * Math.PI) / 180;
+/** 地面の奥行きの縮み（南北 1 ワールド px が、横 1 px に対して何倍に見えるか）。 */
+export const GROUND_DEPTH = Math.sin(ELEV_RAD);
+/** 高さの縮み（z 1 ワールド px が、横 1 px に対して何倍に見えるか）。 */
+export const HEIGHT_SCALE = Math.cos(ELEV_RAD);
+/** カメラから焦点までの距離（ワールド px）。大きいほど平行投影に近い。 */
+export const CAMERA_DISTANCE = 40 * TILE;
 
 export interface ScreenPoint {
   x: number;
@@ -162,10 +175,11 @@ export interface ScreenPoint {
   k: number;
 }
 
-/** ワールド px → 画面 css px（キャンバスの CSS サイズ基準。DPR は描画側で別に掛ける）。 */
-export function worldToScreen(
+/** ワールド (x, y, 高さ z)（px）→ 画面 css px。z を省くと地面の点。DPR は描画側で別に掛ける。 */
+export function project3(
   worldX: number,
   worldY: number,
+  z: number,
   cam: CameraState,
   viewport: Viewport,
 ): ScreenPoint {
@@ -174,16 +188,26 @@ export function worldToScreen(
   const ay = viewport.anchorY ?? 0.5;
   const dx = worldX - cam.x;
   const dy = worldY - cam.y;
-  const depth = Math.max(CAMERA_DISTANCE * 0.25, CAMERA_DISTANCE - dy * TILT_SIN);
+  const depth = Math.max(CAMERA_DISTANCE * 0.25, CAMERA_DISTANCE - dy * HEIGHT_SCALE - z * GROUND_DEPTH);
   const k = (scale * CAMERA_DISTANCE) / depth;
   return {
     x: viewport.widthCssPx * ax + dx * k,
-    y: viewport.heightCssPx * ay + dy * TILT_COS * k,
+    y: viewport.heightCssPx * ay + (dy * GROUND_DEPTH - z * HEIGHT_SCALE) * k,
     k,
   };
 }
 
-/** 画面 css px → 地面のワールド px（worldToScreen の逆）。 */
+/** ワールド px（地面）→ 画面 css px。 */
+export function worldToScreen(
+  worldX: number,
+  worldY: number,
+  cam: CameraState,
+  viewport: Viewport,
+): ScreenPoint {
+  return project3(worldX, worldY, 0, cam, viewport);
+}
+
+/** 画面 css px → 地面のワールド px（worldToScreen の逆）。タップしたマスの判定に使う。 */
 export function screenToWorld(
   screenX: number,
   screenY: number,
@@ -194,8 +218,9 @@ export function screenToWorld(
   const ax = viewport.anchorX ?? 0.5;
   const ay = viewport.anchorY ?? 0.5;
   const sy = screenY - viewport.heightCssPx * ay;
-  const dy = (sy * CAMERA_DISTANCE) / (scale * CAMERA_DISTANCE * TILT_COS + sy * TILT_SIN);
-  const depth = CAMERA_DISTANCE - dy * TILT_SIN;
+  // sy = dy·G·scale·D / (D − dy·H)  を dy について解く
+  const dy = (sy * CAMERA_DISTANCE) / (scale * CAMERA_DISTANCE * GROUND_DEPTH + sy * HEIGHT_SCALE);
+  const depth = CAMERA_DISTANCE - dy * HEIGHT_SCALE;
   const k = (scale * CAMERA_DISTANCE) / depth;
   return {
     x: (screenX - viewport.widthCssPx * ax) / k + cam.x,

@@ -1,6 +1,7 @@
 // スプライト（pigg 風のやわらかい絵）。React・DOM に依存しない「定義」と、Canvas へ焼く部分を分けている。
 //
-// 絵の出どころは 2 つだけ:
+// 絵の出どころ:
+//   0. ChatGPT で生成した素材シートの切り出し（src/assets/gen/*.png、scripts/slice-gen.mjs）。GEN_TARGET。最優先。
 //   1. ユーザー提供の素材シート（src/assets/refimg/*.png ・ src/assets/pigg/*.png）
 //   2. 下の painters に書いた「コードで描く滑らかなベクター絵」（作物・アイテム・道具・エフェクトなど、
 //      提供素材に無いもの）。ドット絵は 1 つも使わない。
@@ -185,6 +186,8 @@ function makeCanvas(w: number, h: number): HTMLCanvasElement | OffscreenCanvas {
 
 const refimgUrls = import.meta.glob('../assets/refimg/*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
 const piggUrls = import.meta.glob('../assets/pigg/*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
+// ChatGPT で生成した素材シートを切り出したもの（scripts/slice-gen.mjs）。
+const genUrls = import.meta.glob('../assets/gen/*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
 
 const sheetImages = new Map<string, HTMLImageElement>();
 
@@ -192,6 +195,7 @@ function urlForSheet(name: string): string | undefined {
   const suffix = `/${name}.png`;
   for (const path in refimgUrls) if (path.endsWith(suffix)) return refimgUrls[path];
   for (const path in piggUrls) if (path.endsWith(suffix)) return piggUrls[path];
+  for (const path in genUrls) if (path.endsWith(suffix)) return genUrls[path];
   return undefined;
 }
 
@@ -217,7 +221,7 @@ function loadSheetImages(names: readonly string[]): Promise<void> {
 
 /** 素材を読み込む。main.tsx から最初の描画前に await される（失敗しても止まらない）。 */
 export function loadArt(): Promise<void> {
-  const names = Array.from(new Set(Object.values(SHEET_TARGET).map((spec) => spec.src)));
+  const names = Array.from(new Set([...Object.values(SHEET_TARGET), ...Object.values(GEN_TARGET)].map((spec) => spec.src)));
   return loadSheetImages(names).then(() => {
     bakedCache.clear();
     dataUrlCache.clear();
@@ -237,6 +241,10 @@ interface SheetSpec {
   /** 左右反転（右向き 1 枚から左向きを作る）。 */
   flip?: boolean;
   tint?: string; // 乗算合成で色違いを作る
+  /** 元画像 1px あたりのワールド px（同じシートから切った絵の大きさの差をそのまま保つ。worldW・worldH より優先）。 */
+  scale?: number;
+  /** 長辺をこのワールド px に合わせる（アイコン用。scale より優先）。 */
+  fit?: number;
 }
 
 const BORDER_TINT = '#a99bd0'; // 境界ノード: 淡い紫がかった色
@@ -309,6 +317,43 @@ const SHEET_TARGET: Partial<Record<SpriteName, SheetSpec>> = {
   f_campfire: { src: 'furn_campfire', worldW: 36 },
   f_ruinArch: { src: 'cave_entrance', worldW: 50 },
   f_oldPillar: { src: 'rock_cliff', worldW: 42 },
+};
+
+// ChatGPT で生成した素材（src/assets/gen/、scripts/slice-gen.mjs で切り出し）。PAINTERS より優先し、
+// 画像が無いときだけ PAINTERS のコード描画に戻る。
+// 作物は 1 枚のシートを同じ倍率で切っているので scale で大きさの差（成長段階）を保つ。土の山 166px ≈ 21 ワールド px。
+const CROP_SCALE = 0.125;
+const ICON_FIT = 22;
+const GEN_TARGET: Partial<Record<SpriteName, SheetSpec>> = {
+  turnip0: { src: 'turnip0', worldW: 0, scale: CROP_SCALE },
+  turnip1: { src: 'turnip1', worldW: 0, scale: CROP_SCALE },
+  turnip2: { src: 'turnip2', worldW: 0, scale: CROP_SCALE },
+  sunflower0: { src: 'sunflower0', worldW: 0, scale: CROP_SCALE },
+  sunflower1: { src: 'sunflower1', worldW: 0, scale: CROP_SCALE },
+  sunflower2: { src: 'sunflower2', worldW: 0, scale: CROP_SCALE },
+  tomato0: { src: 'tomato0', worldW: 0, scale: CROP_SCALE },
+  tomato1: { src: 'tomato1', worldW: 0, scale: CROP_SCALE },
+  tomato2: { src: 'tomato2', worldW: 0, scale: CROP_SCALE },
+  item_turnip: { src: 'item_turnip', worldW: 0, fit: ICON_FIT },
+  item_sunflower: { src: 'item_sunflower', worldW: 0, fit: ICON_FIT },
+  item_tomato: { src: 'item_tomato', worldW: 0, fit: ICON_FIT },
+  item_wood: { src: 'item_wood', worldW: 0, fit: ICON_FIT },
+  item_stone: { src: 'item_stone', worldW: 0, fit: ICON_FIT },
+  item_copper: { src: 'item_copper', worldW: 0, fit: ICON_FIT },
+  item_sapling: { src: 'item_sapling', worldW: 0, fit: ICON_FIT },
+  item_flowerSeed: { src: 'item_flowerSeed', worldW: 0, fit: ICON_FIT },
+  item_petal: { src: 'item_petal', worldW: 0, fit: ICON_FIT },
+  // 花・苗・幹（下辺中央が根元）。幅は今までのコード描画と同じにそろえる。
+  flower0: { src: 'flower0', worldW: 0, fit: 25 },
+  flower1: { src: 'flower1', worldW: 0, fit: 25 },
+  flower2: { src: 'flower2', worldW: 0, fit: 25 },
+  flower3: { src: 'flower3', worldW: 0, fit: 25 },
+  flowerSprout: { src: 'flowerSprout', worldW: 0, fit: 14 },
+  sapling: { src: 'sapling', worldW: 0, fit: 22 },
+  stump: { src: 'stump', worldW: 22 },
+  stumpOak: { src: 'stumpOak', worldW: 28 },
+  stumpCedar: { src: 'stumpCedar', worldW: 26 },
+  stumpAncient: { src: 'stumpAncient', worldW: 31 },
 };
 
 // ---------------------------------------------------------------------------
@@ -959,13 +1004,17 @@ function bakeFlipped(img: HTMLImageElement): HTMLCanvasElement | OffscreenCanvas
   return canvas;
 }
 
-function bakeFromSheet(name: SpriteName): BakedSprite | null {
-  const spec = SHEET_TARGET[name];
+function bakeFromSheet(spec: SheetSpec | undefined): BakedSprite | null {
   if (!spec) return null;
   const img = sheetImages.get(spec.src);
   if (!img) return null;
   const aspect = img.naturalHeight / img.naturalWidth;
   const source: CanvasImageSource = spec.tint ? bakeTinted(img, spec.tint) : spec.flip ? bakeFlipped(img) : img;
+  if (spec.fit) {
+    const f = spec.fit / Math.max(img.naturalWidth, img.naturalHeight);
+    return { canvas: source, w: img.naturalWidth * f, h: img.naturalHeight * f };
+  }
+  if (spec.scale) return { canvas: source, w: img.naturalWidth * spec.scale, h: img.naturalHeight * spec.scale };
   const w = spec.worldH && !spec.stretch ? spec.worldH / aspect : spec.worldW;
   const h = spec.worldH ?? spec.worldW * aspect;
   return { canvas: source, w, h };
@@ -983,9 +1032,11 @@ function makeEmpty(): HTMLCanvasElement | OffscreenCanvas {
 }
 
 function bake(name: SpriteName): BakedSprite | null {
+  const generated = bakeFromSheet(GEN_TARGET[name]);
+  if (generated) return generated;
   const painted = PAINTERS[name];
   if (painted) return bakePainted(painted);
-  return bakeFromSheet(name);
+  return bakeFromSheet(SHEET_TARGET[name]);
 }
 
 /** 名前でスプライトを引く。初回だけ焼いてキャッシュする（素材の読み込み前は空の 1×1 を返し、キャッシュしない）。 */
@@ -1004,7 +1055,7 @@ export function getGroundFurnitureSprite(id: 'woodPath' | 'stonePath', _worldTx:
 }
 
 export function spriteNames(): SpriteName[] {
-  return Array.from(new Set([...Object.keys(SHEET_TARGET), ...Object.keys(PAINTERS)])) as SpriteName[];
+  return Array.from(new Set([...Object.keys(GEN_TARGET), ...Object.keys(SHEET_TARGET), ...Object.keys(PAINTERS)])) as SpriteName[];
 }
 
 /** `<img>` などで使うための data URL（アイコン用に 3 倍の解像度で出す）。遅延生成・キャッシュ。 */

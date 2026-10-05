@@ -5,6 +5,10 @@ import {
   clampCameraCenter,
   clampZoom,
   computeClampBounds,
+  ELEV_DEG,
+  GROUND_DEPTH,
+  HEIGHT_SCALE,
+  project3,
   screenToWorld,
   stepCamera,
   TILE,
@@ -112,5 +116,83 @@ describe('worldToScreen / screenToWorld round trip', () => {
     const back = screenToWorld(s.x, s.y, cam, viewport);
     expect(back.x).toBeCloseTo(100, 6);
     expect(back.y).toBeCloseTo(100, 6);
+  });
+});
+
+describe('斜め上からの視点（仰角）', () => {
+  const cam: CameraState = { x: 640, y: 640, zoom: 1 };
+  const viewport: Viewport = { widthCssPx: 390, heightCssPx: 844, baseScale: 390 / (TILES_ACROSS_WIDTH * TILE), anchorY: 0.62 };
+
+  it('地面の奥行きは sin(仰角)、高さは cos(仰角) に縮む（焦点の地点で）', () => {
+    const rad = (ELEV_DEG * Math.PI) / 180;
+    expect(GROUND_DEPTH).toBeCloseTo(Math.sin(rad));
+    expect(HEIGHT_SCALE).toBeCloseTo(Math.cos(rad));
+    const s = viewport.baseScale;
+    const o = worldToScreen(cam.x, cam.y, cam, viewport);
+    // 焦点のまわりの微小な変位で比べる（遠近の影響を消す）
+    const right = worldToScreen(cam.x + 0.01, cam.y, cam, viewport);
+    const south = worldToScreen(cam.x, cam.y + 0.01, cam, viewport);
+    const up = project3(cam.x, cam.y, 0.01, cam, viewport);
+    expect((right.x - o.x) / 0.01).toBeCloseTo(s, 4);
+    expect((south.y - o.y) / 0.01).toBeCloseTo(s * GROUND_DEPTH, 3);
+    expect((o.y - up.y) / 0.01).toBeCloseTo(s * HEIGHT_SCALE, 3);
+  });
+
+  it('z=0 の project3 は worldToScreen と同じ', () => {
+    const a = project3(500.5, 700.25, 0, cam, viewport);
+    const b = worldToScreen(500.5, 700.25, cam, viewport);
+    expect(a).toEqual(b);
+  });
+
+  it('奥（北）ほど小さく、手前ほど大きい。ただし画面の上下で 2 倍以上は違わない（弱い遠近）', () => {
+    const top = screenToWorld(195, 0, cam, viewport);
+    const bottom = screenToWorld(195, 844, cam, viewport);
+    const kTop = worldToScreen(top.x, top.y, cam, viewport).k;
+    const kBottom = worldToScreen(bottom.x, bottom.y, cam, viewport).k;
+    expect(kTop).toBeLessThan(kBottom);
+    expect(kBottom / kTop).toBeLessThan(2);
+  });
+
+  it('箱の上面が見える：高い点ほど画面の上に来る', () => {
+    const base = project3(600, 600, 0, cam, viewport);
+    const top = project3(600, 600, 30, cam, viewport);
+    const backTopEdge = project3(600, 580, 30, cam, viewport);
+    expect(top.y).toBeLessThan(base.y);
+    expect(backTopEdge.y).toBeLessThan(top.y); // 上面の奥の縁は手前の縁より上 = 上面に面積がある
+  });
+
+  it('タップしたマスの判定がずれない：どのマスの内側の点を投影して逆投影しても、同じマスに戻る', () => {
+    for (const zoom of [0.6, 1, 2]) {
+      const c: CameraState = { ...cam, zoom };
+      for (let ty = 8; ty < 32; ty++) {
+        for (let tx = 12; tx < 28; tx++) {
+          for (const [fx, fy] of [[0.01, 0.01], [0.5, 0.5], [0.99, 0.99], [0.01, 0.99]] as const) {
+            const s = worldToScreen((tx + fx) * TILE, (ty + fy) * TILE, c, viewport);
+            if (s.y < 0 || s.y > viewport.heightCssPx) continue;
+            const w = screenToWorld(s.x, s.y, c, viewport);
+            expect(Math.floor(w.x / TILE)).toBe(tx);
+            expect(Math.floor(w.y / TILE)).toBe(ty);
+          }
+        }
+      }
+    }
+  });
+
+  it('マスの台形の内側の画面の点は、そのマスに当たる（画面側から見ても境界が一致する）', () => {
+    // マス (20, 20) の四隅を投影し、台形の中心を逆投影する
+    const q = [
+      worldToScreen(20 * TILE, 20 * TILE, cam, viewport),
+      worldToScreen(21 * TILE, 20 * TILE, cam, viewport),
+      worldToScreen(21 * TILE, 21 * TILE, cam, viewport),
+      worldToScreen(20 * TILE, 21 * TILE, cam, viewport),
+    ];
+    const cx = q.reduce((a, p) => a + p.x, 0) / 4;
+    const cy = q.reduce((a, p) => a + p.y, 0) / 4;
+    const w = screenToWorld(cx, cy, cam, viewport);
+    expect(Math.floor(w.x / TILE)).toBe(20);
+    expect(Math.floor(w.y / TILE)).toBe(20);
+    // 上の辺のすぐ上は 1 つ奥のマス
+    const above = screenToWorld(cx, q[0]!.y - 0.5, cam, viewport);
+    expect(Math.floor(above.y / TILE)).toBe(19);
   });
 });
