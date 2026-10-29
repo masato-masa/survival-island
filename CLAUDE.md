@@ -3,7 +3,7 @@
 元の仕様書（ドラフト v0.2、Unity/iOS 想定）を **Web で試作** している。
 操作感とゲームバランスをここで詰め、固まってから Unity へ移す前提。
 
-- 設計: `docs/spec-m1.md`（M1 = 核のループ）。数値は `src/game/data.ts`、型は `src/game/types.ts`。
+- 設計: `Obsidian:Projects/survival-island/spec-m1.md`（M1 = 核のループ）。数値は `src/game/data.ts`、型は `src/game/types.ts`。
 - 公開: https://masato-masa.github.io/survival-island/ （`npm run deploy` で gh-pages へ）
 - **共通 UI（shared-ui）は使わない。** 画面全体がフィールドで、HUD を上に浮かせる独自の構成（ユーザー指定）。
   ホーム画面・戻るボタンは無い。スキルは島の「謎の遺跡」、クラフトは「作業台」に触れて開く。
