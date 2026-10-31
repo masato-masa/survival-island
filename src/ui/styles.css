@@ -1098,7 +1098,7 @@ button.hud-portrait:active {
 }
 
 .craft-soon {
-  /* 材料の入手元がまだ無いレシピ（SI-5）。チップの列の下に 1 行で */
+  /* 材料の入手元がまだ無いレシピ（SI-7）。チップの列の下に 1 行で */
   flex-basis: 100%;
   font-size: 11px;
   color: var(--muted, #8a7a66);
