@@ -87,6 +87,12 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   tomato: { id: 'tomato', name: 'トマト', kind: 'crop' },
 };
 
+/**
+ * まだ島で手に入らない材料（2026-10-31 SI-5）。地図に岩を置いていない（洞窟を足すまで）ので、銅の入手元が無い。
+ * クラフト画面で「洞窟で手に入る（準備中）」と出す。入手元を足したら消す（SI-4）。
+ */
+export const NOT_YET_OBTAINABLE: readonly ItemId[] = ['copper'];
+
 export const CROPS: Record<CropId, CropDef> = {
   turnip: { id: 'turnip', name: 'カブ', growMs: 2 * 60 * 1000, unlockLevel: 1 },
   sunflower: { id: 'sunflower', name: 'ヒマワリ', growMs: 4 * 60 * 1000, unlockLevel: 2 },

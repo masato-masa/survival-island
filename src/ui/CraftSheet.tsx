@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react';
 
-import { FURNITURE, FURNITURE_BY_ID, SERIES, craftMs } from '@/game/data';
+import { FURNITURE, FURNITURE_BY_ID, ITEMS, NOT_YET_OBTAINABLE, SERIES, craftMs } from '@/game/data';
 import { knownRecipes } from '@/game/rules';
 import type { FurnitureId, ItemId, SaveState } from '@/game/types';
 import { spriteDataUrl, type SpriteName } from '@/render/sprites';
@@ -95,6 +95,15 @@ export function CraftSheet({
                       );
                     })}
                     <span className="cost-chip stamina-chip">スタミナ {f.stamina}</span>
+                    {costEntries.some(([item]) => NOT_YET_OBTAINABLE.includes(item)) ? (
+                      <span className="craft-soon">
+                        {costEntries
+                          .filter(([item]) => NOT_YET_OBTAINABLE.includes(item))
+                          .map(([item]) => ITEMS[item].name)
+                          .join('・')}
+                        は洞窟で手に入る（準備中）
+                      </span>
+                    ) : null}
                   </div>
                 ) : (
                   <div className="craft-locked-text">
