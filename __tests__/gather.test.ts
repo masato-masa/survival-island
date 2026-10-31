@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { CROPS, FLOWER_GATHERS, FLOWER_GROW_MS, NODES, TREE_GROW_MS } from '../src/game/data';
+import { CROPS, FLOWER_GATHERS, FLOWER_GROW_MS, NODES, STAMINA_BASE, TREE_GROW_MS } from '../src/game/data';
 import { canPlantAt, chooseCrop, craft, farmAction, hitNode, place, plant, workNode } from '../src/game/actions';
 import { allNodes, isBuildable, liveNodeById } from '../src/game/rules';
 import { isSolidTile } from '../src/game/target';
@@ -21,7 +21,7 @@ describe('workNode: 1 回の行動で 1 段階', () => {
     const r1 = workNode(world, save, tree, 0);
     expect(r1.ok).toBe(true);
     expect(save.nodes[tree.id]?.stump).toBe(true);
-    expect(save.stamina.value).toBe(30 - NODES.tree.hp); // 1 回叩くごとに 1
+    expect(save.stamina.value).toBe(STAMINA_BASE - NODES.tree.hp); // 1 回叩くごとに 1
     if (r1.ok) {
       expect(findEvent(r1.events, 'hit')).toHaveLength(1);
       expect(findEvent(r1.events, 'hit')[0]?.damage).toBe(NODES.tree.hp);
@@ -44,7 +44,7 @@ describe('workNode: 1 回の行動で 1 段階', () => {
     const tree = world.nodes.find((n) => n.kind === 'tree');
     if (!tree) throw new Error('no tree');
     expect(workNode(world, save, tree, 0).ok).toBe(true);
-    expect(save.stamina.value).toBe(29);
+    expect(save.stamina.value).toBe(STAMINA_BASE - 1);
   });
 
   it('途中でスタミナが尽きたら削った分を残して止まる。0 なら noStamina', () => {
@@ -85,7 +85,7 @@ describe('花を摘む', () => {
     }
     expect(save.inventory.petal).toBe(2 * FLOWER_GATHERS);
     expect(save.inventory.flowerSeed).toBe(FLOWER_GATHERS);
-    expect(save.stamina.value).toBe(30 - FLOWER_GATHERS);
+    expect(save.stamina.value).toBe(STAMINA_BASE - FLOWER_GATHERS);
     expect(hitNode(world, save, flower, 10 ** 12).ok).toBe(false);
     expect(isSolidTile(world, save, flower.x, flower.y, 10 ** 12)).toBe(false);
   });
@@ -104,7 +104,7 @@ describe('植える', () => {
     const t = freeTile(save);
     expect(plant(world, save, t.x, t.y, 'sapling', 0).ok).toBe(true);
     expect(save.inventory.sapling).toBe(0);
-    expect(save.stamina.value).toBe(29);
+    expect(save.stamina.value).toBe(STAMINA_BASE - 1);
     expect(isSolidTile(world, save, t.x, t.y, 0)).toBe(true);
     expect(isBuildable(world, save, t.x, t.y)).toBe(false);
 

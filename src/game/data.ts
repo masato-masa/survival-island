@@ -22,9 +22,11 @@ import type {
 // ---------------------------------------------------------------------------
 // スタミナ・時間
 
-export const STAMINA_BASE = 30;
+// 30・3 分で 1 → 40・1 分で 1（2026-10-31 SI-2）。30 回（3 秒の行動で約 90 秒）遊ぶと満タンまで 90 分待つのは、
+// 癒やし系の農場ゲームで定番の不満（Knowledge/game-fun の調査 4）。いまは満タンまで 40 分。
+export const STAMINA_BASE = 40;
 export const STAMINA_PER_LEVEL = 5; // staminaMax 1 段階ごと
-export const STAMINA_REGEN_MS = 3 * 60 * 1000; // 3 分で 1 回復
+export const STAMINA_REGEN_MS = 60 * 1000; // 1 分で 1 回復
 export const XP_PER_STAMINA = 1; // 経験値は消費スタミナに比例
 
 /**
