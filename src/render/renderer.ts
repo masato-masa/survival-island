@@ -1099,9 +1099,30 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     const top = region.y0 > 0 ? worldToScreen(0, region.y0 * TILE, camera, viewport).y : -Infinity;
     const bottomY = region.y1 < world.height ? (inCave ? region.y1 : region.y1 - 0.5) : Infinity;
     const bottom = bottomY !== Infinity ? worldToScreen(0, bottomY * TILE, camera, viewport).y : Infinity;
-    ctx.fillStyle = inCave ? CAVE_OUTSIDE : OCEAN;
-    if (top > 0) ctx.fillRect(0, 0, W, top);
-    if (bottom < H) ctx.fillRect(0, Math.max(0, bottom), W, H - Math.max(0, bottom));
+    const fill = inCave ? CAVE_OUTSIDE : OCEAN;
+    const fade = inCave ? 36 : 0; // 洞窟の縁はぼかす（まっすぐな切れ目を見せない）
+    ctx.fillStyle = fill;
+    if (top > 0) {
+      ctx.fillRect(0, 0, W, top);
+      if (fade > 0) {
+        const g = ctx.createLinearGradient(0, top, 0, top + fade);
+        g.addColorStop(0, fill);
+        g.addColorStop(1, `${fill}00`);
+        ctx.fillStyle = g;
+        ctx.fillRect(0, top, W, fade);
+        ctx.fillStyle = fill;
+      }
+    }
+    if (bottom < H) {
+      ctx.fillRect(0, Math.max(0, bottom), W, H - Math.max(0, bottom));
+      if (fade > 0) {
+        const g = ctx.createLinearGradient(0, bottom, 0, bottom - fade);
+        g.addColorStop(0, fill);
+        g.addColorStop(1, `${fill}00`);
+        ctx.fillStyle = g;
+        ctx.fillRect(0, bottom - fade, W, fade);
+      }
+    }
     if (inCave) drawCaveDark(ctx, W, H);
   }
   for (const o of overlays) o();
