@@ -4,7 +4,7 @@
 
 import { AREAS, CHEST_RECIPES, EXTRA_INITIAL_FURNITURE, FURNITURE_CHARS, STATION_CHARS } from './data';
 import { AREA_MAP, MAP } from './map';
-import type { AreaId, Chest, Decor, DecorKind, Ground, InitialFurniture, MapNode, NodeKind, Plot, Station, World } from './types';
+import type { AreaId, Chest, Decor, DecorKind, Ground, InitialFurniture, MapNode, NodeKind, Plot, Region, Station, World } from './types';
 
 /** "x,y" 形式のキーを作る。 */
 export const key = (x: number, y: number): string => `${x},${y}`;
@@ -32,6 +32,7 @@ const AREA_CHAR: Record<string, AreaId> = {
   f: 'forest',
   r: 'rocks',
   h: 'hill',
+  k: 'cave',
 };
 
 /** MAP の文字から直接決まる地面。それ以外（物・配置スペースなど）は周りの地面から決める。 */
@@ -50,9 +51,11 @@ const DIRECT_GROUND: Record<string, Ground> = {
   Q: 'dock',
   S: 'water', // 商船（Decor）の下は海
   p: 'dirt', // 道の配置スペースは道の上にある（周りの多数決だと草になって道が途切れる）
+  g: 'caveFloor',
+  K: 'caveWall',
 };
 
-const WALKABLE_GROUND: Ground[] = ['grass', 'sand', 'dirt', 'paving', 'dock', 'foundation'];
+const WALKABLE_GROUND: Ground[] = ['grass', 'sand', 'dirt', 'paving', 'dock', 'foundation', 'caveFloor'];
 
 /** 4 連結の連結成分を集める（'L' の 4x4 ランドマーク領域、'S' の商船、'F' の家の跡地に使う）。 */
 function connectedComponents(
@@ -171,6 +174,7 @@ function buildFrom(map: string[], areaMap: string[], extraFurniture: InitialFurn
     if (ch === 'H') return 'hardRock';
     if (ch === '#') return 'forestTree';
     if (ch === 'v') return 'flower';
+    if (ch === 'O') return 'copperVein';
     if (isBorderChar(ch) && a) return AREAS[a].border?.kind ?? null;
     return null;
   };
@@ -290,7 +294,34 @@ function buildFrom(map: string[], areaMap: string[], extraFurniture: InitialFurn
     pushDecor(minX, minY, maxX - minX + 1, maxY - minY + 1, 'ship', true);
   }
 
-  return { width, height, ground: resolvedGround, area, nodes, plots, chests, stations, decor, initialFurniture, start };
+  // --- 区画（島・洞窟）と、洞窟の入口・出口 ---
+  let caveTop = -1;
+  for (let y = 0; y < height && caveTop < 0; y++) {
+    for (let x = 0; x < width; x++) {
+      if (area[worldIndex(x, y, width)] === 'cave') {
+        caveTop = y;
+        break;
+      }
+    }
+  }
+  const regions: Region[] =
+    caveTop > 0
+      ? [
+          { id: 'island', y0: 0, y1: caveTop },
+          { id: 'cave', y0: caveTop, y1: height },
+        ]
+      : [{ id: 'island', y0: 0, y1: height }];
+  const entrance = stations.find((s) => s.kind === 'caveEntrance');
+  const exit = stations.find((s) => s.kind === 'caveExit');
+  const caveLink = entrance && exit ? { entrance: { x: entrance.x, y: entrance.y }, exit: { x: exit.x, y: exit.y } } : null;
+
+  return { width, height, ground: resolvedGround, area, nodes, plots, chests, stations, decor, initialFurniture, start, regions, caveLink };
+}
+
+/** y（マス、小数可）を含む区画。範囲外は端の区画。 */
+export function regionAt(world: World, y: number): Region {
+  for (const r of world.regions) if (y >= r.y0 && y < r.y1) return r;
+  return y < 0 ? world.regions[0]! : world.regions[world.regions.length - 1]!;
 }
 
 /** テスト用に小さな独立マップを渡すとき、area は省略できる（全マス beach 扱いにする）。 */

@@ -58,6 +58,11 @@ export function buildGroundDecor(world: World): TreeInstance[] {
       const idx = ty * world.width + tx;
       if (blocked.has(idx)) continue;
       const g = world.ground[idx];
+      // 洞窟の床: ところどころに小石（SI-6）
+      if (g === 'caveFloor') {
+        if (hash2i(tx, ty, 751) < 0.22) out.push({ x: tx + 0.2 + hash2i(tx, ty, 752) * 0.6, y: ty + 0.4 + hash2i(tx, ty, 753) * 0.5, sprite: 'deco_pebble' });
+        continue;
+      }
       if (!isOpenGround(g)) continue;
       // 岸の草地: 水に接するマスに葦
       if ((isWater(tx - 1, ty) || isWater(tx + 1, ty) || isWater(tx, ty - 1) || isWater(tx, ty + 1)) && hash2i(tx, ty, 741) < DECO_DENSITY_REED) {

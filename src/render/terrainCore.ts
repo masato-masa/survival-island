@@ -81,7 +81,9 @@ const enum K {
   Paving = 5,
   Dock = 6,
   Soil = 7,
-  Count = 8,
+  CaveFloor = 8,
+  CaveWall = 9,
+  Count = 10,
 }
 
 const isPathLike = (k: number): boolean => k === K.Dirt || k === K.Paving || k === K.Dock;
@@ -107,6 +109,11 @@ const SOIL_B: RGB = [158, 110, 76];
 const WATER_SHALLOW: RGB = [104, 212, 230];
 const WATER_DEEP: RGB = [27, 150, 213];
 const FOAM: RGB = [246, 253, 252];
+// 洞窟（SI-6）: 床は暖かい灰茶、壁は暗い岩。素材シートの岩（rock_medium）の灰茶に寄せた。
+const CAVE_FLOOR_A: RGB = [158, 138, 116];
+const CAVE_FLOOR_B: RGB = [140, 120, 100];
+const CAVE_WALL_A: RGB = [74, 62, 54];
+const CAVE_WALL_B: RGB = [48, 40, 35];
 const WOOD_TONES: RGB[] = [
   [214, 172, 116],
   [204, 160, 104],
@@ -139,6 +146,8 @@ export function classify(width: number, height: number, ground: readonly string[
         case 'dock': k = K.Dock; break;
         case 'soil': k = K.Soil; break;
         case 'sand': k = K.Sand; break;
+        case 'caveFloor': k = K.CaveFloor; break;
+        case 'caveWall': k = K.CaveWall; break;
         default: k = nearWater(x, y) ? K.Sand : K.Grass;
       }
       out[y * width + x] = k;
@@ -269,6 +278,22 @@ function baseColor(k: number, px: number, py: number, depth: number, out: RGB): 
       out[0] += f;
       out[1] += f;
       out[2] += f;
+      return;
+    }
+    case K.CaveFloor: {
+      const n = valueNoise2D(px, py, 101, 1.6 * TERRAIN_PX) * 0.7 + valueNoise2D(px, py, 103, 0.35 * TERRAIN_PX) * 0.3;
+      mix(CAVE_FLOOR_A, CAVE_FLOOR_B, n, out);
+      return;
+    }
+    case K.CaveWall: {
+      // ごつごつした岩肌: 中くらいの塊の濃淡に、細かい明るい粒
+      const n = valueNoise2D(px, py, 107, 0.9 * TERRAIN_PX) * 0.65 + valueNoise2D(px, py, 109, 0.3 * TERRAIN_PX) * 0.35;
+      mix(CAVE_WALL_A, CAVE_WALL_B, n, out);
+      if (hash2i(px >> 2, py >> 2, 113) > 0.985) {
+        out[0] += 22;
+        out[1] += 18;
+        out[2] += 14;
+      }
       return;
     }
     default:

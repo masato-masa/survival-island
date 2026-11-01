@@ -7,7 +7,8 @@ import type { JSX } from 'react';
 
 import { store } from '@/game/store';
 import { isBuildable, placementAt } from '@/game/rules';
-import type { Fail, GameEvent, StationKind, Target, TimedAction } from '@/game/types';
+import type { Fail, GameEvent, Region, StationKind, Target, TimedAction } from '@/game/types';
+import { regionAt } from '@/game/world';
 
 import {
   baseScaleFor,
@@ -191,6 +192,7 @@ export function WorldView(props: WorldViewProps): JSX.Element {
 
     let raf = 0;
     let lastT = performance.now();
+    let lastRegion: Region | null = null;
 
     const loop = (t: number) => {
       raf = requestAnimationFrame(loop);
@@ -220,13 +222,23 @@ export function WorldView(props: WorldViewProps): JSX.Element {
       const moving = !paused && (moveVector.x !== 0 || moveVector.y !== 0 || pointerCtl.getKeyboardVector().x !== 0 || pointerCtl.getKeyboardVector().y !== 0);
 
       const viewScale = effectiveScale(camera, viewport.baseScale);
+      // カメラは今いる区画（島・洞窟）の中だけを映す。区画が変わった（洞窟に出入りした）ら、滑らせずに飛ぶ。
+      const region = regionAt(world, player.y);
+      const offY = region.y0 * TILE;
+      if (region !== lastRegion) {
+        if (lastRegion) {
+          camera.x = player.x * TILE;
+          camera.y = player.y * TILE;
+        }
+        lastRegion = region;
+      }
       const newCam = stepCamera(
-        camera,
+        { ...camera, y: camera.y - offY },
         (player.x) * TILE,
-        (player.y) * TILE,
+        (player.y) * TILE - offY,
         dtSec,
         world.width * TILE,
-        world.height * TILE,
+        (region.y1 - region.y0) * TILE,
         // 端の制限はワールド px で比べる（画面 px のまま渡すと、拡大しているぶん左右にほとんど動けない）
         viewport.widthCssPx / viewScale,
         viewport.heightCssPx / (viewScale * GROUND_DEPTH),
@@ -235,7 +247,7 @@ export function WorldView(props: WorldViewProps): JSX.Element {
         CAMERA_ANCHOR_Y,
       );
       camera.x = newCam.x;
-      camera.y = newCam.y;
+      camera.y = newCam.y + offY;
       camera.zoom = zoom;
       // 端の制限は平らな地図で計算しているので、斜め視点では手前（南）の端で主人公が画面の下へはみ出す。
       // 足元が画面の下 PLAYER_MAX_Y より下に来るなら、カメラを手前へずらして必ず見えるようにする。

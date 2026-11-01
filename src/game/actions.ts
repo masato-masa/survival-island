@@ -428,3 +428,17 @@ export function place(world: World, save: SaveState, x: number, y: number, furni
 
   return { ok: true, events };
 }
+
+// ---------------------------------------------------------------------------
+// 洞窟の出入り（SI-6）。入口・出口はどちらも奥の壁ぎわにあり、触れると反対側の 1 マス手前（南）へ移る。スタミナは使わない。
+
+export function travel(world: World, save: SaveState, from: 'caveEntrance' | 'caveExit'): Result {
+  const link = world.caveLink;
+  if (!link) return { ok: false, reason: 'notReady' };
+  if (from === 'caveEntrance' && !isAreaOpen(world, save, 'cave')) return { ok: false, reason: 'notReady' };
+  const to = from === 'caveEntrance' ? link.exit : link.entrance;
+  save.player.x = to.x + 0.5;
+  save.player.y = to.y + 1.5;
+  save.player.dir = 'down';
+  return { ok: true, events: [{ type: 'traveled', to: from === 'caveEntrance' ? 'cave' : 'island' }] };
+}

@@ -57,7 +57,9 @@ export function GoalSheet({
                   ? '開放済み'
                   : area.border
                     ? `${SKILLS[area.border.skill].name} Lv${area.border.level} で境界を壊す`
-                    : ''}
+                    : area.entry
+                      ? `${AREAS[area.entry].name}の奥に入口がある`
+                      : ''}
               </span>
             </div>
           );

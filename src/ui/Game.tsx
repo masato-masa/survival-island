@@ -158,6 +158,10 @@ export function Game() {
             }
             break;
           }
+          case 'traveled':
+            playPlace();
+            hapticTap();
+            break;
           case 'areaOpened':
             showBanner(`${AREAS[ev.area].name}が開放されました！`);
             playLevelUp();
@@ -232,6 +236,10 @@ export function Game() {
 
   const onStationTap = (kind: StationKind) => {
     if (sheet !== null) return; // シートが開いている間は二重に開かない
+    if (kind === 'caveEntrance' || kind === 'caveExit') {
+      store.travel(kind); // 洞窟に入る・出る（画面は開かない）
+      return;
+    }
     if (kind === 'ruins') setSheet({ kind: 'skill' });
     else setSheet({ kind: 'stationInfo', station: kind });
     hapticTap();

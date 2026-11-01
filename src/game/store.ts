@@ -46,6 +46,8 @@ export interface GameStore {
   currentAction(): TimedAction | null;
   /** 毎フレーム呼ぶ。行動の終わる時刻を過ぎていたら結果を出す（保存・イベント）。 */
   update(): void;
+  /** 洞窟の入口・出口に触れて、反対側へ移る（SI-6）。作業中は 'cooldown'。 */
+  travel(from: 'caveEntrance' | 'caveExit'): Result;
   /** 苗木・花の種を (x, y) に植える。 */
   plant(x: number, y: number, item: 'sapling' | 'flowerSeed'): Result;
   chooseCrop(plotId: string, crop: CropId | null): Result;
@@ -278,6 +280,11 @@ export function createStore(opts: CreateStoreOptions = {}): GameStore {
       if (result.ok) lastActionInfo = { at: t, x: action.x, y: action.y, kind: action.kind === 'farm' ? 'farm' : 'hit' };
       else notify(); // 失敗でも「行動中」が終わったことは知らせる
       runAction(result);
+    },
+
+    travel(from) {
+      if (pending) return fail('cooldown');
+      return runAction(Actions.travel(world, save, from));
     },
 
     plant(x, y, item) {

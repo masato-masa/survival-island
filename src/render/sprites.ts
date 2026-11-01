@@ -46,6 +46,7 @@ export type SpriteName =
   | 'rock'
   | 'hardRock'
   | 'borderRock'
+  | 'copperVein'
   | 'stump'
   | 'stumpOak'
   | 'stumpCedar'
@@ -61,6 +62,7 @@ export type SpriteName =
   | 'station_ruins'
   | 'station_workbench'
   | 'station_dock'
+  | 'station_cave'
   | 'sign'
   | 'chest'
   | 'chestOpen'
@@ -256,6 +258,9 @@ const SHEET_TARGET: Partial<Record<SpriteName, SheetSpec>> = {
   rock: { src: 'rock_medium', worldW: 34 },
   hardRock: { src: 'rock_medium', worldW: 36, tint: '#8b97a3' },
   borderRock: { src: 'rock_medium', worldW: 36, tint: BORDER_TINT },
+  // 洞窟（SI-6）。銅の鉱脈は銅の塊の絵、入口・出口は洞窟の口の絵（どちらもユーザー提供の素材シート）。
+  copperVein: { src: 'chunk_copper', worldW: 34 },
+  station_cave: { src: 'cave_entrance', worldW: 52 },
 
   rubble: { src: 'rock_pebble', worldW: 26 },
   chest: { src: 'furn_chest', worldW: 34 },

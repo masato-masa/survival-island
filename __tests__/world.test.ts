@@ -2,16 +2,37 @@ import { describe, expect, it } from 'vitest';
 
 import { AREA_ORDER } from '../src/game/data';
 import { newSave } from '../src/game/save';
-import { isSolidTile } from '../src/game/target';
+import { findTarget, isSolidTile } from '../src/game/target';
 import { buildWorld, worldIndex } from '../src/game/world';
 import type { AreaId } from '../src/game/types';
 
 const world = buildWorld();
 
 describe('buildWorld', () => {
-  it('マップは 32x35（細かい 64x70 の設計を 2x2 ずつまとめたもの）', () => {
+  it('マップは島 32x35（細かい 64x70 の設計を 2x2 ずつまとめたもの）の下に、洞窟 32x20 を足したもの', () => {
     expect(world.width).toBe(32);
-    expect(world.height).toBe(35);
+    expect(world.height).toBe(55);
+    expect(world.regions).toEqual([
+      { id: 'island', y0: 0, y1: 35 },
+      { id: 'cave', y0: 35, y1: 55 },
+    ]);
+  });
+
+  it('洞窟（SI-6）: 入口は岩場、出口は洞窟にあり、岩・硬い岩・銅の鉱脈がある', () => {
+    const link = world.caveLink;
+    if (!link) throw new Error('洞窟の入口・出口が無い');
+    expect(world.area[worldIndex(link.entrance.x, link.entrance.y, world.width)]).toBe('rocks');
+    expect(world.area[worldIndex(link.exit.x, link.exit.y, world.width)]).toBe('cave');
+    const count = (kind: string) => world.nodes.filter((n) => n.area === 'cave' && n.kind === kind).length;
+    expect(count('rock')).toBe(6);
+    expect(count('hardRock')).toBe(2);
+    expect(count('copperVein')).toBe(3);
+    // 移った先（入口・出口の 1 マス手前）に立てば、そのまま戻る側に手が届く
+    const save = newSave(world, 0);
+    expect(findTarget(world, save, link.exit.x + 0.5, link.exit.y + 1.5, 'down', 0)).toMatchObject({ kind: 'station', station: { kind: 'caveExit' } });
+    expect(findTarget(world, save, link.entrance.x + 0.5, link.entrance.y + 1.5, 'down', 0)).toMatchObject({ kind: 'station', station: { kind: 'caveEntrance' } });
+    // 島には岩を置かない（石・銅は洞窟で採る）
+    expect(world.nodes.filter((n) => n.area !== 'cave' && ['rock', 'hardRock', 'copperVein'].includes(n.kind))).toEqual([]);
   });
 
   it('7 エリアすべてが空でない', () => {
@@ -26,7 +47,7 @@ describe('buildWorld', () => {
     const byArea = new Map<AreaId, number>();
     for (const n of borderNodes) byArea.set(n.area, (byArea.get(n.area) ?? 0) + 1);
     for (const area of AREA_ORDER) {
-      if (['beach', 'woods', 'plaza', 'ruins'].includes(area)) continue;
+      if (['beach', 'woods', 'plaza', 'ruins', 'cave'].includes(area)) continue;
       expect(byArea.get(area)).toBe(2);
     }
   });
@@ -174,6 +195,12 @@ describe('到達可能性（BFS）', () => {
       }
     }
     const visited = bfsFrom(world.start, (x, y) => isSolidTile(world, save, x, y, 0));
+    // 洞窟は歩いてはつながらない。入口の前に届いていれば、出口の前（着くマス）から先も歩ける
+    const link = world.caveLink;
+    if (!link) throw new Error('洞窟の入口・出口が無い');
+    expect(visited[worldIndex(link.entrance.x, link.entrance.y + 1, world.width)]).toBe(true);
+    const inCave = bfsFrom({ x: link.exit.x, y: link.exit.y + 1 }, (x, y) => isSolidTile(world, save, x, y, 0));
+    for (let i = 0; i < visited.length; i++) if (inCave[i]) visited[i] = true;
 
     const unreached: string[] = [];
     let totalWalkable = 0;

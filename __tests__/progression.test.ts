@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { FURNITURE, NODES, craftMs, STAMINA_REGEN_MS, TREE_GROW_MS } from '../src/game/data';
-import { buySkill, collectCraft, craft, place, plant, workNode } from '../src/game/actions';
-import { actionMs, allNodes, canHit, isAreaOpen, islandLevel, nodeAlive } from '../src/game/rules';
+import { buySkill, collectCraft, craft, openChest, place, plant, travel, workNode } from '../src/game/actions';
+import { actionMs, allNodes, canHit, isAreaOpen, islandLevel, knownRecipes, nodeAlive } from '../src/game/rules';
+import { currentStamina } from '../src/game/time';
 import { applyRespawns } from '../src/game/time';
 import { newSave } from '../src/game/save';
 import { freeTiles, world } from './helpers';
@@ -81,7 +82,23 @@ function createSim() {
     advance(TREE_GROW_MS);
   };
 
-  /** 特定の種類の資源を 1 個破壊する（無ければ苗木を植えて育てる）。 */
+  let respawnWaits = 0;
+  /** 復活する資源（洞窟の岩など）が全部掘られていたら、いちばん早く戻るものまで待つ。 */
+  const waitForRespawn = (kinds: NodeKind[]): void => {
+    let soonest = Infinity;
+    for (const n of world.nodes) {
+      const st = save.nodes[n.id];
+      const ms = NODES[n.kind].respawnMs;
+      if (!kinds.includes(n.kind) || !st || st.destroyedAt == null || ms == null) continue;
+      if (!isAreaOpen(world, save, n.area) || !canHit(save, n)) continue;
+      soonest = Math.min(soonest, st.destroyedAt + ms);
+    }
+    if (soonest === Infinity) throw new Error(`資源が無い: ${kinds.join(',')}`);
+    respawnWaits++;
+    advance(Math.max(0, soonest - now));
+  };
+
+  /** 特定の種類の資源を 1 個破壊する（無ければ苗木を植えて育てる・復活を待つ）。 */
   const destroyOneOf = (kinds: NodeKind[]): void => {
     for (;;) {
       const node = findAliveNode(kinds);
@@ -90,15 +107,26 @@ function createSim() {
         return;
       }
       if (kinds.includes('tree')) replant();
-      else throw new Error(`資源が無い: ${kinds.join(',')}`);
+      else waitForRespawn(kinds);
     }
+  };
+
+  /** 石・銅を掘る資源（洞窟）。先に並べたものから掘る。 */
+  const MINE_FOR: Record<'stone' | 'copper', NodeKind[]> = {
+    stone: ['rock', 'hardRock', 'copperVein'],
+    copper: ['copperVein', 'hardRock'],
   };
 
   /** アイテムが目標数に届くまで、対応する資源を壊し続ける。 */
   const ensureItem = (item: ItemId, amount: number): void => {
-    // 岩・銅鉱石の入手元は、今後追加する洞窟まで無い（フィールドに岩は置かない）。それまではテストで直接足す。
+    // 石・銅は洞窟の岩・鉱脈を掘る（SI-6）。岩場が開いていないと入れない。
     if (item === 'stone' || item === 'copper') {
-      save.inventory[item] = Math.max(save.inventory[item] ?? 0, amount);
+      while ((save.inventory[item] ?? 0) < amount) {
+        const kinds = MINE_FOR[item];
+        const node = findAliveNode(kinds.slice(0, 1)) ?? findAliveNode(kinds);
+        if (node) destroyNode(node);
+        else waitForRespawn(kinds);
+      }
       return;
     }
     if (item !== 'wood') throw new Error(`入手方法を決めていない: ${item}`);
@@ -145,6 +173,10 @@ function createSim() {
     get replants() {
       return replants;
     },
+    get respawnWaits() {
+      return respawnWaits;
+    },
+    advance,
     destroyNode,
     ensureItem,
     buy,
@@ -219,5 +251,88 @@ describe('進行シミュレーション: 木を切り尽くしたあと', () =>
       `[進行測定] 木材 ${target}: ゲーム内経過 ${hours.toFixed(1)} 時間 / 合計スタミナ消費 ${sim.save.totalXp} / ` +
         `行動 ${sim.actions} 回 / 植え直し ${sim.replants} 回`,
     );
+  });
+});
+
+describe('進行シミュレーション: 洞窟（SI-6）', () => {
+  it('岩場を開けば洞窟に入れ、銅のレシピを作れる。かかった時間とスタミナを記録する', () => {
+    const sim = createSim();
+    const { save, destroyNode, buy } = sim;
+    const minutes = (ms: number) => (ms / 60000).toFixed(1);
+
+    // --- 1. 洞窟に入れるまで（採掘 Lv1 → 岩場の境界の大岩 2 つ） ---
+    expect(isAreaOpen(world, save, 'cave')).toBe(false);
+    expect(travel(world, save, 'caveEntrance').ok).toBe(false);
+    buy('pickHard', 10);
+    for (const b of world.nodes.filter((n) => n.area === 'rocks' && n.kind === 'borderRock')) destroyNode(b);
+    expect(isAreaOpen(world, save, 'cave')).toBe(true);
+    expect(travel(world, save, 'caveEntrance').ok).toBe(true);
+    expect(world.area[Math.floor(save.player.y) * world.width + Math.floor(save.player.x)]).toBe('cave');
+    const openAt = sim.now;
+    const openStamina = save.totalXp;
+
+    // --- 2. 銅のレシピを 1 つ作るまで（岩場の宝箱で銅のランタンを覚える → 洞窟で掘る → 作業台） ---
+    const chest = world.chests.find((c) => c.area === 'rocks');
+    if (!chest) throw new Error('岩場の宝箱が無い');
+    openChest(world, save, chest);
+    expect(knownRecipes(save)).toContain('copperLamp');
+    const lamp = FURNITURE.find((f) => f.id === 'copperLamp');
+    if (!lamp) throw new Error('no copperLamp');
+    for (const [item, amount] of Object.entries(lamp.cost) as [ItemId, number][]) sim.ensureItem(item, amount);
+    expect(craft(save, 'copperLamp', sim.now).ok).toBe(true);
+    sim.advance(craftMs('copperLamp'));
+    expect(collectCraft(save, sim.now).ok).toBe(true);
+    expect(save.furniture.copperLamp).toBe(1);
+    const lampAt = sim.now;
+    const lampStamina = save.totalXp;
+
+    // --- 3. 満タンのスタミナ 1 本で洞窟を 1 周（全部掘る）すると、何が手に入るか ---
+    sim.advance(60 * 60 * 1000); // 全部戻って、スタミナも満タン
+    const staminaBefore = currentStamina(save, sim.now).value;
+    const before = { stone: save.inventory.stone ?? 0, copper: save.inventory.copper ?? 0, xp: save.totalXp, at: sim.now };
+    const caveNodes = world.nodes.filter((n) => n.area === 'cave' && canHit(save, n));
+    for (const n of caveNodes) destroyNode(n);
+    const lap = {
+      stone: (save.inventory.stone ?? 0) - before.stone,
+      copper: (save.inventory.copper ?? 0) - before.copper,
+      stamina: save.totalXp - before.xp,
+      ms: sim.now - before.at,
+    };
+    const slowest = Math.max(...caveNodes.map((n) => NODES[n.kind].respawnMs ?? 0));
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[洞窟測定] 洞窟に入れるまで: ゲーム内 ${minutes(openAt)} 分 / スタミナ ${openStamina}` +
+        ` | 銅のランタン完成まで: ${minutes(lampAt)} 分 / スタミナ ${lampStamina}（復活待ち ${sim.respawnWaits} 回）` +
+        ` | 1 周（${caveNodes.length} か所）: 石 ${lap.stone}・銅 ${lap.copper} / スタミナ ${lap.stamina}（満タン ${staminaBefore}）/ 行動 ${minutes(lap.ms)} 分` +
+        ` | 全部戻るまで ${minutes(slowest)} 分`,
+    );
+    // 「今日の分」: 満タン 1 本で 1 周でき、銅のレシピ 1 つぶん（最大 3 個）以上が採れる
+    expect(lap.stamina).toBeLessThanOrEqual(staminaBefore);
+    expect(lap.copper).toBeGreaterThanOrEqual(3);
+  });
+
+  it('開いたレシピはすべて、洞窟の石・銅で作れる（入手元の無い材料が無い）', () => {
+    const sim = createSim();
+    sim.buy('pickHard', 10);
+    for (const b of world.nodes.filter((n) => n.area === 'rocks' && n.kind === 'borderRock')) sim.destroyNode(b);
+    sim.save.maxPoints = 100; // 島レベル 5
+    for (const c of world.chests) openChest(world, sim.save, c);
+    for (const id of knownRecipes(sim.save)) {
+      const def = FURNITURE.find((f) => f.id === id);
+      if (!def) throw new Error(`no furniture ${id}`);
+      for (const [item, amount] of Object.entries(def.cost) as [ItemId, number][]) {
+        if (item === 'stone' || item === 'copper' || item === 'wood') sim.ensureItem(item, amount);
+        else sim.save.inventory[item] = Math.max(sim.save.inventory[item] ?? 0, amount); // 花びら・作物は花と畑で採る（ここでは足す）
+      }
+      let r = craft(sim.save, id, sim.now);
+      while (!r.ok && r.reason === 'noStamina') {
+        sim.advance(STAMINA_REGEN_MS);
+        r = craft(sim.save, id, sim.now);
+      }
+      expect(r.ok, `${id}: ${r.ok ? '' : r.reason}`).toBe(true);
+      sim.advance(craftMs(id));
+      expect(collectCraft(sim.save, sim.now).ok).toBe(true);
+    }
   });
 });

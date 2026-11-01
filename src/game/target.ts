@@ -154,7 +154,7 @@ export function isSolidTile(world: World, save: SaveState, x: number, y: number,
   if (x < 0 || y < 0 || x >= world.width || y >= world.height) return true;
   const idx = worldIndex(x, y, world.width);
   const ground = world.ground[idx];
-  if (ground === 'water' || ground === 'forest') return true;
+  if (ground === 'water' || ground === 'forest' || ground === 'caveWall') return true;
 
   for (const node of world.nodes) {
     if (node.x === x && node.y === y && nodeAlive(save, node, now)) return true;

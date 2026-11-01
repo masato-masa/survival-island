@@ -1,4 +1,4 @@
-// 島のマップを組み立てて src/game/map.ts に書き出す（設計は細かい 64×70、書き出しは 2×2 にまとめた 32×35）。
+// 島のマップを組み立てて src/game/map.ts に書き出す（設計は細かい 64×70、書き出しは 2×2 にまとめた 32×35。その下に洞窟 32×20 を足す）。
 //
 //   node scripts/build-map.mjs
 //
@@ -258,6 +258,9 @@ for (let y = 3; y <= 12; y++) for (let x = 44; x <= 60; x++) if (hash(x, y, 62) 
 put([[46, 5], [52, 4], [57, 6], [49, 9], [55, 10]], 'R');
 put([[50, 6], [58, 9], [45, 11]], 'H');
 set(59, 4, 'c');
+// 洞窟の入口（SI-6）。入ると地図の下に足した洞窟（10.）へ移る。岩場の奥の崖ぎわ。
+rect(51, 4, 54, 8, '.'); // 入口と、その前（戻ってきたときに立つマス）は空けておく
+set(52, 5, 'E');
 areaRect(43, 2, 61, 12, 'r');
 set(47, 13, '2');
 set(48, 13, '2');
@@ -287,7 +290,7 @@ areaRect(21, 2, 41, 12, 'h');
 // たどり着けない歩ける場所（森や木・岩に閉じ込められたポケット）は森で埋める。
 // 開始位置から塗り広げる。境界（1 2 3）は壊せる前提で通れるものとして扱う。
 {
-  const SOLID = new Set(['#', '~', 'S', 'B', 'P', 'Q', 'X', 'W', 'T', 't', 'R', 'H', 's', 'c']);
+  const SOLID = new Set(['#', '~', 'S', 'B', 'P', 'Q', 'X', 'W', 'T', 't', 'R', 'H', 's', 'c', 'E']);
   const seen = Array.from({ length: H }, () => Array(W).fill(false));
   const stack = [];
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (get(x, y) === '@') stack.push([x, y]);
@@ -329,7 +332,7 @@ for (let pass = 0; pass < 20; pass++) {
 // 物体（木・岩・柱）は道の上に落ちると道をふさぐので、ブロックの地面が道ならばその物体は捨てる。
 
 const PATHY = new Set([':', '=', 'D']);
-const SPECIAL = ['@', 'X', 'W', 'Q', 'c', 's'];
+const SPECIAL = ['@', 'X', 'W', 'Q', 'c', 's', 'E'];
 const BORDERS = ['1', '2', '3'];
 const SLOTS = ['b', 'o', 'd', 'e', 'k', 'w', 'p'];
 const NODES = ['t', 'H', 'T', 'R', 'v']; // 花（v）は木より後回し
@@ -412,7 +415,7 @@ const { ct, ca, cw, ch } = coarsen();
 }
 
 // たどり着けない歩ける場所を森で埋める（粗くしたあとの地図でもう一度）
-const COARSE_SOLID = new Set(['#', '~', 'S', 'B', 'P', 'Q', 'X', 'W', 'T', 't', 'R', 'H', 's', 'c', 'v']);
+const COARSE_SOLID = new Set(['#', '~', 'S', 'B', 'P', 'Q', 'X', 'W', 'T', 't', 'R', 'H', 's', 'c', 'v', 'E']);
 {
   const SOLID = COARSE_SOLID;
   const seen = Array.from({ length: ch }, () => Array(cw).fill(false));
@@ -453,7 +456,7 @@ for (let pass = 0; pass < 20; pass++)
 //    花どうしは隣り合わせない（斜めも）。置くとたどり着けるマスが減る（道や通り道をふさぐ）なら置かない。
 {
   const FLOWER_RATE = 1 / 13.5;
-  const KEEP_CLEAR = new Set(['@', 's', 'c', 'W', 'X', 'Q', 'P', '1', '2', '3', 'f', 'F']);
+  const KEEP_CLEAR = new Set(['@', 's', 'c', 'W', 'X', 'Q', 'P', '1', '2', '3', 'f', 'F', 'E']);
   const RESERVED = [
     [15, 17],
     [7, 14],
@@ -506,6 +509,76 @@ for (let pass = 0; pass < 20; pass++)
 }
 
 // ---------------------------------------------------------------------------
+// 10. 洞窟（SI-6）。島の地図の下に、粗い 32 列 × CAVE_H 行で足す。歩いてはつながらず、
+//     岩場の入口（E）に触れると出口（x）の下のマスへ移る。カメラは今いる側（島・洞窟）の中だけを映す。
+//     K 岩の壁（通れない）  g 洞窟の床  O 銅の鉱脈  R 岩  H 硬い岩  x 出口
+//     数（岩 6・硬い岩 2・鉱脈 3）は「満タンのスタミナ 1 本で回りきれる、今日の分」を目標に決めた
+//     （progression.test.ts の洞窟の測定で確かめる）。
+
+const CAVE_H = 20;
+const CAVE_ROCKS = 6;
+const CAVE_HARD = 2;
+const CAVE_VEINS = 3;
+{
+  const cave = Array.from({ length: CAVE_H }, () => Array(cw).fill('K'));
+  const cx = 15.5;
+  const cy = 9;
+  for (let y = 0; y < CAVE_H; y++)
+    for (let x = 0; x < cw; x++) {
+      const nx = (x - cx) / (7.5 + wobble(y, 91, 1, 3));
+      const ny = (y - cy) / (5.5 + wobble(x, 92, 1, 3));
+      if (nx * nx + ny * ny <= 1) cave[y][x] = 'g';
+    }
+  // 出口は床のいちばん上（奥の壁）の真ん中。その下のマスに着く。
+  // 島の入口と同じく「上へ向かって触れる」形にする（体の中心は足元より上なので、下にある物には手が届きにくい）
+  let exitY = 0;
+  while (exitY < CAVE_H - 1 && cave[exitY + 1][16] !== 'g') exitY++;
+  cave[exitY][16] = 'x';
+  const landing = [16, exitY + 1];
+  const reach = () => {
+    const seen = Array.from({ length: CAVE_H }, () => Array(cw).fill(false));
+    const stack = [landing];
+    let n = 0;
+    while (stack.length) {
+      const [x, y] = stack.pop();
+      if (x < 0 || y < 0 || x >= cw || y >= CAVE_H || seen[y][x] || cave[y][x] !== 'g') continue;
+      seen[y][x] = true;
+      n++;
+      stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+    }
+    return n;
+  };
+  // 置き場の候補（床。着地点のまわり 2 マスは空ける）をハッシュ順に並べ、隣り合わず・通り道をふさがないものから置く
+  const spots = [];
+  for (let y = 0; y < CAVE_H; y++)
+    for (let x = 0; x < cw; x++)
+      if (cave[y][x] === 'g' && Math.abs(x - landing[0]) + Math.abs(y - landing[1]) > 2) spots.push([x, y, hash(x, y, 93)]);
+  spots.sort((a, b) => a[2] - b[2]);
+  const want = [...Array(CAVE_VEINS).fill('O'), ...Array(CAVE_HARD).fill('H'), ...Array(CAVE_ROCKS).fill('R')];
+  let floor = reach();
+  for (const [x, y] of spots) {
+    if (want.length === 0) break;
+    let near = false;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ('ORH'.includes(cave[y + dy]?.[x + dx] ?? '-')) near = true;
+    if (near) continue;
+    cave[y][x] = want[0];
+    const after = reach();
+    if (after < floor - 1) {
+      cave[y][x] = 'g';
+      continue;
+    }
+    floor = after;
+    want.shift();
+  }
+  if (want.length > 0) throw new Error(`洞窟に置ききれなかった: ${want.join('')}`);
+  for (let y = 0; y < CAVE_H; y++) {
+    ct.push(cave[y]);
+    ca.push(Array(cw).fill('k'));
+  }
+  console.error(`洞窟 ${cw}×${CAVE_H}（床 ${floor} マス、出口 16,${ch + exitY}）`);
+}
+
+// ---------------------------------------------------------------------------
 // 書き出し
 
 const rows = ct.map((r) => r.join(''));
@@ -517,7 +590,7 @@ export const MAP: string[] = [
 ${rows.map((r) => `  '${r}',`).join('\n')}
 ];
 
-/** エリアの層。s 砂浜 / w 森の小道 / p 開けた土地 / u 遺跡 / f 北西の森 / r 北東の岩場 / h 北の丘 */
+/** エリアの層。s 砂浜 / w 森の小道 / p 開けた土地 / u 遺跡 / f 北西の森 / r 北東の岩場 / h 北の丘 / k 洞窟 */
 export const AREA_MAP: string[] = [
 ${arows.map((r) => `  '${r}',`).join('\n')}
 ];

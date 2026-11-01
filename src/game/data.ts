@@ -88,10 +88,10 @@ export const ITEMS: Record<ItemId, ItemDef> = {
 };
 
 /**
- * まだ島で手に入らない材料（2026-10-31 SI-7）。地図に岩を置いていない（洞窟を足すまで）ので、銅の入手元が無い。
- * クラフト画面で「洞窟で手に入る（準備中）」と出す。入手元を足したら消す（SI-6）。
+ * まだ島で手に入らない材料（2026-10-31 SI-7）。クラフト画面で「〜は洞窟で手に入る（準備中）」と出す。
+ * 銅は SI-6（2026-11-01）で洞窟の鉱脈から採れるようになったので、いまは空。
  */
-export const NOT_YET_OBTAINABLE: readonly ItemId[] = ['copper'];
+export const NOT_YET_OBTAINABLE: readonly ItemId[] = [];
 
 export const CROPS: Record<CropId, CropDef> = {
   turnip: { id: 'turnip', name: 'カブ', growMs: 2 * 60 * 1000, unlockLevel: 1 },
@@ -115,6 +115,8 @@ export const NODES: Record<NodeKind, NodeDef> = {
   borderTree: { kind: 'borderTree', name: '境界の木', hp: 3, drops: { wood: 4 }, respawnMs: null, tool: 'axe' },
   borderRock: { kind: 'borderRock', name: '境界の大岩', hp: 3, drops: { stone: 4 }, respawnMs: null, tool: 'pick' },
   forestTree: { kind: 'forestTree', name: '森の主', hp: 4, drops: { wood: 3 }, respawnMs: null, tool: 'axe' },
+  // 洞窟（SI-6）。岩・硬い岩・銅の鉱脈は掘っても時間で戻る（「今日の分」を取りに行く場所）。
+  copperVein: { kind: 'copperVein', name: '銅の鉱脈', hp: 3, drops: { copper: 1, stone: 1 }, respawnMs: 15 * 60 * 1000, tool: 'pick' },
   // 花は 1 回摘むごとに drops が出て、hp（= 摘める回数）が 1 減る。
   flower: { kind: 'flower', name: '花', hp: FLOWER_GATHERS, drops: { petal: 2, flowerSeed: 1 }, respawnMs: null, tool: 'gather' },
 };
@@ -351,9 +353,11 @@ export const AREAS: Record<AreaId, AreaDef> = {
   forest: { id: 'forest', name: '北西の森', border: { kind: 'borderTree', skill: 'axePower', level: 1 }, borderChar: '1' },
   rocks: { id: 'rocks', name: '北東の岩場', border: { kind: 'borderRock', skill: 'pickHard', level: 1 }, borderChar: '2' },
   hill: { id: 'hill', name: '北の丘', border: { kind: 'borderTree', skill: 'axePower', level: 2 }, borderChar: '3' },
+  // 岩場の奥の入口から入る（岩場が開けば入れる）。
+  cave: { id: 'cave', name: '岩場の洞窟', border: null, borderChar: null, entry: 'rocks' },
 };
 
-export const AREA_ORDER: AreaId[] = ['beach', 'woods', 'plaza', 'ruins', 'forest', 'rocks', 'hill'];
+export const AREA_ORDER: AreaId[] = ['beach', 'woods', 'plaza', 'ruins', 'forest', 'rocks', 'hill', 'cave'];
 
 /** 宝箱で覚えるレシピ。key は宝箱のあるエリア。 */
 export const CHEST_RECIPES: Partial<Record<AreaId, string>> = {
@@ -375,6 +379,8 @@ export const CHEST_RECIPES: Partial<Record<AreaId, string>> = {
 //   T 木   t 太い木   R 岩   H 硬い岩   v 花（地面は草。摘める資源 'flower'）
 //   1 2 3 境界（数字 = AREAS の borderChar）。ノードの種類は AREAS[area].border.kind
 //   f 畑   s 看板（上下左右に接する畑の区画の看板になる）   c 宝箱
+//   洞窟（地図の下の区画）: K 岩壁（地面 caveWall。通れない）  g 床（地面 caveFloor）  O 銅の鉱脈
+//   E 洞窟の入口（島側。Station 'caveEntrance'）  x 洞窟の出口（洞窟側。Station 'caveExit'）
 //   X 謎の遺跡（スキル）   W 作業台（家具 woodWorkbench を最初から置く。触るとクラフト。動かせる）   @ 開始位置
 //   配置スペース（1x1）: b ベンチ  l ランドマーク  p 道  w 作業台  k キッチン  d 机  o 飾り  e 柵
 //
@@ -382,9 +388,9 @@ export const CHEST_RECIPES: Partial<Record<AreaId, string>> = {
 // 周囲 4 マスの「歩ける地面」（grass/sand/dirt/paving/dock/foundation）の多数決で決める
 // （既定は grass）。エリアは AREA_MAP の文字からそのまま決まる（水だけ null）。
 //
-// エリア文字（AREA_MAP）: s 砂浜  w 森の小道  p 開けた土地  u 遺跡  f 北西の森  r 北東の岩場  h 北の丘
+// エリア文字（AREA_MAP）: s 砂浜  w 森の小道  p 開けた土地  u 遺跡  f 北西の森  r 北東の岩場  h 北の丘  k 洞窟
 
-export const STATION_CHARS: Record<string, StationKind> = { X: 'ruins', Q: 'dock' };
+export const STATION_CHARS: Record<string, StationKind> = { X: 'ruins', Q: 'dock', E: 'caveEntrance', x: 'caveExit' };
 
 /** 最初から家具を置く地図の記号。 */
 export const FURNITURE_CHARS: Record<string, FurnitureId> = { W: 'woodWorkbench', P: 'oldPillar' };
@@ -393,5 +399,7 @@ export const STATIONS: Record<StationKind, { name: string; hint: string }> = {
   ruins: { name: '謎の遺跡', hint: 'スキルを授かる' },
   housePlot: { name: '家の跡地', hint: 'いつか ここに家を建てられそうだ' },
   dock: { name: '船着き場', hint: 'ときどき商船が来るらしい（交易は準備中）' },
+  caveEntrance: { name: '洞窟の入口', hint: '入る' },
+  caveExit: { name: '洞窟の出口', hint: '外へ出る' },
 };
 

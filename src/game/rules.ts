@@ -115,8 +115,10 @@ export function knownCrops(save: SaveState): CropId[] {
     .map((c) => c.id);
 }
 
-/** エリアが開いているか（境界が null のエリアは常に開いている。他は境界ノードが全て壊れている）。 */
+/** エリアが開いているか（境界が null のエリアは常に開いている。他は境界ノードが全て壊れている。入口から入るエリアは入口側しだい）。 */
 export function isAreaOpen(world: World, save: SaveState, area: AreaId): boolean {
+  const entry = AREAS[area].entry;
+  if (entry) return isAreaOpen(world, save, entry); // 洞窟は入口のあるエリア（岩場）が開けば入れる
   if (AREAS[area].border == null) return true;
   const borders = world.nodes.filter(
     (n) => n.area === area && (n.kind === 'borderTree' || n.kind === 'borderRock'),

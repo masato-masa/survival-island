@@ -24,6 +24,7 @@ import { FURNITURE_BY_ID, ITEMS, NODES, STATIONS } from '@/game/data';
 import { cropProgress } from '@/game/time';
 import { allNodes, isBuildable, nodeAlive, nodeRequirement, placementRect } from '@/game/rules';
 import { store } from '@/game/store';
+import { regionAt } from '@/game/world';
 
 import { followFactor, GROUND_DEPTH, HEIGHT_SCALE, project3, screenToWorld, TILE, type CameraState, type Viewport, worldToScreen } from './camera';
 import { getGroundFurnitureSprite, getSprite, type SpriteName } from './sprites';
@@ -92,7 +93,7 @@ export function toolForAction(a: TimedAction): AvatarTool {
 }
 
 const TREE_KIND_SET = new Set<NodeKind>(['tree', 'bigTree', 'borderTree', 'forestTree']);
-const isStoneKind = (k: NodeKind) => k === 'rock' || k === 'hardRock' || k === 'borderRock';
+const isStoneKind = (k: NodeKind) => k === 'rock' || k === 'hardRock' || k === 'borderRock' || k === 'copperVein';
 
 /** 揺れが続く時間と形（減衰振動）。 */
 const SWAY_MS = 1500;
@@ -456,6 +457,19 @@ function hash2(x: number, y: number): number {
 const CANVAS_FONT = "'M PLUS Rounded 1c', 'Hiragino Maru Gothic ProN', sans-serif";
 
 const OCEAN = '#1b96d5'; // 地図の外（海）。terrainCore.ts の WATER_DEEP と同じ色
+const CAVE_OUTSIDE = '#2b2420'; // 洞窟の外側（岩の奥）。terrainCore.ts の CAVE_WALL_B に近い色
+
+/** 洞窟の中の暗がり（画面の縁ほど暗い）。主人公のまわりは明るく残る。 */
+function drawCaveDark(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+  const cx = W / 2;
+  const cy = H * 0.55;
+  const r = Math.hypot(W, H) * 0.6;
+  const g = ctx.createRadialGradient(cx, cy, r * 0.25, cx, cy, r);
+  g.addColorStop(0, 'rgba(20,14,10,0)');
+  g.addColorStop(1, 'rgba(20,14,10,0.55)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+}
 
 const DECOR_SPRITE: Record<DecorKind, SpriteName> = {
   rubble: 'decor_rubble' as SpriteName,
@@ -501,6 +515,7 @@ function getSilhouette(src: CanvasImageSource & { width: number; height: number 
 const NODE_TO_STUMP: Partial<Record<NodeKind, SpriteName>> = {
   rock: 'rubble' as SpriteName,
   hardRock: 'rubble' as SpriteName,
+  copperVein: 'rubble' as SpriteName,
 };
 
 /** 背が高く、後ろに人が隠れる物。 */
@@ -953,8 +968,12 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     drawables.push({ y: d.y + d.h, draw: () => drawUpright(name, wx, wy, true, 1, fit) });
   }
 
-  // --- 設備（遺跡・船着き場・家の跡地）。作業台・たき火などは置いた家具として下で描く ---
+  // --- 設備（遺跡・船着き場・家の跡地・洞窟の入口と出口）。作業台・たき火などは置いた家具として下で描く ---
   for (const station of world.stations) {
+    if (station.kind === 'caveEntrance' || station.kind === 'caveExit') {
+      drawables.push({ y: station.y + 1, draw: () => drawUpright('station_cave', (station.x + 0.5) * TILE, (station.y + BASE_IN_TILE) * TILE, true, 1, 1.6) });
+      continue;
+    }
     if (station.kind !== 'ruins' && station.kind !== 'dock') continue; // 家の跡地は地面だけ
     drawables.push({
       y: station.y + 1,
@@ -1070,8 +1089,21 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     }
   }
   // 雲の影（物の上にもかかる）と、ゆっくり呼吸するあたたかい光
-  if (ambientOn && amb.clouds !== false) drawCloudShadows(ctx, camera, viewport, now, world.width * TILE, world.height * TILE);
+  const region = regionAt(world, save.player.y);
+  const inCave = region.id === 'cave';
+  if (ambientOn && amb.clouds !== false && !inCave) drawCloudShadows(ctx, camera, viewport, now, world.width * TILE, world.height * TILE);
   if (ambientOn && amb.light !== false) drawLightBreath(ctx, W, H, now);
+  // 今いる区画（島・洞窟）の外は塗りつぶす（同じ地図の別の行にあるもう一方を見せない）。
+  // 島の下の端は、水の泡の帯が見えないよう半マス手前から海の色にする。
+  {
+    const top = region.y0 > 0 ? worldToScreen(0, region.y0 * TILE, camera, viewport).y : -Infinity;
+    const bottomY = region.y1 < world.height ? (inCave ? region.y1 : region.y1 - 0.5) : Infinity;
+    const bottom = bottomY !== Infinity ? worldToScreen(0, bottomY * TILE, camera, viewport).y : Infinity;
+    ctx.fillStyle = inCave ? CAVE_OUTSIDE : OCEAN;
+    if (top > 0) ctx.fillRect(0, 0, W, top);
+    if (bottom < H) ctx.fillRect(0, Math.max(0, bottom), W, H - Math.max(0, bottom));
+    if (inCave) drawCaveDark(ctx, W, H);
+  }
   for (const o of overlays) o();
 
   // --- ハイライト（通常モードのみ） ---

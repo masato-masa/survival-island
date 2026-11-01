@@ -41,8 +41,9 @@ export type SlotAttr =
 
 export type SeriesId = 'wood' | 'stone' | 'garden';
 
-/** エリア。beach・woods・plaza・ruins は最初から入れる。forest・rocks・hill は境界を壊すと開く。 */
-export type AreaId = 'beach' | 'woods' | 'plaza' | 'ruins' | 'forest' | 'rocks' | 'hill';
+/** エリア。beach・woods・plaza・ruins は最初から入れる。forest・rocks・hill は境界を壊すと開く。
+ *  cave（洞窟）は地図の下に足した別の区画で、岩場の入口から入る（SI-6）。 */
+export type AreaId = 'beach' | 'woods' | 'plaza' | 'ruins' | 'forest' | 'rocks' | 'hill' | 'cave';
 
 /** マップ上の資源（叩いて壊すもの）。 */
 export type NodeKind =
@@ -53,6 +54,7 @@ export type NodeKind =
   | 'borderTree' // 境界の大木（エリアごとに必要 Lv が違う）
   | 'borderRock' // 境界の大岩
   | 'forestTree' // 森の木（いちばん高い段階の斧でだけ切れる）
+  | 'copperVein' // 銅の鉱脈（洞窟にある。銅鉱石が出る）
   | 'flower'; // 花（道具なしで摘める。FLOWER_GATHERS 回で消える）
 
 export type Dir = 'up' | 'down' | 'left' | 'right';
@@ -114,6 +116,8 @@ export interface AreaDef {
   border: { kind: 'borderTree' | 'borderRock'; skill: SkillId; level: number } | null;
   /** マップの境界マスの記号（'1' '2' '3'）。初期エリアは null。 */
   borderChar: string | null;
+  /** 歩いてはつながらず、このエリアの入口から入る（洞窟 → 岩場）。そのエリアが開いていれば開いている。 */
+  entry?: AreaId;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,7 +125,18 @@ export interface AreaDef {
 
 /** 地面。forest は通れない深い森（描画は木々のかたまり）。dock は海の上の桟橋（歩ける）。
  *  dirt は土の道、paving は古い石畳、foundation は家の跡地の土台。 */
-export type Ground = 'water' | 'grass' | 'sand' | 'soil' | 'dirt' | 'paving' | 'forest' | 'dock' | 'foundation';
+export type Ground =
+  | 'water'
+  | 'grass'
+  | 'sand'
+  | 'soil'
+  | 'dirt'
+  | 'paving'
+  | 'forest'
+  | 'dock'
+  | 'foundation'
+  | 'caveFloor' // 洞窟の床（歩ける。家具は置けない）
+  | 'caveWall'; // 洞窟の岩壁（通れない）
 
 /** 飾りの置物。叩けない。rubble だけは上を歩ける。ship は w×h を占める 1 つの物。
  *  （柱は家具 oldPillar になった。動かせる） */
@@ -163,7 +178,15 @@ export interface Chest {
 /** 島に据え付けの設備（動かせない）。触れると画面が開く。
  *  ruins = スキル、housePlot = 家の跡地（今は説明だけ）、dock = 船着き場（今は説明だけ。交易は M2）。
  *  作業台は設備ではなく家具 woodWorkbench（最初から置いてあり、動かせる。触れるとクラフト）。 */
-export type StationKind = 'ruins' | 'housePlot' | 'dock';
+export type StationKind = 'ruins' | 'housePlot' | 'dock' | 'caveEntrance' | 'caveExit';
+
+/** 地図の区画。島と洞窟は同じ World の別の行にあり、カメラは今いる区画の中だけを映す。 */
+export interface Region {
+  id: 'island' | 'cave';
+  /** 行の範囲 [y0, y1)。 */
+  y0: number;
+  y1: number;
+}
 
 export interface Station {
   id: string; // "x,y"
@@ -193,6 +216,10 @@ export interface World {
   /** 最初から置いてある家具（作業台・古い柱・たき火・遺跡のアーチ）。 */
   initialFurniture: InitialFurniture[];
   start: { x: number; y: number };
+  /** 区画（島・洞窟）。洞窟の無い地図は島だけ。 */
+  regions: Region[];
+  /** 洞窟の入口と出口（触れると反対側の前のマスへ移る）。無い地図は null。 */
+  caveLink: { entrance: { x: number; y: number }; exit: { x: number; y: number } } | null;
 }
 
 /** 地図の資源と、植えた木・花をまとめた「いまフィールドにある資源」（rules.ts の allNodes）。 */
@@ -298,6 +325,8 @@ export type GameEvent =
   /** 苗木・花の種を植えた。 */
   | { type: 'sowed'; x: number; y: number; plant: 'tree' | 'flower' }
   | { type: 'areaOpened'; area: AreaId }
+  /** 洞窟に入った・出た。 */
+  | { type: 'traveled'; to: 'cave' | 'island' }
   | { type: 'planted'; tiles: { x: number; y: number }[] }
   | { type: 'harvested'; tiles: { x: number; y: number }[]; crop: CropId; amount: number }
   | { type: 'chest'; x: number; y: number; recipe: FurnitureId }
