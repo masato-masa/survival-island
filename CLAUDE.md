@@ -99,4 +99,4 @@
 - URL に `?mute` を付けると音を止める（確認用。保存された設定は変えない）。
 - **釣り（SI-9）。** 桟橋の係留柱（船着き場）に触れると釣りの画面（`FishingSheet.tsx`）。浮きが左右に動き、中央で「つる！」。1 回 1 スタミナ（島の経験値も入る）。
   中央の狭いところ（perfect）だと半々で大物、広い緑（good）ならさかな、外れは逃げられる（`actions.fish`・`fishQuality`）。魚は「ごはん」の焼き魚（さかな 2）・魚のごった煮（大物 + カブ）になる。
-  収支は `__tests__/cooking.test.ts`（魚 1 匹 = 1÷0.65 スタミナ、大物 = 5）。魚の絵はコード描画の仮（`item_fish` `item_bigFish`）。ChatGPT で作り直す。
+  収支は `__tests__/cooking.test.ts`（魚 1 匹 = 1÷0.65 スタミナ、大物 = 5）。魚の絵は ChatGPT 製（`refs/gen/fish.png` → `slice-gen.mjs fish`。元画像は game-assets）。

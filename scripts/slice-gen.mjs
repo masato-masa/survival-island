@@ -29,6 +29,13 @@ const SHEETS = {
     maxSize: 256,
     names: ['item_wood', 'item_stone', 'item_copper', 'item_sapling', 'item_flowerSeed', 'item_petal'],
   },
+  fish: {
+    file: 'refs/gen/fish.png',
+    cols: 2,
+    rows: 1,
+    maxSize: 256,
+    names: ['item_fish', 'item_bigFish'],
+  },
   plants: {
     file: 'refs/gen/plants.png',
     cols: 5,
