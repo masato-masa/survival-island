@@ -1,8 +1,11 @@
 // 釣り（SI-9）。桟橋で浮きを合わせて魚を釣る。
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import { cook, fish, fishQuality } from '../src/game/actions';
-import { bobberPos } from '../src/ui/FishingSheet';
+import { bobberPos, FishingSheet } from '../src/ui/FishingSheet';
+import { CraftSheet } from '../src/ui/CraftSheet';
 import { freshSave } from './helpers';
 
 describe('釣り', () => {
@@ -63,5 +66,26 @@ describe('釣り', () => {
     for (let i = 0; i < 1000; i++) if (fishQuality(i / 1000) !== 'miss') hit++;
     expect(hit / 1000).toBeGreaterThan(0.38);
     expect(hit / 1000).toBeLessThan(0.48);
+  });
+
+  it('釣りの画面に、浮き・ボタン・魚の数が出る。スタミナ切れならボタンが押せない', () => {
+    const save = freshSave();
+    save.inventory.fish = 3;
+    const props = { save, now: () => 0, onCast: () => ({ ok: true as const, events: [] }), onClose: () => {} };
+    const html = renderToStaticMarkup(createElement(FishingSheet, props));
+    expect(html).toContain('つる！');
+    expect(html).toContain('さかな 3');
+    expect(html).not.toContain('disabled');
+    save.stamina.value = 0;
+    expect(renderToStaticMarkup(createElement(FishingSheet, props))).toContain('disabled');
+  });
+
+  it('作業台のごはんの欄に焼き魚が並ぶ', () => {
+    // 島レベル 1 で覚える（魚は桟橋でいつでも釣れる）
+    const save = freshSave();
+    const html = renderToStaticMarkup(
+      createElement(CraftSheet, { save, now: () => 0, onClose: () => {}, onCraft: () => {}, onCollect: () => {}, onCook: () => {} }),
+    );
+    expect(html).toContain('焼き魚');
   });
 });
