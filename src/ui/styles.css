@@ -1256,3 +1256,16 @@ button.hud-portrait:active {
     animation-duration: 1ms !important;
   }
 }
+
+/* ---- クラフトシートの「ごはん」（SI-8） ---- */
+.craft-meals {
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+}
+.craft-meals-title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.85;
+}

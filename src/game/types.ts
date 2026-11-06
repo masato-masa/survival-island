@@ -17,6 +17,20 @@ export type ItemId =
 
 export type CropId = 'turnip' | 'sunflower' | 'tomato';
 
+/** 料理（たき火で作ってその場で食べる。持ち物には残らない）。SI-8 */
+export type MealId = 'turnipSoup' | 'sunflowerCookie' | 'gardenSalad';
+
+export interface MealDef {
+  id: MealId;
+  name: string;
+  /** 材料（作物）。 */
+  cost: Partial<Record<ItemId, number>>;
+  /** 食べて回復するスタミナ。 */
+  restore: number;
+  /** 島レベルがこれ以上で作れる（材料の作物が育てられるレベル）。 */
+  unlockLevel: number;
+}
+
 export type SkillId =
   | 'axePower' // 木こり: パワーアップ（太い木・境界の大木を切れる、叩く回数が減る）
   | 'axeSpeed' // 木こり: 伐採速度アップ
@@ -333,6 +347,8 @@ export type GameEvent =
   | { type: 'xp'; amount: number }
   | { type: 'islandLevelUp'; level: number }
   | { type: 'crafted'; furniture: FurnitureId }
+  /** 料理を食べた。restore = 実際に回復した量（上限で切れた後）。 */
+  | { type: 'ate'; meal: MealId; restore: number }
   | { type: 'placed'; slot: string; furniture: FurnitureId | null }
   | { type: 'skill'; skill: SkillId; level: number };
 
@@ -347,6 +363,7 @@ export type Fail =
   | 'levelCap' // 島レベルの上限
   | 'maxLevel'
   | 'noXp'
+  | 'staminaFull' // スタミナが満タンで、食べても無駄になる
   | 'cannotPlace'
   | 'busy'; // 作業台がクラフト中
 

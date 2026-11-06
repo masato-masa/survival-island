@@ -4,6 +4,7 @@
 import {
   FARM_RANGE,
   FURNITURE_BY_ID,
+  MEALS,
   NODES,
   PLANT_STAMINA,
   SAPLING_DROPS,
@@ -22,6 +23,7 @@ import {
   isAreaOpen,
   isBuildable,
   knownCrops,
+  knownMeals,
   knownRecipes,
   nodeAlive,
   placementAt,
@@ -29,6 +31,7 @@ import {
   skillCap,
 } from './rules';
 import { isReady, normalizeStamina } from './time';
+import { staminaMax } from './rules';
 import { updateMaxPoints } from './score';
 import { key } from './world';
 import type {
@@ -39,6 +42,7 @@ import type {
   GameEvent,
   ItemId,
   MapNode,
+  MealId,
   Plot,
   Result,
   SaveState,
@@ -387,6 +391,28 @@ export function craft(save: SaveState, furnitureId: FurnitureId, now: number): R
   // 素材とスタミナは始めたときに払う。家具は collectCraft で受け取ってから持ち物に入る。
   save.crafting = { furnitureId, startedAt: now, endsAt: now + craftMs(furnitureId) };
   return { ok: true, events: [xpEvent(def.stamina)] };
+}
+
+/**
+ * 料理を作って食べる（SI-8）。材料の作物を使い、スタミナが回復する。経験値は入らない（スタミナを使わないので）。
+ * 満タンのときは材料を無駄にしないよう断る。回復は上限で切れる。
+ */
+export function cook(save: SaveState, mealId: MealId, now: number): Result {
+  const def = MEALS[mealId];
+  if (!def || !knownMeals(save).includes(mealId)) return { ok: false, reason: 'notLearned' };
+  for (const [item, amount] of Object.entries(def.cost) as [ItemId, number][]) {
+    if ((save.inventory[item] ?? 0) < amount) return { ok: false, reason: 'notEnoughItems' };
+  }
+  normalizeStamina(save, now);
+  const max = staminaMax(save);
+  if (save.stamina.value >= max) return { ok: false, reason: 'staminaFull' };
+  for (const [item, amount] of Object.entries(def.cost) as [ItemId, number][]) {
+    save.inventory[item] = (save.inventory[item] ?? 0) - amount;
+  }
+  const before = save.stamina.value;
+  save.stamina.value = Math.min(max, before + def.restore);
+  if (save.stamina.value >= max) save.stamina.updatedAt = now;
+  return { ok: true, events: [{ type: 'ate', meal: mealId, restore: save.stamina.value - before }] };
 }
 
 /** 終わったクラフトを受け取る。まだなら 'notReady'、作業が無ければ 'notReady'。 */

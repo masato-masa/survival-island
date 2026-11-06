@@ -3,9 +3,10 @@
 
 import { useEffect, useState } from 'react';
 
-import { FURNITURE, FURNITURE_BY_ID, ITEMS, NOT_YET_OBTAINABLE, SERIES, craftMs } from '@/game/data';
-import { knownRecipes } from '@/game/rules';
-import type { FurnitureId, ItemId, SaveState } from '@/game/types';
+import { FURNITURE, FURNITURE_BY_ID, ITEMS, MEALS, MEAL_ORDER, NOT_YET_OBTAINABLE, SERIES, craftMs } from '@/game/data';
+import { knownMeals, knownRecipes } from '@/game/rules';
+import { currentStamina } from '@/game/time';
+import type { FurnitureId, ItemId, MealId, SaveState } from '@/game/types';
 import { spriteDataUrl, type SpriteName } from '@/render/sprites';
 
 import { Sheet } from './Sheets';
@@ -21,6 +22,7 @@ export function CraftSheet({
   now,
   onCraft,
   onCollect,
+  onCook,
   onClose,
 }: {
   save: SaveState;
@@ -28,6 +30,7 @@ export function CraftSheet({
   now: () => number;
   onCraft: (id: FurnitureId) => void;
   onCollect: () => void;
+  onCook: (id: MealId) => void;
   onClose: () => void;
 }) {
   // 残り時間を 1 秒ごとに描き直す
@@ -41,6 +44,7 @@ export function CraftSheet({
   // 作れない家具（たき火・古い柱など、島に最初からあるだけのもの）は並べない
   const sorted = [...FURNITURE].filter((f) => !('none' in f.learn)).sort((a, b) => Number(known.has(b.id)) - Number(known.has(a.id)));
 
+  const stamina = currentStamina(save, now());
   const job = save.crafting;
   const jobDef = job ? FURNITURE_BY_ID[job.furnitureId] : undefined;
   const t = now();
@@ -66,6 +70,44 @@ export function CraftSheet({
           ) : null}
         </div>
       ) : null}
+      <div className="craft-meals">
+        <div className="craft-meals-title">
+          ごはん（その場で食べてスタミナ回復） スタミナ {stamina.value}/{stamina.max}
+        </div>
+        {MEAL_ORDER.map((id) => {
+          const meal = MEALS[id];
+          const isKnown = knownMeals(save).includes(id);
+          const costEntries = Object.entries(meal.cost) as [ItemId, number][];
+          const canAfford = costEntries.every(([item, need]) => (save.inventory[item] ?? 0) >= need);
+          const full = stamina.value >= stamina.max;
+          return (
+            <div className={`craft-row${isKnown ? '' : ' is-locked'}`} key={id}>
+              <div className="craft-info">
+                <div className="craft-name">{meal.name}</div>
+                <div className="craft-meta">スタミナ +{meal.restore}</div>
+                {isKnown ? (
+                  <div className="cost-chips">
+                    {costEntries.map(([item, need]) => {
+                      const have = save.inventory[item] ?? 0;
+                      return (
+                        <span key={item} className={`cost-chip${have >= need ? ' is-ok' : ' is-short'}`}>
+                          <img src={spriteDataUrl(`item_${item}`)} alt="" />
+                          {have}/{need}
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="craft-locked-text">島Lv {meal.unlockLevel} で覚える</div>
+                )}
+              </div>
+              <button className="sheet-btn craft-btn" disabled={!isKnown || !canAfford || full} onClick={() => onCook(id)}>
+                {full ? '満タン' : '食べる'}
+              </button>
+            </div>
+          );
+        })}
+      </div>
       <div className="sheet-list">
         {sorted.map((f) => {
           const isKnown = known.has(f.id);

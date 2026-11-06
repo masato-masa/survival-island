@@ -5,11 +5,11 @@
 import { AnimatePresence } from 'motion/react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
-import { AREAS, CROPS, FURNITURE, FURNITURE_FUNCTION, ISLAND_LEVEL_POINTS, TREE_SPECIES } from '@/game/data';
+import { AREAS, CROPS, FURNITURE, FURNITURE_FUNCTION, ISLAND_LEVEL_POINTS, MEALS, TREE_SPECIES } from '@/game/data';
 import { store } from '@/game/store';
 import { placementAt } from '@/game/rules';
 import { spriteDataUrl } from '@/render/sprites';
-import type { CropId, Fail, FurnitureId, GameEvent, SkillId, StationKind } from '@/game/types';
+import type { CropId, Fail, FurnitureId, GameEvent, MealId, SkillId, StationKind } from '@/game/types';
 import { WorldView } from '@/render/WorldView';
 
 import { CraftSheet } from './CraftSheet';
@@ -57,6 +57,7 @@ const FAIL_MESSAGES: Record<Fail, string> = {
   noXp: '経験値が足りません',
   cannotPlace: 'この場所には置けません',
   busy: '作業台はいま使っています',
+  staminaFull: 'スタミナは満タンです',
 };
 
 /** 島レベルが上がったときに何が増えたかを一言でまとめる。 */
@@ -141,6 +142,11 @@ export function Game() {
             playCraft();
             hapticCraft();
             break;
+          case 'ate':
+            showBanner(`${MEALS[ev.meal].name}を食べた！ スタミナ +${ev.restore}`);
+            playHarvest();
+            hapticHarvest();
+            break;
           case 'placed':
             playPlace();
             hapticPlace();
@@ -222,6 +228,7 @@ export function Game() {
   const buySkill = (id: SkillId) => store.buySkill(id);
   const craft = (id: FurnitureId) => store.craft(id);
   const collectCraft = () => store.collectCraft();
+  const cook = (id: MealId) => store.cook(id);
   const chooseCrop = (plotId: string, crop: CropId | null) => {
     store.chooseCrop(plotId, crop);
     closeSheet();
@@ -398,7 +405,7 @@ export function Game() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {sheet?.kind === 'craft' ? <CraftSheet key="craft" save={save} now={store.now} onCraft={craft} onCollect={collectCraft} onClose={closeSheet} /> : null}
+        {sheet?.kind === 'craft' ? <CraftSheet key="craft" save={save} now={store.now} onCraft={craft} onCollect={collectCraft} onCook={cook} onClose={closeSheet} /> : null}
       </AnimatePresence>
 
       <AnimatePresence>

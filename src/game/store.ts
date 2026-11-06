@@ -14,6 +14,7 @@ import type {
   CropId,
   Fail,
   FurnitureId,
+  MealId,
   GameEvent,
   Result,
   SaveState,
@@ -54,6 +55,8 @@ export interface GameStore {
   buySkill(id: SkillId): Result;
   /** 作業台のクラフトを始める（素材・スタミナはここで払う）。作業中は 'busy'。 */
   craft(id: FurnitureId): Result;
+  /** 料理を作って食べる（SI-8）。 */
+  cook(id: MealId): Result;
   /** 作業中（または受け取り待ち）のクラフト。無ければ null。endsAt <= now() なら完成。 */
   craftJob(): CraftJob | null;
   /** 完成したクラフトを受け取って持ち物に入れる。まだなら 'notReady'。 */
@@ -302,6 +305,10 @@ export function createStore(opts: CreateStoreOptions = {}): GameStore {
 
     craft(id) {
       return runAction(Actions.craft(save, id, now()));
+    },
+
+    cook(id) {
+      return runAction(Actions.cook(save, id, now()));
     },
 
     craftJob: () => save.crafting,

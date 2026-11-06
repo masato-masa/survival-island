@@ -10,9 +10,20 @@ describe('クラフト画面', () => {
     const save = freshSave();
     save.maxPoints = 100; // 島レベル 5。銅が要るかまど・石灯籠などが開いている
     const html = renderToStaticMarkup(
-      createElement(CraftSheet, { save, now: () => 0, onClose: () => {}, onCraft: () => {}, onCollect: () => {} }),
+      createElement(CraftSheet, { save, now: () => 0, onClose: () => {}, onCraft: () => {}, onCollect: () => {}, onCook: () => {} }),
     );
     expect(html).toContain('かまど');
     expect(html).not.toContain('準備中');
+  });
+
+  it('「ごはん」の欄に、覚えている料理と覚えていない料理が並ぶ（SI-8）', () => {
+    const save = freshSave();
+    const html = renderToStaticMarkup(
+      createElement(CraftSheet, { save, now: () => 0, onClose: () => {}, onCraft: () => {}, onCollect: () => {}, onCook: () => {} }),
+    );
+    expect(html).toContain('ごはん');
+    expect(html).toContain('カブのスープ');
+    expect(html).toContain('満タン'); // 新しいセーブはスタミナが満タン
+    expect(html).toContain('島Lv 2 で覚える'); // ヒマワリのクッキー
   });
 });

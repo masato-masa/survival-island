@@ -27,7 +27,11 @@ function writeFlag(key: string, value: boolean): void {
 let soundEnabled: boolean | null = null;
 let hapticsEnabled: boolean | null = null;
 
+// URL に ?mute があるときは、保存された設定を変えずに音を止める（確認用。ほかのゲームと同じ口）。
+const forceMute = typeof location !== 'undefined' && new URLSearchParams(location.search).has('mute');
+
 export function isSoundEnabled(): boolean {
+  if (forceMute) return false;
   if (soundEnabled === null) soundEnabled = readFlag(SOUND_KEY);
   return soundEnabled;
 }

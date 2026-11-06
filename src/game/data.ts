@@ -10,6 +10,8 @@ import type {
   InitialFurniture,
   ItemDef,
   ItemId,
+  MealDef,
+  MealId,
   NodeDef,
   NodeKind,
   SeriesId,
@@ -92,6 +94,21 @@ export const ITEMS: Record<ItemId, ItemDef> = {
  * 銅は SI-6（2026-11-01）で洞窟の鉱脈から採れるようになったので、いまは空。
  */
 export const NOT_YET_OBTAINABLE: readonly ItemId[] = [];
+
+/**
+ * 料理（SI-8）。畑で育てた作物の使い道を、家具の材料のほかにもう 1 つ作る。
+ * 収支の目安: 作物 1 個は植える 1 ＋ 収穫 1 のスタミナがかかる（収穫量が基本 1 のとき）。
+ *   スープ 2 個 = 4 → +6、クッキー 2 個 = 4 → +8、サラダ 3 種 3 個 = 6 → +14。
+ * 回復は 1.5〜2.3 倍で、待ち時間（育つのに 2〜6 分）があるので、スタミナの足しにはなるが、
+ * 家具の材料にするか食べるかの選択になる。数を変えたら __tests__/cooking.test.ts の収支を見る。
+ */
+export const MEALS: Record<MealId, MealDef> = {
+  turnipSoup: { id: 'turnipSoup', name: 'カブのスープ', cost: { turnip: 2 }, restore: 6, unlockLevel: 1 },
+  sunflowerCookie: { id: 'sunflowerCookie', name: 'ヒマワリのクッキー', cost: { sunflower: 2 }, restore: 8, unlockLevel: 2 },
+  gardenSalad: { id: 'gardenSalad', name: '畑のサラダ', cost: { turnip: 1, sunflower: 1, tomato: 1 }, restore: 14, unlockLevel: 3 },
+};
+
+export const MEAL_ORDER: MealId[] = ['turnipSoup', 'sunflowerCookie', 'gardenSalad'];
 
 export const CROPS: Record<CropId, CropDef> = {
   turnip: { id: 'turnip', name: 'カブ', growMs: 2 * 60 * 1000, unlockLevel: 1 },

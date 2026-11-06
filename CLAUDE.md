@@ -92,3 +92,8 @@
 - 選定と整形: `node scripts/build-sfx.mjs`。長さと打音の数を測って自動で選び、無音を切ってピークをそろえ、32kHz の WAV にする。
   耳で選び直すときは `node scripts/build-sfx.mjs chop=3`（`scripts/sfx-picks.json` に残る。`collect=pop_1` のように代用も書ける）。
 - 聴き比べ: `npm run dev` 中に `/survival-island/sfx.html`。
+
+- **料理（SI-8）。** 作業台のクラフト画面の上に「ごはん」の欄。畑の作物（カブ・ヒマワリ・トマト）を使い、その場で食べてスタミナを戻す
+  （`actions.cook`・`data.ts` の `MEALS`。経験値は入らない。満タンなら断る）。島レベルで解禁（カブのスープ Lv1・ヒマワリのクッキー Lv2・畑のサラダ Lv3）。
+  回復は「植える 1 ＋ 収穫 1」の消費の 1.2〜2.5 倍に収める（`__tests__/cooking.test.ts`）。作物は家具の材料とも取り合いになる。
+- URL に `?mute` を付けると音を止める（確認用。保存された設定は変えない）。

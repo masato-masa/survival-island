@@ -10,6 +10,8 @@ import {
   FURNITURE_BY_ID,
   GATHER_ACTION_MS,
   ISLAND_LEVEL_POINTS,
+  MEALS,
+  MEAL_ORDER,
   NODES,
   NODE_REQUIRES,
   SKILLS,
@@ -22,7 +24,7 @@ import {
   skillCapForIslandLevel,
   treeSpeciesName,
 } from './data';
-import type { AreaId, CropId, FurnitureId, LiveNode, MapNode, SaveState, SkillId, World } from './types';
+import type { AreaId, CropId, FurnitureId, LiveNode, MapNode, MealId, SaveState, SkillId, World } from './types';
 
 export function staminaMax(save: SaveState): number {
   return STAMINA_BASE + STAMINA_PER_LEVEL * (save.skills.staminaMax ?? 0);
@@ -113,6 +115,12 @@ export function knownCrops(save: SaveState): CropId[] {
   return (Object.values(CROPS) as { id: CropId; unlockLevel: number }[])
     .filter((c) => c.unlockLevel <= level)
     .map((c) => c.id);
+}
+
+/** 作れる料理（島レベルで解禁。SI-8）。 */
+export function knownMeals(save: SaveState): MealId[] {
+  const level = islandLevel(save);
+  return MEAL_ORDER.filter((id) => MEALS[id].unlockLevel <= level);
 }
 
 /** エリアが開いているか（境界が null のエリアは常に開いている。他は境界ノードが全て壊れている。入口から入るエリアは入口側しだい）。 */
