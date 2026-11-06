@@ -415,6 +415,25 @@ export function cook(save: SaveState, mealId: MealId, now: number): Result {
   return { ok: true, events: [{ type: 'ate', meal: mealId, restore: save.stamina.value - before }] };
 }
 
+export type CatchQuality = 'miss' | 'good' | 'perfect';
+
+/** 釣りの浮きの位置（0〜1）から、釣れ具合を決める。中央ほどよい。 */
+export function fishQuality(pos: number): CatchQuality {
+  const d = Math.abs(pos - 0.5);
+  return d < 0.08 ? 'perfect' : d < 0.22 ? 'good' : 'miss';
+}
+
+/**
+ * 釣る（SI-9）。1 回 1 スタミナ（島の経験値も入る）。外すと何も釣れない。
+ * ちょうどよく合わせる（perfect）と、roll（0〜1）が半分未満のとき大物が釣れる。
+ */
+export function fish(save: SaveState, quality: CatchQuality, roll: number, now: number): Result {
+  if (!spend(save, 1, now)) return { ok: false, reason: 'noStamina' };
+  const item = quality === 'perfect' ? (roll < 0.5 ? 'bigFish' : 'fish') : quality === 'good' ? 'fish' : null;
+  if (item) addItem(save, item, 1);
+  return { ok: true, events: [{ type: 'fished', item }] };
+}
+
 /** 終わったクラフトを受け取る。まだなら 'notReady'、作業が無ければ 'notReady'。 */
 export function collectCraft(save: SaveState, now: number): Result {
   const job = save.crafting;

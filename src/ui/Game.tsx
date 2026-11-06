@@ -14,6 +14,7 @@ import { WorldView } from '@/render/WorldView';
 
 import { CraftSheet } from './CraftSheet';
 import { DevSheet } from './DevSheet';
+import { FishingSheet } from './FishingSheet';
 import { GoalSheet } from './GoalSheet';
 import { formatCountdown } from './format';
 import { HelpSheet } from './HelpSheet';
@@ -34,6 +35,7 @@ type SheetState =
   | { kind: 'inventory' }
   | { kind: 'skill' }
   | { kind: 'craft' }
+  | { kind: 'fishing' }
   | { kind: 'goal' }
   | { kind: 'sign'; plotId: string }
   | { kind: 'place'; x: number; y: number }
@@ -142,6 +144,16 @@ export function Game() {
             playCraft();
             hapticCraft();
             break;
+          case 'fished':
+            if (ev.item) {
+              showBanner(ev.item === 'bigFish' ? '大物が釣れた！' : 'さかなが釣れた！');
+              playHarvest();
+              hapticHarvest();
+            } else {
+              playFail();
+              hapticFail();
+            }
+            break;
           case 'ate':
             showBanner(`${MEALS[ev.meal].name}を食べた！ スタミナ +${ev.restore}`);
             playHarvest();
@@ -247,7 +259,8 @@ export function Game() {
       store.travel(kind); // 洞窟に入る・出る（画面は開かない）
       return;
     }
-    if (kind === 'ruins') setSheet({ kind: 'skill' });
+    if (kind === 'dock') setSheet({ kind: 'fishing' });
+    else if (kind === 'ruins') setSheet({ kind: 'skill' });
     else setSheet({ kind: 'stationInfo', station: kind });
     hapticTap();
   };
@@ -406,6 +419,12 @@ export function Game() {
 
       <AnimatePresence>
         {sheet?.kind === 'craft' ? <CraftSheet key="craft" save={save} now={store.now} onCraft={craft} onCollect={collectCraft} onCook={cook} onClose={closeSheet} /> : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {sheet?.kind === 'fishing' ? (
+          <FishingSheet key="fishing" save={save} now={store.now} onCast={(q) => store.fish(q)} onClose={closeSheet} />
+        ) : null}
       </AnimatePresence>
 
       <AnimatePresence>

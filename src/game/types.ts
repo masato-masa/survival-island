@@ -13,12 +13,15 @@ export type ItemId =
   // 作物
   | 'turnip'
   | 'sunflower'
-  | 'tomato';
+  | 'tomato'
+  // 魚（桟橋で釣る。料理の材料）
+  | 'fish'
+  | 'bigFish';
 
 export type CropId = 'turnip' | 'sunflower' | 'tomato';
 
 /** 料理（たき火で作ってその場で食べる。持ち物には残らない）。SI-8 */
-export type MealId = 'turnipSoup' | 'sunflowerCookie' | 'gardenSalad';
+export type MealId = 'turnipSoup' | 'sunflowerCookie' | 'gardenSalad' | 'grilledFish' | 'fishStew';
 
 export interface MealDef {
   id: MealId;
@@ -79,7 +82,7 @@ export type Dir = 'up' | 'down' | 'left' | 'right';
 export interface ItemDef {
   id: ItemId;
   name: string;
-  kind: 'material' | 'plant' | 'crop';
+  kind: 'material' | 'plant' | 'crop' | 'fish';
 }
 
 export interface CropDef {
@@ -349,6 +352,8 @@ export type GameEvent =
   | { type: 'crafted'; furniture: FurnitureId }
   /** 料理を食べた。restore = 実際に回復した量（上限で切れた後）。 */
   | { type: 'ate'; meal: MealId; restore: number }
+  /** 釣った（item が null なら逃げられた）。 */
+  | { type: 'fished'; item: 'fish' | 'bigFish' | null }
   | { type: 'placed'; slot: string; furniture: FurnitureId | null }
   | { type: 'skill'; skill: SkillId; level: number };
 

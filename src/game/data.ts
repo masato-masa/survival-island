@@ -87,6 +87,8 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   turnip: { id: 'turnip', name: 'カブ', kind: 'crop' },
   sunflower: { id: 'sunflower', name: 'ヒマワリ', kind: 'crop' },
   tomato: { id: 'tomato', name: 'トマト', kind: 'crop' },
+  fish: { id: 'fish', name: 'さかな', kind: 'fish' },
+  bigFish: { id: 'bigFish', name: '大きなさかな', kind: 'fish' },
 };
 
 /**
@@ -106,9 +108,12 @@ export const MEALS: Record<MealId, MealDef> = {
   turnipSoup: { id: 'turnipSoup', name: 'カブのスープ', cost: { turnip: 2 }, restore: 6, unlockLevel: 1 },
   sunflowerCookie: { id: 'sunflowerCookie', name: 'ヒマワリのクッキー', cost: { sunflower: 2 }, restore: 8, unlockLevel: 2 },
   gardenSalad: { id: 'gardenSalad', name: '畑のサラダ', cost: { turnip: 1, sunflower: 1, tomato: 1 }, restore: 14, unlockLevel: 3 },
+  // 魚は 1 回 1 スタミナで、うまく釣れる割合は 6〜7 割（SI-9）。さかな 2 匹 ≒ 2.9、大物 1 匹 ≒ 5.7 のスタミナ
+  grilledFish: { id: 'grilledFish', name: '焼き魚', cost: { fish: 2 }, restore: 6, unlockLevel: 1 },
+  fishStew: { id: 'fishStew', name: '魚のごった煮', cost: { bigFish: 1, turnip: 1 }, restore: 12, unlockLevel: 2 },
 };
 
-export const MEAL_ORDER: MealId[] = ['turnipSoup', 'sunflowerCookie', 'gardenSalad'];
+export const MEAL_ORDER: MealId[] = ['turnipSoup', 'grilledFish', 'sunflowerCookie', 'fishStew', 'gardenSalad'];
 
 export const CROPS: Record<CropId, CropDef> = {
   turnip: { id: 'turnip', name: 'カブ', growMs: 2 * 60 * 1000, unlockLevel: 1 },
@@ -415,7 +420,7 @@ export const FURNITURE_CHARS: Record<string, FurnitureId> = { W: 'woodWorkbench'
 export const STATIONS: Record<StationKind, { name: string; hint: string }> = {
   ruins: { name: '謎の遺跡', hint: 'スキルを授かる' },
   housePlot: { name: '家の跡地', hint: 'いつか ここに家を建てられそうだ' },
-  dock: { name: '船着き場', hint: 'ときどき商船が来るらしい（交易は準備中）' },
+  dock: { name: '船着き場', hint: '釣りができる（ときどき商船も来るらしい）' },
   caveEntrance: { name: '洞窟の入口', hint: '入る' },
   caveExit: { name: '洞窟の出口', hint: '外へ出る' },
 };

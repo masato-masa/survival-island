@@ -9,6 +9,7 @@ import { Sheet } from './Sheets';
 const MATERIAL_IDS = ['wood', 'stone', 'copper'] as const;
 const PLANT_IDS = ['sapling', 'flowerSeed', 'petal'] as const;
 const CROP_IDS = ['turnip', 'sunflower', 'tomato'] as const;
+const FISH_IDS = ['fish', 'bigFish'] as const;
 
 type ItemList = readonly (keyof typeof ITEMS)[];
 
@@ -42,6 +43,9 @@ export function InventorySheet({ save, onClose }: { save: SaveState; onClose: ()
 
         <p className="sheet-subtitle">作物</p>
         <ItemGrid ids={CROP_IDS} save={save} />
+
+        <p className="sheet-subtitle">魚</p>
+        <ItemGrid ids={FISH_IDS} save={save} />
 
         <p className="sheet-subtitle">家具</p>
         {furnitureOwned.length === 0 ? (

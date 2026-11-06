@@ -57,6 +57,8 @@ export interface GameStore {
   craft(id: FurnitureId): Result;
   /** 料理を作って食べる（SI-8）。 */
   cook(id: MealId): Result;
+  /** 桟橋で釣る（SI-9）。quality は UI の浮きのタイミングから決める。 */
+  fish(quality: Actions.CatchQuality): Result;
   /** 作業中（または受け取り待ち）のクラフト。無ければ null。endsAt <= now() なら完成。 */
   craftJob(): CraftJob | null;
   /** 完成したクラフトを受け取って持ち物に入れる。まだなら 'notReady'。 */
@@ -309,6 +311,10 @@ export function createStore(opts: CreateStoreOptions = {}): GameStore {
 
     cook(id) {
       return runAction(Actions.cook(save, id, now()));
+    },
+
+    fish(quality) {
+      return runAction(Actions.fish(save, quality, Math.random(), now()));
     },
 
     craftJob: () => save.crafting,

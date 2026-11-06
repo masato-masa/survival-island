@@ -1269,3 +1269,46 @@ button.hud-portrait:active {
   font-weight: 600;
   opacity: 0.85;
 }
+
+/* ---- 釣り（SI-9） ---- */
+.fish-bar {
+  position: relative;
+  height: 34px;
+  margin: 10px 0 6px;
+  border-radius: 17px;
+  background: linear-gradient(#2f6fa3, #1d4f7c);
+  overflow: hidden;
+}
+.fish-zone { position: absolute; top: 0; bottom: 0; }
+.fish-zone.good { left: 28%; width: 44%; background: rgba(120, 220, 140, 0.45); }
+.fish-zone.perfect { left: 42%; width: 16%; background: rgba(255, 224, 110, 0.7); }
+.fish-bobber {
+  position: absolute;
+  top: 3px;
+  width: 16px;
+  height: 28px;
+  margin-left: -8px;
+  border-radius: 8px;
+  background: linear-gradient(#ff5a4d 0 50%, #fff 50% 100%);
+  border: 2px solid #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+.fish-bobber.perfect { box-shadow: 0 0 14px 4px #ffe066; }
+.fish-bobber.good { box-shadow: 0 0 10px 3px #8be59a; }
+.fish-msg { min-height: 1.6em; text-align: center; font-weight: 600; }
+.fish-cast {
+  display: block;
+  width: 100%;
+  padding: 14px;
+  border: 0;
+  border-radius: 14px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(#4aa3e0, #2a77b5);
+  box-shadow: 0 4px 0 #1b4f7a;
+}
+.fish-cast:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 #1b4f7a; }
+.fish-cast:disabled { opacity: 0.5; }
+.fish-stock { display: flex; gap: 14px; justify-content: center; margin: 12px 0 4px; font-size: 14px; }
+.fish-stock img { width: 20px; height: 20px; vertical-align: middle; image-rendering: auto; }

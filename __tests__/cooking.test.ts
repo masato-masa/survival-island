@@ -10,7 +10,7 @@ import { freshSave } from './helpers';
 describe('料理', () => {
   it('島レベルで作れる料理が増える', () => {
     const save = freshSave();
-    expect(knownMeals(save)).toEqual(['turnipSoup']);
+    expect(knownMeals(save)).toEqual(['turnipSoup', 'grilledFish']);
     save.maxPoints = 30; // 島レベル 3
     expect(knownMeals(save)).toEqual(MEAL_ORDER);
   });
@@ -54,11 +54,12 @@ describe('料理', () => {
     expect(cook(save, 'sunflowerCookie', 0)).toEqual({ ok: false, reason: 'notLearned' });
   });
 
-  it('収支: 作物 1 個は植える 1 ＋ 収穫 1 のスタミナ。回復は 1.2〜2.5 倍に収める', () => {
+  it('収支: 材料 1 個ぶんのスタミナ（作物は植える 1 ＋ 収穫 1、魚は釣る 1 ÷ 釣れる割合）に対し、回復は 1.2〜2.5 倍に収める', () => {
+    // 魚は 1 回 1 スタミナで、うまく釣れるのが 65%（さかな）。大物は完璧に合わせて半々なので約 5
+    const STAMINA_PER: Record<string, number> = { turnip: 2, sunflower: 2, tomato: 2, fish: 1 / 0.65, bigFish: 5 };
     for (const id of MEAL_ORDER) {
       const meal = MEALS[id];
-      const crops = Object.values(meal.cost).reduce((a, b) => a + (b ?? 0), 0);
-      const spent = crops * 2; // 収穫量が基本 1 のとき
+      const spent = Object.entries(meal.cost).reduce((a, [item, n]) => a + (n ?? 0) * STAMINA_PER[item]!, 0);
       const ratio = meal.restore / spent;
       expect(ratio, `${meal.name} の回復/消費`).toBeGreaterThanOrEqual(1.2);
       expect(ratio, `${meal.name} の回復/消費`).toBeLessThanOrEqual(2.5);

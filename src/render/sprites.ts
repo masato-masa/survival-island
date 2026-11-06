@@ -81,6 +81,8 @@ export type SpriteName =
   | 'item_turnip'
   | 'item_sunflower'
   | 'item_tomato'
+  | 'item_fish'
+  | 'item_bigFish'
   | 'f_woodFence'
   | 'f_woodPath'
   | 'f_woodSign'
@@ -342,6 +344,8 @@ const GEN_TARGET: Partial<Record<SpriteName, SheetSpec>> = {
   item_turnip: { src: 'item_turnip', worldW: 0, fit: ICON_FIT },
   item_sunflower: { src: 'item_sunflower', worldW: 0, fit: ICON_FIT },
   item_tomato: { src: 'item_tomato', worldW: 0, fit: ICON_FIT },
+  item_fish: { src: 'item_fish', worldW: 0, fit: ICON_FIT },
+  item_bigFish: { src: 'item_bigFish', worldW: 0, fit: ICON_FIT },
   item_wood: { src: 'item_wood', worldW: 0, fit: ICON_FIT },
   item_stone: { src: 'item_stone', worldW: 0, fit: ICON_FIT },
   item_copper: { src: 'item_copper', worldW: 0, fit: ICON_FIT },
@@ -618,6 +622,22 @@ const paintItemSunflower: Painter = (ctx) => {
     ellipse(ctx, 12 + Math.cos(a) * 6.6, 12 + Math.sin(a) * 6.6, 3.6, 1.9, i % 2 ? '#ffd23f' : '#ffc21a', '#d99a0a', 0.4, a);
   }
   ellipse(ctx, 12, 12, 4.6, 4.6, vgrad(ctx, 7, 17, '#8a5a2b', '#5a3a1e'), '#4a2f18', 0.5);
+};
+
+const paintItemFish = (big: boolean): Painter => (ctx) => {
+  const body = big ? ['#8fd0ff', '#3f8fd6'] : ['#ffd1a8', '#f08c5a'];
+  ellipse(ctx, 11, 12, big ? 8.6 : 7.4, big ? 5.4 : 4.4, vgrad(ctx, 7, 17, body[0]!, body[1]!), big ? '#2b6aa6' : '#b95a2c', 0.6);
+  ctx.fillStyle = body[1]!;
+  ctx.beginPath();
+  ctx.moveTo(18.5, 12);
+  ctx.lineTo(22.5, 8.2);
+  ctx.lineTo(22.5, 15.8);
+  ctx.closePath();
+  ctx.fill();
+  ellipse(ctx, 7.2, 10.8, 1.3, 1.3, '#fff');
+  ellipse(ctx, 7.5, 10.9, 0.6, 0.6, '#222');
+  ellipse(ctx, 10.5, 9.6, 3, 1.1, 'rgba(255,255,255,0.45)', undefined, 0, -0.1);
+  if (big) for (const x of [11, 14]) ellipse(ctx, x, 13, 0.8, 2.4, 'rgba(255,255,255,0.45)');
 };
 
 const paintItemTomato: Painter = (ctx) => {
@@ -942,6 +962,8 @@ const PAINTERS: Partial<Record<SpriteName, PainterSpec>> = {
   item_turnip: { w: 24, h: 24, paint: paintItemTurnip },
   item_sunflower: { w: 24, h: 24, paint: paintItemSunflower },
   item_tomato: { w: 24, h: 24, paint: paintItemTomato },
+  item_fish: { w: 24, h: 24, paint: paintItemFish(false) },
+  item_bigFish: { w: 24, h: 24, paint: paintItemFish(true) },
   tool_axe: { w: 22, h: 28, paint: paintToolAxe },
   tool_pick: { w: 22, h: 28, paint: paintToolPick },
   tool_hoe: { w: 22, h: 28, paint: paintToolHoe },
