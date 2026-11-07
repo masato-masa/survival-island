@@ -57,8 +57,7 @@
    （縁から辿れる白を抜き、縁 3px を白から色抜き、連結成分を格子のマスへ振り分けて `src/assets/gen/<名前>.png` に書く）。
    シートの格子と名前は `slice-gen.mjs` の `SHEETS`。`sprites.ts` の `GEN_TARGET` が `PAINTERS` より優先され、
    画像が無いときだけコード描画に戻る。大きさは `scale`（同じシートの絵の大小をそのまま保つ。作物）か `fit`（長辺。アイコン）で決める。
-   生成済み: 作物 3 種 × 3 段階、作物・資源のアイテムアイコン 9 個。花 4 種・芽・苗木・幹 4 種は `GEN_TARGET` に
-   枠だけあり（`refs/gen/plants.png` を置いて `slice-gen.mjs plants` を走らせれば切り替わる。`SHEETS.plants` は 5×2）。
+   生成済み: 作物 3 種 × 3 段階、作物・資源のアイテムアイコン 9 個。花 4 種・芽・苗木・幹 4 種（`plants` シート、2026-11-07）。
    木（`SHEETS.trees` / `gates`）はまだ。Chrome の窓が裏に回っている（`visibilityState: hidden`）と、生成画像の読み込みも
    ダウンロードも止まるので、窓を前に出してから取り出す。
 
