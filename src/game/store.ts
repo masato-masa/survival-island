@@ -4,6 +4,7 @@
 import { ISLAND_LEVEL_POINTS, NODES, WALK_SPEED } from './data';
 import * as Actions from './actions';
 import * as Ship from './ship';
+import * as Tower from './tower';
 import { actionMs, islandLevel as islandLevelOf, liveNodeById, needSkillDetail, staminaMax } from './rules';
 import { applyRespawns, currentStamina } from './time';
 import { islandPoints } from './score';
@@ -62,6 +63,10 @@ export interface GameStore {
   repairShip(): Result;
   /** 商船の今日のお届けを受け取る（SI-14）。 */
   claimShipGift(): Result;
+  /** 見張り台の次の段階を建て増す（SI-15）。 */
+  upgradeTower(): Result;
+  /** 見張り台の今日の贈り物を受け取る（SI-15）。 */
+  claimTowerGift(): Result;
   /** 桟橋で釣る（SI-9）。quality は UI の浮きのタイミングから決める。 */
   fish(quality: Actions.CatchQuality): Result;
   /** 作業中（または受け取り待ち）のクラフト。無ければ null。endsAt <= now() なら完成。 */
@@ -324,6 +329,14 @@ export function createStore(opts: CreateStoreOptions = {}): GameStore {
 
     claimShipGift() {
       return runAction(Ship.claimShipGift(save, now()));
+    },
+
+    upgradeTower() {
+      return runAction(Tower.upgradeTower(save));
+    },
+
+    claimTowerGift() {
+      return runAction(Tower.claimTowerGift(save, now()));
     },
 
     fish(quality) {

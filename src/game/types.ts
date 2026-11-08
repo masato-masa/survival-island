@@ -77,6 +77,26 @@ export interface ShipStageDef {
   after: string;
 }
 
+/** 見張り台の建て増し（SI-15）。stage = 建て増した段階の数。giftDay = 最後に贈り物を受け取った日（dailyDay、-1 は未）。 */
+export interface TowerState {
+  stage: number;
+  giftDay: number;
+}
+
+/** 見張り台の 1 段階。素材を納めると見た目と眺めが変わり、毎日の贈り物の枠が 1 つ増える。 */
+export interface TowerStageDef {
+  id: string;
+  name: string;
+  cost: Partial<Record<ItemId, number>>;
+  unlockLevel: number;
+  /** 眺めで分かるようになること（一言）。 */
+  view: string;
+  /** 贈り物の枠。日付ごとに pool のどれか 1 つが届く（日替わり）。 */
+  gift: [ItemId, number][];
+  /** 建て増したあとの様子（一言）。 */
+  after: string;
+}
+
 export interface MealDef {
   id: MealId;
   name: string;
@@ -357,6 +377,7 @@ export interface SaveState {
   request: RequestState;
   /** 商船の修理（SI-14）。 */
   ship: ShipState;
+  tower: TowerState;
   /** 植えた苗木・花の種（"x,y" → 状態）。資源としての体力などは nodes["p:x,y"] に入る。 */
   planted: Record<string, PlantedState>;
   /** 最初から置く家具（作業台・柱など）を placements に入れ終えたか。古いセーブに一度だけ入れるための印。 */
@@ -416,6 +437,10 @@ export type GameEvent =
   | { type: 'shipRepaired'; stage: number }
   /** 商船のお届けを受け取った。 */
   | { type: 'shipGift'; items: Partial<Record<ItemId, number>> }
+  /** 見張り台を 1 段階建て増した。 */
+  | { type: 'towerBuilt'; stage: number }
+  /** 見張り台の今日の贈り物を受け取った。 */
+  | { type: 'towerGift'; items: Partial<Record<ItemId, number>> }
   /** 釣った（item が null なら逃げられた）。 */
   | { type: 'fished'; item: 'fish' | 'bigFish' | null }
   | { type: 'placed'; slot: string; furniture: FurnitureId | null }

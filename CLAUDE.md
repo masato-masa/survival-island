@@ -106,5 +106,10 @@
   5 段階（`SHIP_STAGES`・`ship.ts`）の素材を納めると船の絵が変わり（`pigg_ship0〜4.png` は `scripts/make-ship-stages.mjs` が `pigg_ship.png` から作る。5 = 旗つきの元絵）、
   直した段階ぶんのお届けが毎日 1 回受け取れる（`save.ship = { stage, giftDay }`、日付は `dailyDay`）。島レベル 3〜5 で順に取りかかれる。
   素材は木材・石・銅・花びら・作物・魚（他の遊びと取り合う）。全部で約 270 スタミナ（力もちなら約 185）、お届けは 1 日 17 相当で回収 16 日。`__tests__/ship.test.ts` が測る。
+- **見張り台の建て増し（SI-15）。** 家具の丸太の見張り台（`woodTower`、森の宝箱で覚える）を島に置いて触る（`FURNITURE_FUNCTION.woodTower = 'tower'`）と `TowerSheet`。
+  4 段階（`TOWER_STAGES`・`tower.ts`）の素材を納めると、見た目（`models.ts` の `towerAt(stage)` = 模型 `tower1〜4`。望遠鏡 → 石の土台 → 灯り → 高い旗）、
+  眺め（1 木と花・2 岩と銅の方角と距離（今いる区画の中）・3 今日のおすすめごはん（`mealAdvice`））、毎日の贈り物の枠が増える。
+  贈り物は商船と違い日替わり（`towerGiftOn(stage, day)` = 枠ごとに日付で pool のどれか 1 つ）。`save.tower = { stage, giftDay }`（古いセーブは 0 段階で読む）。
+  全部で約 223 スタミナ（力もちなら約 144）、贈り物は 1 日平均 12 相当で回収 19 日。商船と素材（木材 86+66 個ほか）を取り合う。`__tests__/tower.test.ts` が測る。
 - URL に `?dev` を付けると公開版でも `window.__store` が出る（確認用）。
 

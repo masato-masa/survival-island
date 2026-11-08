@@ -1003,7 +1003,8 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     drawables.push({
       y: r.y + r.size,
       draw: () => {
-        const drawn = drawModelAt(furnitureId, r.x, r.y, r.size, `furn:${anchor}`, craft ? { craft } : undefined);
+        const modelName = furnitureId === 'woodTower' && save.tower.stage > 0 ? `tower${Math.min(4, save.tower.stage)}` : furnitureId; // 見張り台は建て増しの段階の模型（SI-15）
+        const drawn = drawModelAt(modelName, r.x, r.y, r.size, `furn:${anchor}`, craft ? { craft } : undefined);
         if (drawn && craft) {
           const top = drawn.P(r.size * TILE * 0.5, r.size * TILE * 0.5, 40);
           overlays.push(() => {

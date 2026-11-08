@@ -1151,8 +1151,9 @@ const veggieStand: ModelFn = (b) => {
   }, { layer: 5 });
 };
 
-const woodTower: ModelFn = (b, S) => {
-  // 丸太の見張り台（2×2）。4 本柱・床・手すり・はしご・屋根。
+/** 丸太の見張り台（2×2）。stage = 建て増しの段階（SI-15。1 望遠鏡・2 石の土台・3 灯り・4 高い屋根と旗）。 */
+const towerAt = (stage: number): ModelFn => (b, S) => {
+  // 4 本柱・床・手すり・はしご・屋根。
   b.shadow.push([I + 2, I + 2, S - I - 2, S - I]);
   const posts: [number, number][] = [
     [9, 9],
@@ -1200,7 +1201,48 @@ const woodTower: ModelFn = (b, S) => {
     ctx.strokeStyle = OUTLINE;
     ctx.stroke();
   }, { layer: 5, bounds: [[S / 2 + 11, S / 2, 112]] });
+  // --- 建て増し（SI-15）---
+  if (stage >= 1) {
+    // 望遠鏡: 手すりの右手前に据える（三脚 + 真鍮の筒）
+    b.cyl([S - 24, S - I - 8, 62], [S - 24, S - I - 8, 66], 1.4, IRON_D, { n: 8, layer: 4 });
+    b.cyl([S - 25, S - I - 9, 66], [S - 13, S - I - 1, 73], 2.6, COPPER, { n: 10, layer: 4, cap: GOLD });
+    b.cyl([S - 15, S - I - 2.5, 71.5], [S - 13, S - I - 1, 73], 3.2, IRON, { n: 10, layer: 4, cap: IRON_D });
+  }
+  if (stage >= 2) {
+    // 石の土台: 柱の根元を石で固める
+    for (const [x, y] of posts) b.box(x - 7, y - 7, x + 7, y + 7, 0, 9, STONE, { layer: 1, bricks: 2, top: STONE_D });
+  }
+  if (stage >= 3) {
+    // 灯り: 屋根の軒の左右に吊るす
+    for (const x of [16, S - 16]) {
+      b.cyl([x, S - I - 5, 84], [x, S - I - 5, 78], 0.8, IRON_D, { n: 6, layer: 4 });
+      b.box(x - 3.2, S - I - 8, x + 3.2, S - I - 2, 68, 78, GOLD, { layer: 4, top: '#fff1b8' });
+      b.box(x - 4, S - I - 8.6, x + 4, S - I - 1.4, 77, 79, IRON_D, { layer: 4 });
+    }
+  }
+  if (stage >= 4) {
+    // 高い旗竿と大きな赤い旗
+    b.cyl([S / 2, S / 2 - 1, 112], [S / 2, S / 2 - 1, 134], 1.1, IRON_D, { n: 8, layer: 4 });
+    b.custom(S / 2, (e) => {
+      const { ctx, now } = e;
+      const p = e.P(S / 2 + 1, S / 2 - 1, 133);
+      const wave = Math.sin(now / 240 + 1) * 1.6 * e.k;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.quadraticCurveTo(p.x + 8 * e.k, p.y + 1 * e.k + wave, p.x + 17 * e.k, p.y + 2 * e.k);
+      ctx.lineTo(p.x + 17 * e.k, p.y + 9 * e.k);
+      ctx.quadraticCurveTo(p.x + 8 * e.k, p.y + 8 * e.k + wave, p.x, p.y + 11 * e.k);
+      ctx.closePath();
+      ctx.fillStyle = '#e0453d';
+      ctx.fill();
+      ctx.lineWidth = Math.max(0.8, 0.42 * e.k);
+      ctx.strokeStyle = OUTLINE;
+      ctx.stroke();
+    }, { layer: 5, bounds: [[S / 2 + 18, S / 2, 134]] });
+  }
 };
+
+const woodTower = towerAt(0);
 
 const flowerArch: ModelFn = (b, S) => {
   b.shadow.push([I + 2, 24, 16, 40]);
@@ -1455,6 +1497,11 @@ const FURNITURE_MODELS: Record<string, ModelFn> = {
 };
 
 const OTHER_MODELS: Record<string, ModelFn> = {
+  // 見張り台の建て増しの段階（SI-15）。段階 0 は家具の woodTower
+  tower1: towerAt(1),
+  tower2: towerAt(2),
+  tower3: towerAt(3),
+  tower4: towerAt(4),
   'station:ruins': ruinsAltar,
   'station:dock': dockPost,
   chest: chestModel(false),

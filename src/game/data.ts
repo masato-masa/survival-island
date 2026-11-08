@@ -15,6 +15,7 @@ import type {
   BuffId,
   RequestDef,
   ShipStageDef,
+  TowerStageDef,
   NodeDef,
   NodeKind,
   SeriesId,
@@ -196,6 +197,20 @@ export const SHIP_STAGES: ShipStageDef[] = [
   { id: 'sailLow', name: '下の帆を張る', cost: { petal: 24, wood: 16, turnip: 6 }, unlockLevel: 4, gift: { turnip: 1 }, after: '大きな帆が風をはらんだ' },
   { id: 'sailHigh', name: '上の帆を張る', cost: { petal: 24, sunflower: 8, stone: 10 }, unlockLevel: 4, gift: { sapling: 1 }, after: '二枚目の帆が広がった' },
   { id: 'flag', name: '旗をかかげ、積み荷をそろえる', cost: { fish: 8, bigFish: 2, tomato: 6, stone: 20, copper: 4 }, unlockLevel: 5, gift: { bigFish: 1 }, after: '赤い旗がはためく、立派な商船になった' },
+];
+
+/**
+ * 見張り台の建て増し（SI-15）。丸太の見張り台（家具。森の宝箱で覚える）を島に置いて触ると、素材を納めて 4 段階まで建て増せる。
+ * 段階ごとに見た目が変わり（望遠鏡 → 石の土台 → 灯り → 旗）、眺めで分かることが増え（木と花の方角 → 石と銅の方角 → 今日のおすすめごはん）、
+ * 毎日 1 回の贈り物の枠が増える。贈り物は日付で中身が変わる（商船は毎日同じ）。
+ * 商船と同じ素材（木材・石・銅・花びら・作物・魚）を取り合う。商船より軽く、全部で約 220 スタミナ（力もちなら約 150）。
+ * 数を変えたら __tests__/tower.test.ts の収支（総スタミナ・贈り物の回収日数・商船との取り合い）を見る。
+ */
+export const TOWER_STAGES: TowerStageDef[] = [
+  { id: 'scope', name: '手すりを直し、望遠鏡を据える', cost: { wood: 24, stone: 8, petal: 10 }, unlockLevel: 3, view: '遠くの木と花の方角が分かる', gift: [['petal', 4], ['wood', 2]], after: '望遠鏡で島を見渡せるようになった' },
+  { id: 'base', name: '石の土台を積む', cost: { stone: 30, copper: 4, wood: 12 }, unlockLevel: 3, view: '遠くの岩と銅の方角が分かる', gift: [['stone', 3], ['copper', 1]], after: 'どっしりした石の土台になった' },
+  { id: 'lantern', name: '灯りをともす', cost: { copper: 6, petal: 16, sunflower: 6, turnip: 4 }, unlockLevel: 4, view: '今日のおすすめごはんが分かる', gift: [['turnip', 2], ['sunflower', 1], ['tomato', 1]], after: '夜も島を照らす灯りがともった' },
+  { id: 'banner', name: '屋根を高くし、旗をかかげる', cost: { wood: 30, stone: 12, tomato: 4, fish: 6, bigFish: 1 }, unlockLevel: 5, view: '島じゅうが見渡せる（贈り物も最大）', gift: [['fish', 2], ['bigFish', 1]], after: '赤い旗がはためく、島一番の見張り台になった' },
 ];
 
 export const MEAL_ORDER: MealId[] = ['turnipSoup', 'grilledFish', 'sunflowerCookie', 'fishStew', 'gardenSalad'];
@@ -405,7 +420,7 @@ export function craftMs(furnitureId: FurnitureId): number {
 }
 
 /** 触ると画面が開く家具（模様替えでないときに対象になる）。 */
-export const FURNITURE_FUNCTION: Partial<Record<FurnitureId, 'craft'>> = { woodWorkbench: 'craft' };
+export const FURNITURE_FUNCTION: Partial<Record<FurnitureId, 'craft' | 'tower'>> = { woodWorkbench: 'craft', woodTower: 'tower' };
 
 /** 地図の記号以外で、最初から置く家具（既定マップのときだけ。W = 作業台、P = 古い柱は MAP の記号から決まる）。 */
 export const EXTRA_INITIAL_FURNITURE: InitialFurniture[] = [

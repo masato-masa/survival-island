@@ -5,7 +5,7 @@
 import { AnimatePresence } from 'motion/react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
-import { AREAS, CROPS, FURNITURE, FURNITURE_FUNCTION, ISLAND_LEVEL_POINTS, REQUESTS, SHIP_STAGES, BUFFS, MEALS, TREE_SPECIES } from '@/game/data';
+import { AREAS, CROPS, FURNITURE, FURNITURE_FUNCTION, ISLAND_LEVEL_POINTS, REQUESTS, SHIP_STAGES, TOWER_STAGES, BUFFS, MEALS, TREE_SPECIES } from '@/game/data';
 import { store } from '@/game/store';
 import { placementAt } from '@/game/rules';
 import { spriteDataUrl } from '@/render/sprites';
@@ -28,6 +28,7 @@ import { MenuPopover } from './MenuSheet';
 import { isHapticsEnabled, isSoundEnabled, setHapticsEnabled, setSoundEnabled } from './settings';
 import { SignSheet } from './SignSheet';
 import { ShipSheet } from './ShipSheet';
+import { TowerSheet } from './TowerSheet';
 import { SkillSheet } from './SkillSheet';
 import { StationInfoSheet } from './StationInfoSheet';
 import { playCraft, playFell, playPop, playFail, playHarvest, playLevelUp, playPlace, playPlant } from './sound';
@@ -38,6 +39,7 @@ type SheetState =
   | { kind: 'craft' }
   | { kind: 'fishing' }
   | { kind: 'ship' }
+  | { kind: 'tower' }
   | { kind: 'goal' }
   | { kind: 'sign'; plotId: string }
   | { kind: 'place'; x: number; y: number }
@@ -173,6 +175,16 @@ export function Game() {
             playLevelUp();
             hapticLevelUp();
             break;
+          case 'towerBuilt':
+            showBanner(`見張り台を建て増した！ ${TOWER_STAGES[ev.stage - 1]?.after ?? ''}`);
+            playLevelUp();
+            hapticLevelUp();
+            break;
+          case 'towerGift':
+            showBanner('見張り台の贈り物を受け取りました');
+            playHarvest();
+            hapticHarvest();
+            break;
           case 'shipGift':
             showBanner('商船のお届けを受け取りました');
             playHarvest();
@@ -289,6 +301,7 @@ export function Game() {
   const onFurnitureTap = (furnitureId: FurnitureId) => {
     if (sheet !== null) return;
     if (FURNITURE_FUNCTION[furnitureId] === 'craft') setSheet({ kind: 'craft' });
+    else if (FURNITURE_FUNCTION[furnitureId] === 'tower') setSheet({ kind: 'tower' });
     hapticTap();
   };
 
@@ -466,6 +479,20 @@ export function Game() {
             islandLevel={islandLevel}
             onRepair={() => store.repairShip()}
             onClaim={() => store.claimShipGift()}
+            onClose={closeSheet}
+          />
+        ) : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {sheet?.kind === 'tower' ? (
+          <TowerSheet
+            key="tower"
+            save={save}
+            now={store.now}
+            islandLevel={islandLevel}
+            onUpgrade={() => store.upgradeTower()}
+            onClaim={() => store.claimTowerGift()}
             onClose={closeSheet}
           />
         ) : null}

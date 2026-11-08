@@ -1,7 +1,7 @@
 // もくひょう: 島ポイントの現在値と次の島レベルまでの距離、次で増えるもの、
 // エリアごとの開放状況と必要スキルを見せる。
 
-import { AREA_ORDER, AREAS, BUFFS, ISLAND_LEVEL_POINTS, ITEMS, REQUESTS, SHIP_STAGES, SKILLS } from '@/game/data';
+import { AREA_ORDER, AREAS, BUFFS, ISLAND_LEVEL_POINTS, ITEMS, REQUESTS, SHIP_STAGES, SKILLS, TOWER_STAGES } from '@/game/data';
 import { dailyOpen, dailyTitle, dailyView } from '@/game/daily';
 import { currentRequest, hasBuff, isAreaOpen } from '@/game/rules';
 import { islandPoints } from '@/game/score';
@@ -115,6 +115,17 @@ export function GoalSheet({
           {SHIP_STAGES[save.ship.stage]
             ? `次: ${SHIP_STAGES[save.ship.stage]!.name}（島レベル ${SHIP_STAGES[save.ship.stage]!.unlockLevel}〜）。桟橋の商船に触れて素材を納めよう`
             : '商船は すっかり直りました'}
+        </p>
+      </div>
+      <div className="goal-request">
+        <div className="goal-request-title">見張り台の建て増し {save.tower.stage}/{TOWER_STAGES.length}</div>
+        <div className="goal-progress-bar">
+          <div className="goal-progress-fill" style={{ width: `${(save.tower.stage / TOWER_STAGES.length) * 100}%` }} />
+        </div>
+        <p className="sheet-text">
+          {TOWER_STAGES[save.tower.stage]
+            ? `次: ${TOWER_STAGES[save.tower.stage]!.name}（島レベル ${TOWER_STAGES[save.tower.stage]!.unlockLevel}〜）。丸太の見張り台を島に置いて触ろう`
+            : '見張り台は島一番の高さになりました'}
         </p>
       </div>
       <p className="sheet-text">次の島レベルで増えるもの: スキルの上限・新しいレシピ・新しい種</p>
