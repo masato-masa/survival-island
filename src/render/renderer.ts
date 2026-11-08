@@ -961,7 +961,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
 
   // --- 昔の暮らしの名残・商船。ship のような大物は w×h の矩形の下辺中央に据える。 ---
   for (const d of world.decor ?? []) {
-    const name = DECOR_SPRITE[d.kind];
+    const name = d.kind === 'ship' ? (`decor_ship${save.ship.stage >= 5 ? '' : save.ship.stage}` as SpriteName) : DECOR_SPRITE[d.kind];
     const wx = (d.x + d.w / 2) * TILE;
     const wy = (d.y + d.h - (1 - BASE_IN_TILE)) * TILE;
     const fit = d.kind === 'ship' ? null : Math.max(1, d.w); // 船は大物なので縮めない

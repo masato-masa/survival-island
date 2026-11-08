@@ -1,7 +1,7 @@
 // もくひょう: 島ポイントの現在値と次の島レベルまでの距離、次で増えるもの、
 // エリアごとの開放状況と必要スキルを見せる。
 
-import { AREA_ORDER, AREAS, BUFFS, ISLAND_LEVEL_POINTS, ITEMS, REQUESTS, SKILLS } from '@/game/data';
+import { AREA_ORDER, AREAS, BUFFS, ISLAND_LEVEL_POINTS, ITEMS, REQUESTS, SHIP_STAGES, SKILLS } from '@/game/data';
 import { dailyOpen, dailyTitle, dailyView } from '@/game/daily';
 import { currentRequest, hasBuff, isAreaOpen } from '@/game/rules';
 import { islandPoints } from '@/game/score';
@@ -106,6 +106,17 @@ export function GoalSheet({
           <p className="sheet-text">同じ作業が、効き目の合うおねがい全部に数えられます。</p>
         </div>
       )}
+      <div className="goal-request">
+        <div className="goal-request-title">商船の修理 {save.ship.stage}/{SHIP_STAGES.length}</div>
+        <div className="goal-progress-bar">
+          <div className="goal-progress-fill" style={{ width: `${(save.ship.stage / SHIP_STAGES.length) * 100}%` }} />
+        </div>
+        <p className="sheet-text">
+          {SHIP_STAGES[save.ship.stage]
+            ? `次: ${SHIP_STAGES[save.ship.stage]!.name}（島レベル ${SHIP_STAGES[save.ship.stage]!.unlockLevel}〜）。桟橋の商船に触れて素材を納めよう`
+            : '商船は すっかり直りました'}
+        </p>
+      </div>
       <p className="sheet-text">次の島レベルで増えるもの: スキルの上限・新しいレシピ・新しい種</p>
       <p className="sheet-text">謎の遺跡でスキルを授かり、作業台で家具をクラフトできます。</p>
       <div className="sheet-list">

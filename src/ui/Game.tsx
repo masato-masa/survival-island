@@ -5,7 +5,7 @@
 import { AnimatePresence } from 'motion/react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
-import { AREAS, CROPS, FURNITURE, FURNITURE_FUNCTION, ISLAND_LEVEL_POINTS, REQUESTS, BUFFS, MEALS, TREE_SPECIES } from '@/game/data';
+import { AREAS, CROPS, FURNITURE, FURNITURE_FUNCTION, ISLAND_LEVEL_POINTS, REQUESTS, SHIP_STAGES, BUFFS, MEALS, TREE_SPECIES } from '@/game/data';
 import { store } from '@/game/store';
 import { placementAt } from '@/game/rules';
 import { spriteDataUrl } from '@/render/sprites';
@@ -27,6 +27,7 @@ import { SettingsSheet } from './SettingsSheet';
 import { MenuPopover } from './MenuSheet';
 import { isHapticsEnabled, isSoundEnabled, setHapticsEnabled, setSoundEnabled } from './settings';
 import { SignSheet } from './SignSheet';
+import { ShipSheet } from './ShipSheet';
 import { SkillSheet } from './SkillSheet';
 import { StationInfoSheet } from './StationInfoSheet';
 import { playCraft, playFell, playPop, playFail, playHarvest, playLevelUp, playPlace, playPlant } from './sound';
@@ -36,6 +37,7 @@ type SheetState =
   | { kind: 'skill' }
   | { kind: 'craft' }
   | { kind: 'fishing' }
+  | { kind: 'ship' }
   | { kind: 'goal' }
   | { kind: 'sign'; plotId: string }
   | { kind: 'place'; x: number; y: number }
@@ -100,7 +102,7 @@ export function Game() {
   useEffect(() => {
     const showFail = (reason: Fail, detail?: string) => {
       if (reason === 'cooldown') return; // クールダウンは見せるほどの情報ではない
-      const msg = reason === 'needSkill' && detail ? `${detail} が必要です` : FAIL_MESSAGES[reason];
+      const msg = reason === 'needSkill' && detail ? `${detail} が必要です` : (reason === 'levelCap' || reason === 'notReady') && detail ? detail : FAIL_MESSAGES[reason];
       window.clearTimeout(failTimer.current);
       setFailMsg(msg);
       failTimer.current = window.setTimeout(() => setFailMsg(null), 1600);
@@ -166,6 +168,16 @@ export function Game() {
             hapticHarvest();
             break;
           }
+          case 'shipRepaired':
+            showBanner(`商船を直した！ ${SHIP_STAGES[ev.stage - 1]?.after ?? ''}`);
+            playLevelUp();
+            hapticLevelUp();
+            break;
+          case 'shipGift':
+            showBanner('商船のお届けを受け取りました');
+            playHarvest();
+            hapticHarvest();
+            break;
           case 'placed':
             playPlace();
             hapticPlace();
@@ -267,6 +279,7 @@ export function Game() {
       return;
     }
     if (kind === 'dock') setSheet({ kind: 'fishing' });
+    else if (kind === 'ship') setSheet({ kind: 'ship' });
     else if (kind === 'ruins') setSheet({ kind: 'skill' });
     else setSheet({ kind: 'stationInfo', station: kind });
     hapticTap();
@@ -441,6 +454,20 @@ export function Game() {
       <AnimatePresence>
         {sheet?.kind === 'fishing' ? (
           <FishingSheet key="fishing" save={save} now={store.now} onCast={(q) => store.fish(q)} onClose={closeSheet} />
+        ) : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {sheet?.kind === 'ship' ? (
+          <ShipSheet
+            key="ship"
+            save={save}
+            now={store.now}
+            islandLevel={islandLevel}
+            onRepair={() => store.repairShip()}
+            onClaim={() => store.claimShipGift()}
+            onClose={closeSheet}
+          />
         ) : null}
       </AnimatePresence>
 

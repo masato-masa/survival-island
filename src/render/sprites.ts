@@ -57,6 +57,11 @@ export type SpriteName =
   | 'decor_brokenStone'
   | 'decor_pillar'
   | 'decor_ship'
+  | 'decor_ship0'
+  | 'decor_ship1'
+  | 'decor_ship2'
+  | 'decor_ship3'
+  | 'decor_ship4'
   | 'decor_arch'
   | 'decor_campfire'
   | 'station_ruins'
@@ -275,6 +280,12 @@ const SHEET_TARGET: Partial<Record<SpriteName, SheetSpec>> = {
   decor_pillar: { src: 'rock_cliff', worldW: 42 },
   // ChatGPT で生成した pigg 風の帆船（scripts/import-generated.mjs で取り込み）。7×8 マスの用地に収まる大きさ。
   decor_ship: { src: 'pigg_ship', worldW: 84 },
+  // 商船の修理の段階（SI-14）。scripts/make-ship-stages.mjs が pigg_ship から作る（0 壊れた船 … 4 帆が全部、5 = decor_ship は旗つきの完成）
+  decor_ship0: { src: 'pigg_ship0', worldW: 84 },
+  decor_ship1: { src: 'pigg_ship1', worldW: 84 },
+  decor_ship2: { src: 'pigg_ship2', worldW: 84 },
+  decor_ship3: { src: 'pigg_ship3', worldW: 84 },
+  decor_ship4: { src: 'pigg_ship4', worldW: 84 },
   f_woodTower: { src: 'pigg_tower', worldW: 84 },
   f_flowerArch: { src: 'pigg_arch', worldW: 84 },
   station_ruins: { src: 'rock_fossil', worldW: 46 },

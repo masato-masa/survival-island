@@ -250,6 +250,16 @@ function buildFrom(map: string[], areaMap: string[], extraFurniture: InitialFurn
       stations.push({ id: key(x, y), x, y, kind, area: a });
     }
   }
+  // 商船（飾りの 'ship'）に触れる設備。桟橋に面した左の列の、係留柱でないマスに置く（歩けない水の上。桟橋から手が届く）
+  for (const comp of connectedComponents(width, height, at, (ch) => ch === 'S')) {
+    const { minX, minY, maxY } = bboxOf(comp);
+    for (let y = minY; y <= maxY; y++) {
+      if (stations.some((s) => s.x === minX && s.y === y)) continue;
+      const a = getArea(minX, y) ?? getArea(minX - 1, y);
+      if (!a) continue;
+      stations.push({ id: key(minX, y), x: minX, y, kind: 'ship', area: a });
+    }
+  }
   // 家の跡地（'F' の連結成分ごとに、一番下の行の中央に 1 つ置く）
   const foundationComps = connectedComponents(width, height, at, (ch) => ch === 'F');
   for (const comp of foundationComps) {

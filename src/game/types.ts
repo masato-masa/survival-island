@@ -57,6 +57,26 @@ export interface RequestState {
   daily: DailyState;
 }
 
+/** 商船の修理（SI-14）。stage = 直した段階の数（0 は壊れたまま）。giftDay = 最後にお届けを受け取った日（dailyDay、-1 は未）。 */
+export interface ShipState {
+  stage: number;
+  giftDay: number;
+}
+
+/** 商船の修理の 1 段階。素材を納めると見た目が変わり、毎日のお届けが 1 つ増える。 */
+export interface ShipStageDef {
+  id: string;
+  name: string;
+  /** 納める素材。 */
+  cost: Partial<Record<ItemId, number>>;
+  /** この島レベル以上で取りかかれる。 */
+  unlockLevel: number;
+  /** 直すと毎日のお届けに足されるもの。 */
+  gift: Partial<Record<ItemId, number>>;
+  /** 直したあとの船の様子（一言）。 */
+  after: string;
+}
+
 export interface MealDef {
   id: MealId;
   name: string;
@@ -231,7 +251,7 @@ export interface Chest {
 /** 島に据え付けの設備（動かせない）。触れると画面が開く。
  *  ruins = スキル、housePlot = 家の跡地（今は説明だけ）、dock = 船着き場（今は説明だけ。交易は M2）。
  *  作業台は設備ではなく家具 woodWorkbench（最初から置いてあり、動かせる。触れるとクラフト）。 */
-export type StationKind = 'ruins' | 'housePlot' | 'dock' | 'caveEntrance' | 'caveExit';
+export type StationKind = 'ruins' | 'housePlot' | 'dock' | 'caveEntrance' | 'caveExit' | 'ship';
 
 /** 地図の区画。島と洞窟は同じ World の別の行にあり、カメラは今いる区画の中だけを映す。 */
 export interface Region {
@@ -335,6 +355,8 @@ export interface SaveState {
   buffs: Buff[];
   /** 島のおねがい（SI-11）。 */
   request: RequestState;
+  /** 商船の修理（SI-14）。 */
+  ship: ShipState;
   /** 植えた苗木・花の種（"x,y" → 状態）。資源としての体力などは nodes["p:x,y"] に入る。 */
   planted: Record<string, PlantedState>;
   /** 最初から置く家具（作業台・柱など）を placements に入れ終えたか。古いセーブに一度だけ入れるための印。 */
@@ -390,6 +412,10 @@ export type GameEvent =
   /** 料理を食べた。restore = 実際に回復した量（上限で切れた後）。 */
   | { type: 'ate'; meal: MealId; restore: number }
   | { type: 'requestDone'; id: string; name?: string }
+  /** 商船を 1 段階直した（stage = 直した段階の数）。 */
+  | { type: 'shipRepaired'; stage: number }
+  /** 商船のお届けを受け取った。 */
+  | { type: 'shipGift'; items: Partial<Record<ItemId, number>> }
   /** 釣った（item が null なら逃げられた）。 */
   | { type: 'fished'; item: 'fish' | 'bigFish' | null }
   | { type: 'placed'; slot: string; furniture: FurnitureId | null }

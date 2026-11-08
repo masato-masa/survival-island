@@ -1347,3 +1347,15 @@ button.hud-portrait:active {
   font-weight: 700;
   margin-bottom: 4px;
 }
+
+/* 商船の修理（SI-14） */
+.ship-view {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0 8px;
+}
+.ship-view img {
+  height: 150px;
+  width: auto;
+  object-fit: contain;
+}

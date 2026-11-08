@@ -3,6 +3,7 @@
 
 import { ISLAND_LEVEL_POINTS, NODES, WALK_SPEED } from './data';
 import * as Actions from './actions';
+import * as Ship from './ship';
 import { actionMs, islandLevel as islandLevelOf, liveNodeById, needSkillDetail, staminaMax } from './rules';
 import { applyRespawns, currentStamina } from './time';
 import { islandPoints } from './score';
@@ -57,6 +58,10 @@ export interface GameStore {
   craft(id: FurnitureId): Result;
   /** 料理を作って食べる（SI-8）。 */
   cook(id: MealId): Result;
+  /** 商船の次の段階を直す（SI-14）。 */
+  repairShip(): Result;
+  /** 商船の今日のお届けを受け取る（SI-14）。 */
+  claimShipGift(): Result;
   /** 桟橋で釣る（SI-9）。quality は UI の浮きのタイミングから決める。 */
   fish(quality: Actions.CatchQuality): Result;
   /** 作業中（または受け取り待ち）のクラフト。無ければ null。endsAt <= now() なら完成。 */
@@ -311,6 +316,14 @@ export function createStore(opts: CreateStoreOptions = {}): GameStore {
 
     cook(id) {
       return runAction(Actions.cook(save, id, now()));
+    },
+
+    repairShip() {
+      return runAction(Ship.repairShip(save));
+    },
+
+    claimShipGift() {
+      return runAction(Ship.claimShipGift(save, now()));
     },
 
     fish(quality) {

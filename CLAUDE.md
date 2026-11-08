@@ -102,3 +102,9 @@
 - **島のおねがい（SI-11・12）と毎日のおねがい（SI-13）。** 固定の 5 件（`REQUESTS`）は順番に。終えたあとは日付（日本時間 0 時切替、`daily.ts` の `dailyDay`）から
   3 件（小 2 + 大 1。大は効き目 2 つ要求）が決まる（`DAILY_SMALL`/`DAILY_BIG`）。同じ作業が効き目の合うおねがい全部に数えられる。
   ごほうびは作業スタミナの 3〜9 割（`__tests__/requests.test.ts` が全部の型を測る）。数を変えたらそのテストを見る。
+- **商船の修理（SI-14）。** 桟橋の隣の商船（`decor` の `ship`）に触れる（`world.ts` が左の列に Station `ship` を足す）と `ShipSheet`。
+  5 段階（`SHIP_STAGES`・`ship.ts`）の素材を納めると船の絵が変わり（`pigg_ship0〜4.png` は `scripts/make-ship-stages.mjs` が `pigg_ship.png` から作る。5 = 旗つきの元絵）、
+  直した段階ぶんのお届けが毎日 1 回受け取れる（`save.ship = { stage, giftDay }`、日付は `dailyDay`）。島レベル 3〜5 で順に取りかかれる。
+  素材は木材・石・銅・花びら・作物・魚（他の遊びと取り合う）。全部で約 270 スタミナ（力もちなら約 185）、お届けは 1 日 17 相当で回収 16 日。`__tests__/ship.test.ts` が測る。
+- URL に `?dev` を付けると公開版でも `window.__store` が出る（確認用）。
+

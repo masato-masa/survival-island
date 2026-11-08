@@ -7,7 +7,8 @@ import { store } from './game/store';
 import { loadArt } from './render/sprites';
 
 // 開発中だけ、ブラウザのコンソールや自動テストから状態を覗けるようにする。
-if (import.meta.env.DEV) (window as unknown as { __store: typeof store }).__store = store;
+// 公開版でも URL に ?dev を付けると出せる（実機・公開版の確認用）。
+if (import.meta.env.DEV || new URLSearchParams(location.search).has('dev')) (window as unknown as { __store: typeof store }).__store = store;
 
 function render() {
   // 端末の「動きを減らす」設定に、アプリ全体で従う。

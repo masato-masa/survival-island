@@ -14,6 +14,7 @@ import type {
   MealId,
   BuffId,
   RequestDef,
+  ShipStageDef,
   NodeDef,
   NodeKind,
   SeriesId,
@@ -180,6 +181,21 @@ export const DAILY_TITLES: { total: number; name: string }[] = [
   { total: 18, name: '島の働き者' },
   { total: 45, name: '島の頼れる人' },
   { total: 90, name: '島の主' },
+];
+
+/**
+ * 商船の修理（SI-14）。港の商船は壊れたまま浮いている。素材を納めて 1 段階ずつ直すと見た目が変わり（船体 → 帆柱 → 下の帆 → 上の帆 → 旗）、
+ * 毎日 1 回、直した段階のぶんのお届けが船から届く。島レベル 5 のあとも続く「余った素材の置き場」で、島の長い目標。
+ * 素材は他の遊び（家具・料理・おねがい）と取り合う: 木材・石は家具、銅はかまど・灯籠・像、花びらは花壇・鉢、
+ * 作物と魚は料理と家具。木材は 1 段階で 30〜40 個 = 木こりのスタミナで 40 前後（力もちなら 3 割ほど安い）。
+ * 数を変えたら __tests__/ship.test.ts の収支（全部直す総スタミナ・お届けの回収日数）を見る。
+ */
+export const SHIP_STAGES: ShipStageDef[] = [
+  { id: 'hull', name: '船体を直す', cost: { wood: 30, stone: 10 }, unlockLevel: 3, gift: { fish: 2 }, after: '穴がふさがり、船が浮いた' },
+  { id: 'mast', name: '帆柱を立てる', cost: { wood: 40, copper: 6 }, unlockLevel: 3, gift: { wood: 3 }, after: '帆柱と横木が立った' },
+  { id: 'sailLow', name: '下の帆を張る', cost: { petal: 24, wood: 16, turnip: 6 }, unlockLevel: 4, gift: { turnip: 1 }, after: '大きな帆が風をはらんだ' },
+  { id: 'sailHigh', name: '上の帆を張る', cost: { petal: 24, sunflower: 8, stone: 10 }, unlockLevel: 4, gift: { sapling: 1 }, after: '二枚目の帆が広がった' },
+  { id: 'flag', name: '旗をかかげ、積み荷をそろえる', cost: { fish: 8, bigFish: 2, tomato: 6, stone: 20, copper: 4 }, unlockLevel: 5, gift: { bigFish: 1 }, after: '赤い旗がはためく、立派な商船になった' },
 ];
 
 export const MEAL_ORDER: MealId[] = ['turnipSoup', 'grilledFish', 'sunflowerCookie', 'fishStew', 'gardenSalad'];
@@ -489,7 +505,8 @@ export const FURNITURE_CHARS: Record<string, FurnitureId> = { W: 'woodWorkbench'
 export const STATIONS: Record<StationKind, { name: string; hint: string }> = {
   ruins: { name: '謎の遺跡', hint: 'スキルを授かる' },
   housePlot: { name: '家の跡地', hint: 'いつか ここに家を建てられそうだ' },
-  dock: { name: '船着き場', hint: '釣りができる（ときどき商船も来るらしい）' },
+  dock: { name: '船着き場', hint: '釣りができる' },
+  ship: { name: '商船', hint: '素材を納めて直すと、毎日お届けが来る' },
   caveEntrance: { name: '洞窟の入口', hint: '入る' },
   caveExit: { name: '洞窟の出口', hint: '外へ出る' },
 };
