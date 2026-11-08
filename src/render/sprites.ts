@@ -367,8 +367,9 @@ const GEN_TARGET: Partial<Record<SpriteName, SheetSpec>> = {
   tree: { src: 'gen_tree', worldW: 30 },
   bigTree: { src: 'gen_bigTree', worldW: 44 },
   cedarTree: { src: 'gen_cedarTree', worldW: 38 },
-  ancientTree: { src: 'gen_ancientTree', worldW: 56 },
-  ancientTree2: { src: 'gen_ancientTree', worldW: 56, flip: true },
+  // 最高段階の木は森にたくさん生えるので、落ち着いた色に 2 通りの濃さで並べる（同じ絵の連続を和らげる）。
+  ancientTree: { src: 'gen_ancientTree', worldW: 52, tint: '#c3d1bb' },
+  ancientTree2: { src: 'gen_ancientTree', worldW: 48, flip: true, tint: '#aebfa8' },
 };
 
 // ---------------------------------------------------------------------------
