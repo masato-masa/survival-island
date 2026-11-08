@@ -38,6 +38,7 @@ import {
   plantedNodeId,
   skillCap,
 } from './rules';
+import { countDaily, dailyOpen, dailyRequests, rollDaily } from './daily';
 import { isReady, normalizeStamina } from './time';
 import { staminaMax } from './rules';
 import { updateMaxPoints } from './score';
@@ -72,6 +73,7 @@ export function spend(save: SaveState, amount: number, now: number): boolean {
 function addItem(save: SaveState, item: ItemId, amount: number, now?: number): void {
   save.inventory[item] = (save.inventory[item] ?? 0) + amount;
   if (now === undefined) return;
+  countDaily(save, item, amount, now);
   const cur = currentRequest(save);
   if (!cur || cur.locked || !cur.def.items.includes(item)) return;
   if (!cur.def.buffs.every((b) => hasBuff(save, b, now))) return;
@@ -79,12 +81,22 @@ function addItem(save: SaveState, item: ItemId, amount: number, now?: number): v
 }
 
 /** おねがいの目標に届いていたら、ごほうびを渡して次へ進める。 */
-function settleRequest(save: SaveState, events: GameEvent[]): void {
+function settleRequest(save: SaveState, events: GameEvent[], now: number): void {
   const cur = currentRequest(save);
-  if (!cur || cur.locked || save.request.progress < cur.def.goal) return;
-  for (const [item, amount] of Object.entries(cur.def.reward) as [ItemId, number][]) addItem(save, item, amount);
-  save.request = { done: [...save.request.done, cur.def.id], progress: 0 };
-  events.push({ type: 'requestDone', id: cur.def.id });
+  if (cur && !cur.locked && save.request.progress >= cur.def.goal) {
+    for (const [item, amount] of Object.entries(cur.def.reward) as [ItemId, number][]) addItem(save, item, amount);
+    save.request = { ...save.request, done: [...save.request.done, cur.def.id], progress: 0 };
+    events.push({ type: 'requestDone', id: cur.def.id });
+  }
+  if (!dailyOpen(save)) return;
+  const d = rollDaily(save, now);
+  dailyRequests(d.day).forEach((def, i) => {
+    if (d.claimed[i] || (d.progress[i] ?? 0) < def.goal) return;
+    for (const [item, amount] of Object.entries(def.reward) as [ItemId, number][]) addItem(save, item, amount);
+    d.claimed[i] = true;
+    d.total += 1;
+    events.push({ type: 'requestDone', id: def.id, name: def.name });
+  });
 }
 
 type Drops = Partial<Record<ItemId, number>>;
@@ -159,7 +171,7 @@ export function hitNode(world: World, save: SaveState, node: HittableNode, now: 
     // 木を切り倒した → 幹（切り株）が残る。幹をもう一度切ると木は消える。
     save.nodes[node.id] = { hp: STUMP_HP, destroyedAt: null, stump: true };
     addDrops(save, def.drops, now);
-    settleRequest(save, events);
+    settleRequest(save, events, now);
     events.push({ type: 'broke', x: node.x, y: node.y, kind: node.kind, drops: def.drops });
     events.push({ type: 'dropped', x: node.x, y: node.y, items: { ...def.drops } });
   } else {
@@ -170,7 +182,7 @@ export function hitNode(world: World, save: SaveState, node: HittableNode, now: 
     const saplings = isTree ? SAPLING_DROPS[node.kind] ?? 0 : 0;
     if (saplings > 0) drops = { ...drops, sapling: (drops.sapling ?? 0) + saplings };
     addDrops(save, drops, now);
-    settleRequest(save, events);
+    settleRequest(save, events, now);
     events.push({ type: 'broke', x: node.x, y: node.y, kind: node.kind, drops });
     events.push({ type: 'dropped', x: node.x, y: node.y, items: drops });
     const isOpenNow = isAreaOpen(world, save, node.area);
@@ -369,7 +381,7 @@ function harvestTiles(world: World, save: SaveState, plot: Plot, x: number, y: n
     for (const t of tiles) events.push({ type: 'dropped', x: t.x, y: t.y, items: { [crop]: amountPerTile } });
   }
   events.push(xpEvent(xpGained));
-  settleRequest(save, events);
+  settleRequest(save, events, now);
   return { ok: true, events };
 }
 
@@ -461,7 +473,7 @@ export function fish(save: SaveState, quality: CatchQuality, roll: number, now: 
   const item = quality === 'perfect' ? (roll < (hasBuff(save, 'bounty', now) ? BOUNTY_BIG_FISH_RATE : BIG_FISH_RATE) ? 'bigFish' : 'fish') : quality === 'good' ? 'fish' : null;
   if (item) addItem(save, item, 1, now);
   const events: GameEvent[] = [{ type: 'fished', item }];
-  settleRequest(save, events);
+  settleRequest(save, events, now);
   return { ok: true, events };
 }
 

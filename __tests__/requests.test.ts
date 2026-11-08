@@ -117,3 +117,123 @@ describe('島のおねがいの収支', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// 毎日のおねがい（SI-13）
+// ---------------------------------------------------------------------------
+import { DAILY_BIG, DAILY_SMALL } from '../src/game/data';
+import { dailyDay, dailyOpen, dailyRequests, dailyView, emptyDaily } from '../src/game/daily';
+import { migrate } from '../src/game/save';
+
+const DAY = 24 * 60 * 60 * 1000;
+const T0 = 100 * DAY; // 日本時間の 100 日目の 9 時
+
+function introDone() {
+  const save = freshSave(T0);
+  save.request.done = REQUESTS.map((r) => r.id);
+  save.request.daily = emptyDaily();
+  save.maxPoints = 100;
+  save.stamina.value = 9999;
+  save.stamina.updatedAt = T0;
+  return save;
+}
+
+describe('毎日のおねがい', () => {
+  it('固定の 5 件を終えるまでは出ない・数えない', () => {
+    const save = freshSave(T0);
+    save.stamina.value = 999;
+    expect(dailyOpen(save)).toBe(false);
+    save.buffs = [{ id: 'power', until: 1e15 }];
+    chopAll(save, T0, 3);
+    expect(save.request.daily.progress).toEqual([0, 0, 0]);
+  });
+
+  it('同じ日は同じ 3 件（小 2 + 大 1）。日が変われば変わる', () => {
+    const a = dailyRequests(100);
+    expect(dailyRequests(100)).toEqual(a);
+    expect(a.map((q) => q.buffs.length)).toEqual([1, 1, 2]);
+    expect(new Set(a.slice(0, 2).map((q) => q.name)).size).toBe(2);
+    const sigs = new Set<string>();
+    for (let d = 0; d < 60; d++) sigs.add(dailyRequests(d).map((q) => q.name).join('|'));
+    expect(sigs.size).toBeGreaterThan(20);
+  });
+
+  it('日付は日本時間の 0 時で切り替わる', () => {
+    expect(dailyDay(T0 + 14 * 60 * 60 * 1000 - 1)).toBe(dailyDay(T0));
+    expect(dailyDay(T0 + 15 * 60 * 60 * 1000)).toBe(dailyDay(T0) + 1);
+  });
+
+  it('効き目の合う全部のおねがいに同じ作業が数えられ、届いたらごほうびが出る。日が変われば戻る', () => {
+    const save = introDone();
+    const list = dailyRequests(dailyDay(T0));
+    // 今日の 3 件を全部満たす効き目を付ける
+    save.buffs = [
+      { id: 'power', until: 1e15 },
+      { id: 'swift', until: 1e15 },
+      { id: 'bounty', until: 1e15 },
+    ];
+    save.inventory = {};
+    const items = list[0]!.items[0]!;
+    save.inventory[items] = 0;
+    // 集める代わりにテストでは addItem 相当を hitNode / harvest で行う代わりに、進みを直接見る: 木を叩く
+    chopAll(save, T0, 12);
+    const view = dailyView(save, T0);
+    const woodOnes = view.filter((v) => v.def.items.includes('wood'));
+    for (const w of woodOnes) expect(w.progress + (w.claimed ? w.def.goal : 0)).toBeGreaterThan(0);
+    // 翌日は進みが戻る
+    const next = dailyView(save, T0 + DAY);
+    expect(next.every((v) => v.progress === 0 && !v.claimed)).toBe(true);
+  });
+
+  it('目標に届くと 1 日 1 回だけごほうびが出て、かなえた数が増える', () => {
+    const save = introDone();
+    // 木材のおねがいが今日に出る日を探す
+    let day = 0;
+    for (; day < 400; day++) if (dailyRequests(day).some((q) => q.items.length === 1 && q.items[0] === 'wood' && q.buffs.length === 1)) break;
+    const t = day * DAY - 9 * 60 * 60 * 1000 + 3600_000; // その日の 1 時
+    expect(dailyDay(t)).toBe(day);
+    save.buffs = [{ id: 'power', until: 1e15 }];
+    save.stamina.updatedAt = t;
+    const events = chopAll(save, t, 18);
+    const slot = dailyRequests(day).findIndex((q) => q.items.length === 1 && q.items[0] === 'wood' && q.buffs.length === 1);
+    expect(save.request.daily.claimed[slot]).toBe(true);
+    expect(save.request.daily.total).toBe(1);
+    expect(events.filter((e) => (e as { type: string }).type === 'requestDone').length).toBe(1);
+    // もう一度木を叩いても、同じおねがいは二重にならない
+    const before = save.request.daily.total;
+    chopAll(save, t, 18);
+    expect(save.request.daily.total).toBe(before);
+  });
+
+  it('古いセーブにも毎日のおねがいの欄が入る', () => {
+    const save = migrate({ request: { done: ['wood16'], progress: 3 } });
+    expect(save.request.daily).toEqual(emptyDaily());
+    expect(save.request.progress).toBe(3);
+  });
+});
+
+describe('毎日のおねがいの収支（全部の型）', () => {
+  it('どの型もごほうびが作業のスタミナの 3〜9 割に収まる', () => {
+    const woodCost = staminaToGather(['tree'], ['wood'], 30, false) / 30;
+    const SAPLING = 3;
+    const value = (r: Partial<Record<ItemId, number>>) =>
+      (r.sapling ?? 0) * SAPLING + (r.bigFish ?? 0) * 5 + (r.sunflower ?? 0) * 2 + (r.turnip ?? 0) * 2 + (r.wood ?? 0) * woodCost;
+    const rows: string[] = [];
+    let smallTotal = 0;
+    for (const t of [...DAILY_SMALL, ...DAILY_BIG]) {
+      let work: number;
+      if (t.items.includes('fish')) work = t.goal / 0.65;
+      else if (t.items.includes('turnip')) work = (t.goal / 2) * 2;
+      else if (t.items.includes('stone')) work = staminaToGather(['rock', 'hardRock', 'copperVein'], t.items, t.goal, true);
+      else work = staminaToGather(['tree'], t.items, t.goal, true);
+      const v = value(t.reward);
+      rows.push(`${t.key}: 作業 ${work.toFixed(1)} / ごほうび ${v.toFixed(1)} (${Math.round((v / work) * 100)}%)`);
+      expect(v / work, t.key).toBeGreaterThanOrEqual(0.3);
+      expect(v / work, t.key).toBeLessThanOrEqual(0.9);
+      smallTotal += t.buffs.length === 1 ? v : 0;
+    }
+    // eslint-disable-next-line no-console
+    console.log(`[毎日のおねがい測定] 木材 1 個 = ${woodCost.toFixed(2)}\n${rows.join('\n')}`);
+    void smallTotal;
+  });
+});

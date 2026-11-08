@@ -147,6 +147,41 @@ export const REQUESTS: RequestDef[] = [
   { id: 'wood30', name: '力もち＋手早いで大木こり', buffs: ['power', 'swift'], items: ['wood'], goal: 30, reward: { sapling: 3, bigFish: 1 }, unlockLevel: 3 },
 ];
 
+/**
+ * 毎日のおねがい（SI-13）。固定の 5 件を終えたあと、日ごとに 3 件（小さいもの 2 つ + 大きいもの 1 つ）が
+ * 日付から決まる（daily.ts、同じ日は同じ 3 件）。大きいおねがいは効き目を 2 つ要求し、2 つの料理（またはサラダ・ごった煮）
+ * を食べる判断になる。同じ作業が複数のおねがいに数えられるので、効き目の組み合わせで 1 日の動きを決める。
+ * ごほうびは作業のスタミナの 3〜9 割（__tests__/requests.test.ts で全部の型を測る）。
+ */
+export interface DailyTemplate {
+  key: string;
+  name: string;
+  buffs: BuffId[];
+  items: ItemId[];
+  goal: number;
+  reward: Partial<Record<ItemId, number>>;
+}
+export const DAILY_SMALL: DailyTemplate[] = [
+  { key: 'wood', name: '力もちで木こり', buffs: ['power'], items: ['wood'], goal: 20, reward: { sapling: 2, wood: 3 } },
+  { key: 'stone', name: '力もちで岩掘り', buffs: ['power'], items: ['stone', 'copper'], goal: 20, reward: { wood: 5 } },
+  { key: 'crop', name: '豊作の収穫', buffs: ['bounty'], items: ['turnip', 'sunflower', 'tomato'], goal: 10, reward: { sunflower: 2, turnip: 1 } },
+  { key: 'fish', name: '手早く釣り上げる', buffs: ['swift'], items: ['fish', 'bigFish'], goal: 6, reward: { bigFish: 1, turnip: 1 } },
+];
+export const DAILY_BIG: DailyTemplate[] = [
+  { key: 'fishBig', name: '豊漁の釣り日和', buffs: ['swift', 'bounty'], items: ['fish', 'bigFish'], goal: 8, reward: { bigFish: 1, sunflower: 2 } },
+  { key: 'woodBig', name: '力もち＋手早いで大木こり', buffs: ['power', 'swift'], items: ['wood'], goal: 36, reward: { sapling: 4, bigFish: 1 } },
+  { key: 'cropBig', name: '豊作＋手早いで大収穫', buffs: ['bounty', 'swift'], items: ['turnip', 'sunflower', 'tomato'], goal: 14, reward: { bigFish: 1, sunflower: 2, turnip: 1 } },
+  { key: 'stoneBig', name: '力もち＋手早いで大岩掘り', buffs: ['power', 'swift'], items: ['stone', 'copper'], goal: 28, reward: { wood: 6, sapling: 1 } },
+];
+/** かなえた数に応じた称号。 */
+export const DAILY_TITLES: { total: number; name: string }[] = [
+  { total: 0, name: '島の新入り' },
+  { total: 6, name: '島の手伝い' },
+  { total: 18, name: '島の働き者' },
+  { total: 45, name: '島の頼れる人' },
+  { total: 90, name: '島の主' },
+];
+
 export const MEAL_ORDER: MealId[] = ['turnipSoup', 'grilledFish', 'sunflowerCookie', 'fishStew', 'gardenSalad'];
 
 export const CROPS: Record<CropId, CropDef> = {

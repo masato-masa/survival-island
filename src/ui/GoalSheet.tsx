@@ -2,6 +2,7 @@
 // エリアごとの開放状況と必要スキルを見せる。
 
 import { AREA_ORDER, AREAS, BUFFS, ISLAND_LEVEL_POINTS, ITEMS, REQUESTS, SKILLS } from '@/game/data';
+import { dailyOpen, dailyTitle, dailyView } from '@/game/daily';
 import { currentRequest, hasBuff, isAreaOpen } from '@/game/rules';
 import { islandPoints } from '@/game/score';
 import type { SaveState, World } from '@/game/types';
@@ -75,9 +76,36 @@ export function GoalSheet({
             </>
           )
         ) : (
-          <p className="sheet-text">おねがいは全部かないました！</p>
+          <p className="sheet-text">島のおねがいは全部かないました！</p>
         )}
       </div>
+      {dailyOpen(save) && (
+        <div className="goal-request">
+          <div className="goal-request-title">毎日のおねがい（日付で入れ替わる）</div>
+          <p className="sheet-text">
+            称号: <b>{dailyTitle(save.request.daily.total).name}</b>（かなえた数 {save.request.daily.total}
+            {dailyTitle(save.request.daily.total).next
+              ? `、「${dailyTitle(save.request.daily.total).next!.name}」まであと ${dailyTitle(save.request.daily.total).next!.total - save.request.daily.total}`
+              : ''}
+            ）
+          </p>
+          {dailyView(save, now).map(({ def, progress, claimed }) => (
+            <div key={def.id} style={{ marginTop: 8 }}>
+              <p className="sheet-text">
+                <b>{def.name}</b>：{def.buffs.map((b) => BUFFS[b].name).join('と')}が効いている間に{' '}
+                {def.items.map((i) => ITEMS[i].name).join('・')}を {def.goal} 個
+              </p>
+              <div className="goal-progress-bar">
+                <div className="goal-progress-fill" style={{ width: `${claimed ? 100 : Math.min(100, (progress / def.goal) * 100)}%` }} />
+              </div>
+              <p className="sheet-text">
+                {claimed ? 'かなえた！' : `${Math.min(progress, def.goal)} / ${def.goal}${def.buffs.every((b) => hasBuff(save, b, now)) ? '　効き目が効いています' : ''}`}　ごほうび: {itemList(def.reward)}
+              </p>
+            </div>
+          ))}
+          <p className="sheet-text">同じ作業が、効き目の合うおねがい全部に数えられます。</p>
+        </div>
+      )}
       <p className="sheet-text">次の島レベルで増えるもの: スキルの上限・新しいレシピ・新しい種</p>
       <p className="sheet-text">謎の遺跡でスキルを授かり、作業台で家具をクラフトできます。</p>
       <div className="sheet-list">

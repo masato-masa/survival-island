@@ -2,6 +2,7 @@
 // localStorage に触るのはこのファイルだけ（try/catch で必ず守る）。
 
 import { SKILLS, STAMINA_BASE } from './data';
+import { emptyDaily } from './daily';
 import { isBuildable, placementAt } from './rules';
 import { getWorld } from './world';
 import type { SaveState, SkillId, World } from './types';
@@ -53,7 +54,7 @@ function newSaveBare(world: World, now: number): SaveState {
     chestsOpened: [],
     seenIntro: false,
     buffs: [],
-    request: { done: [], progress: 0 },
+    request: { done: [], progress: 0, daily: emptyDaily() },
     planted: {},
     seededV2: false,
     crafting: null,
@@ -84,7 +85,11 @@ export function migrate(raw: unknown, world: World = getWorld()): SaveState {
     chestsOpened: r.chestsOpened ?? [],
     seenIntro: r.seenIntro ?? false,
     buffs: r.buffs ?? [],
-    request: { done: r.request?.done ?? [], progress: r.request?.progress ?? 0 },
+    request: {
+      done: r.request?.done ?? [],
+      progress: r.request?.progress ?? 0,
+      daily: { ...emptyDaily(), ...(r.request?.daily ?? {}) },
+    },
     planted: r.planted ?? {},
     seededV2: r.seededV2 ?? false,
     crafting: r.crafting ?? null,

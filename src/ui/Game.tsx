@@ -161,7 +161,7 @@ export function Game() {
             break;
           case 'requestDone': {
             const r = REQUESTS.find((q) => q.id === ev.id);
-            showBanner(`島のおねがい「${r?.name ?? ''}」をかなえた！ ごほうびを受け取りました`);
+            showBanner(`島のおねがい「${r?.name ?? ev.name ?? ''}」をかなえた！ ごほうびを受け取りました`);
             playHarvest();
             hapticHarvest();
             break;

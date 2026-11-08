@@ -39,11 +39,22 @@ export interface RequestDef {
   unlockLevel: number;
 }
 
+/** 毎日のおねがい（SI-13）。固定の 5 件を終えたあと、日ごとに 3 件。day が変わったら進みは 0 に戻る。 */
+export interface DailyState {
+  /** 進みを数えている日（dailyDay）。 */
+  day: number;
+  progress: number[];
+  claimed: boolean[];
+  /** これまでにかなえた毎日のおねがいの数（称号に使う）。 */
+  total: number;
+}
+
 export interface RequestState {
   /** 終えたおねがいの id。 */
   done: string[];
   /** いまのおねがいの進み。 */
   progress: number;
+  daily: DailyState;
 }
 
 export interface MealDef {
@@ -378,7 +389,7 @@ export type GameEvent =
   | { type: 'crafted'; furniture: FurnitureId }
   /** 料理を食べた。restore = 実際に回復した量（上限で切れた後）。 */
   | { type: 'ate'; meal: MealId; restore: number }
-  | { type: 'requestDone'; id: string }
+  | { type: 'requestDone'; id: string; name?: string }
   /** 釣った（item が null なら逃げられた）。 */
   | { type: 'fished'; item: 'fish' | 'bigFish' | null }
   | { type: 'placed'; slot: string; furniture: FurnitureId | null }
