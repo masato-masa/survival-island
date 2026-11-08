@@ -1,8 +1,8 @@
 // もくひょう: 島ポイントの現在値と次の島レベルまでの距離、次で増えるもの、
 // エリアごとの開放状況と必要スキルを見せる。
 
-import { AREA_ORDER, AREAS, ISLAND_LEVEL_POINTS, SKILLS } from '@/game/data';
-import { isAreaOpen } from '@/game/rules';
+import { AREA_ORDER, AREAS, BUFFS, ISLAND_LEVEL_POINTS, ITEMS, REQUESTS, SKILLS } from '@/game/data';
+import { currentRequest, hasBuff, isAreaOpen } from '@/game/rules';
 import { islandPoints } from '@/game/score';
 import type { SaveState, World } from '@/game/types';
 
@@ -12,16 +12,23 @@ export function GoalSheet({
   world,
   save,
   islandLevel,
+  now,
   onClose,
 }: {
   world: World;
   save: SaveState;
   islandLevel: number;
+  now: number;
   onClose: () => void;
 }) {
   const points = islandPoints(world, save);
   const nextThreshold = ISLAND_LEVEL_POINTS[islandLevel];
   const progress = nextThreshold ? Math.min(1, points.total / nextThreshold) : 1;
+  const req = currentRequest(save);
+  const itemList = (m: Partial<Record<string, number>>) =>
+    Object.entries(m)
+      .map(([k, n]) => `${ITEMS[k as keyof typeof ITEMS].name}×${n}`)
+      .join('・');
   const openAreas = AREA_ORDER.filter((area) => isAreaOpen(world, save, area)).length;
 
   return (
@@ -42,6 +49,34 @@ export function GoalSheet({
             ? `次の島レベルまであと ${Math.max(0, nextThreshold - points.total)} ポイント`
             : '島レベルは最大です'}
         </p>
+      </div>
+      <div className="goal-request">
+        <div className="goal-request-title">島のおねがい {save.request.done.length}/{REQUESTS.length}</div>
+        {req ? (
+          req.locked ? (
+            <p className="sheet-text">「{req.def.name}」は 島レベル {req.def.unlockLevel} で受けられます</p>
+          ) : (
+            <>
+              <p className="sheet-text">
+                <b>{req.def.name}</b>：{req.def.buffs.map((b) => BUFFS[b].name).join('と')}が効いている間に{' '}
+                {req.def.items.map((i) => ITEMS[i].name).join('・')}を {req.def.goal} 個集める
+              </p>
+              <div className="goal-progress-bar">
+                <div className="goal-progress-fill" style={{ width: `${Math.min(100, (save.request.progress / req.def.goal) * 100)}%` }} />
+              </div>
+              <p className="sheet-text">
+                {save.request.progress} / {req.def.goal}　ごほうび: {itemList(req.def.reward)}
+              </p>
+              <p className="sheet-text">
+                {req.def.buffs.every((b) => hasBuff(save, b, now))
+                  ? '効き目が効いています。今のうちに！'
+                  : `作業台のごはんで ${req.def.buffs.map((b) => BUFFS[b].name).join('・')} を付けてから集めよう（効いていない間は数えません）`}
+              </p>
+            </>
+          )
+        ) : (
+          <p className="sheet-text">おねがいは全部かないました！</p>
+        )}
       </div>
       <p className="sheet-text">次の島レベルで増えるもの: スキルの上限・新しいレシピ・新しい種</p>
       <p className="sheet-text">謎の遺跡でスキルを授かり、作業台で家具をクラフトできます。</p>

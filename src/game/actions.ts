@@ -19,6 +19,7 @@ import {
 } from './data';
 import {
   canHit,
+  currentRequest,
   canPlaceAt,
   damageFor,
   hasBuff,
@@ -62,14 +63,29 @@ export function spend(save: SaveState, amount: number, now: number): boolean {
   return true;
 }
 
-function addItem(save: SaveState, item: ItemId, amount: number): void {
+/** 持ち物に足す。now を渡すと、島のおねがい（SI-11）の進みにも数える（効き目が全部効いている間だけ）。 */
+function addItem(save: SaveState, item: ItemId, amount: number, now?: number): void {
   save.inventory[item] = (save.inventory[item] ?? 0) + amount;
+  if (now === undefined) return;
+  const cur = currentRequest(save);
+  if (!cur || cur.locked || !cur.def.items.includes(item)) return;
+  if (!cur.def.buffs.every((b) => hasBuff(save, b, now))) return;
+  save.request.progress += amount;
+}
+
+/** おねがいの目標に届いていたら、ごほうびを渡して次へ進める。 */
+function settleRequest(save: SaveState, events: GameEvent[]): void {
+  const cur = currentRequest(save);
+  if (!cur || cur.locked || save.request.progress < cur.def.goal) return;
+  for (const [item, amount] of Object.entries(cur.def.reward) as [ItemId, number][]) addItem(save, item, amount);
+  save.request = { done: [...save.request.done, cur.def.id], progress: 0 };
+  events.push({ type: 'requestDone', id: cur.def.id });
 }
 
 type Drops = Partial<Record<ItemId, number>>;
 
-function addDrops(save: SaveState, drops: Drops): void {
-  for (const [item, amount] of Object.entries(drops) as [ItemId, number][]) addItem(save, item, amount);
+function addDrops(save: SaveState, drops: Drops, now?: number): void {
+  for (const [item, amount] of Object.entries(drops) as [ItemId, number][]) addItem(save, item, amount, now);
 }
 
 function xpEvent(amount: number): GameEvent {
@@ -137,7 +153,8 @@ export function hitNode(world: World, save: SaveState, node: HittableNode, now: 
   } else if (isTree && !isStump) {
     // 木を切り倒した → 幹（切り株）が残る。幹をもう一度切ると木は消える。
     save.nodes[node.id] = { hp: STUMP_HP, destroyedAt: null, stump: true };
-    addDrops(save, def.drops);
+    addDrops(save, def.drops, now);
+    settleRequest(save, events);
     events.push({ type: 'broke', x: node.x, y: node.y, kind: node.kind, drops: def.drops });
     events.push({ type: 'dropped', x: node.x, y: node.y, items: { ...def.drops } });
   } else {
@@ -147,7 +164,8 @@ export function hitNode(world: World, save: SaveState, node: HittableNode, now: 
     // 木が消えると苗木が出る（木は復活しないので、これを植えて増やす）
     const saplings = isTree ? SAPLING_DROPS[node.kind] ?? 0 : 0;
     if (saplings > 0) drops = { ...drops, sapling: (drops.sapling ?? 0) + saplings };
-    addDrops(save, drops);
+    addDrops(save, drops, now);
+    settleRequest(save, events);
     events.push({ type: 'broke', x: node.x, y: node.y, kind: node.kind, drops });
     events.push({ type: 'dropped', x: node.x, y: node.y, items: drops });
     const isOpenNow = isAreaOpen(world, save, node.area);
@@ -330,7 +348,7 @@ function harvestTiles(world: World, save: SaveState, plot: Plot, x: number, y: n
     const tile = state.tiles[tileKey];
     if (!tile) continue;
     delete state.tiles[tileKey];
-    addItem(save, tile.crop, amountPerTile);
+    addItem(save, tile.crop, amountPerTile, now);
     const entry = byCrop.get(tile.crop) ?? { tiles: [], amount: 0 };
     entry.tiles.push(t);
     entry.amount += amountPerTile;
@@ -346,6 +364,7 @@ function harvestTiles(world: World, save: SaveState, plot: Plot, x: number, y: n
     for (const t of tiles) events.push({ type: 'dropped', x: t.x, y: t.y, items: { [crop]: amountPerTile } });
   }
   events.push(xpEvent(xpGained));
+  settleRequest(save, events);
   return { ok: true, events };
 }
 
@@ -434,8 +453,10 @@ export function fishQuality(pos: number): CatchQuality {
 export function fish(save: SaveState, quality: CatchQuality, roll: number, now: number): Result {
   if (!spend(save, 1, now)) return { ok: false, reason: 'noStamina' };
   const item = quality === 'perfect' ? (roll < 0.5 ? 'bigFish' : 'fish') : quality === 'good' ? 'fish' : null;
-  if (item) addItem(save, item, 1);
-  return { ok: true, events: [{ type: 'fished', item }] };
+  if (item) addItem(save, item, 1, now);
+  const events: GameEvent[] = [{ type: 'fished', item }];
+  settleRequest(save, events);
+  return { ok: true, events };
 }
 
 /** 終わったクラフトを受け取る。まだなら 'notReady'、作業が無ければ 'notReady'。 */

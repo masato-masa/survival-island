@@ -20,12 +20,13 @@ import {
   STAMINA_PER_LEVEL,
   TREE_GROW_MS,
   damageForLevel,
+  REQUESTS,
   SWIFT_FACTOR,
   furnitureSize,
   skillCapForIslandLevel,
   treeSpeciesName,
 } from './data';
-import type { AreaId, BuffId, CropId, FurnitureId, LiveNode, MapNode, MealId, SaveState, SkillId, World } from './types';
+import type { AreaId, BuffId, CropId, FurnitureId, LiveNode, MapNode, MealId, RequestDef, SaveState, SkillId, World } from './types';
 
 export function staminaMax(save: SaveState): number {
   return STAMINA_BASE + STAMINA_PER_LEVEL * (save.skills.staminaMax ?? 0);
@@ -90,6 +91,13 @@ export function damageFor(save: SaveState, node: MapNode, now = 0): number {
 /** ごはんの効き目が今効いているか。 */
 export function hasBuff(save: SaveState, id: BuffId, now: number): boolean {
   return save.buffs.some((b) => b.id === id && b.until > now);
+}
+
+/** いまのおねがい（終えたものを飛ばした先頭）。全部終えていれば null。島レベルが足りないと locked。 */
+export function currentRequest(save: SaveState): { def: RequestDef; locked: boolean } | null {
+  const def = REQUESTS.find((r) => !save.request.done.includes(r.id));
+  if (!def) return null;
+  return { def, locked: def.unlockLevel > islandLevel(save) };
 }
 
 /** 時間のかかる行動 1 回の長さ（ミリ秒）。伐採・採掘は速度スキル 1 段階ごとに 10% 短い。 */

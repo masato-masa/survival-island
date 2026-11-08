@@ -13,6 +13,7 @@ import type {
   MealDef,
   MealId,
   BuffId,
+  RequestDef,
   NodeDef,
   NodeKind,
   SeriesId,
@@ -123,6 +124,19 @@ export const MEALS: Record<MealId, MealDef> = {
   grilledFish: { id: 'grilledFish', name: '焼き魚', cost: { fish: 2 }, restore: 6, unlockLevel: 1, buffs: ['swift'] },
   fishStew: { id: 'fishStew', name: '魚のごった煮', cost: { bigFish: 1, turnip: 1 }, restore: 12, unlockLevel: 2, buffs: ['power', 'swift'] },
 };
+
+/**
+ * 島のおねがい（SI-11）。上から順に 1 つずつ。指定の効き目が全部効いている間に集めた分だけが進む。
+ * 効き目なしだと進まないので、「食べてから行く」準備が要る。ごほうびは、準備して集めた人が得をする程度。
+ * 2 つ同時のおねがいは、2 つの料理を食べる（またはごった煮・サラダで一度に付ける）判断になる。
+ */
+export const REQUESTS: RequestDef[] = [
+  { id: 'wood16', name: '力もちで木こり', buffs: ['power'], items: ['wood'], goal: 16, reward: { sapling: 3 }, unlockLevel: 1 },
+  { id: 'fish5', name: '手早く釣り上げる', buffs: ['swift'], items: ['fish', 'bigFish'], goal: 5, reward: { bigFish: 1 }, unlockLevel: 1 },
+  { id: 'crop8', name: '豊作の収穫', buffs: ['bounty'], items: ['turnip', 'sunflower', 'tomato'], goal: 8, reward: { sunflower: 2, turnip: 2 }, unlockLevel: 2 },
+  { id: 'stone12', name: '力もちで岩掘り', buffs: ['power'], items: ['stone', 'copper'], goal: 12, reward: { wood: 12 }, unlockLevel: 2 },
+  { id: 'wood30', name: '力もち＋手早いで大木こり', buffs: ['power', 'swift'], items: ['wood'], goal: 30, reward: { sapling: 4, bigFish: 2 }, unlockLevel: 3 },
+];
 
 export const MEAL_ORDER: MealId[] = ['turnipSoup', 'grilledFish', 'sunflowerCookie', 'fishStew', 'gardenSalad'];
 

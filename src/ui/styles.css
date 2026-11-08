@@ -1335,3 +1335,15 @@ button.hud-portrait:active {
 .fish-cast:disabled { opacity: 0.5; }
 .fish-stock { display: flex; gap: 14px; justify-content: center; margin: 12px 0 4px; font-size: 14px; }
 .fish-stock img { width: 20px; height: 20px; vertical-align: middle; image-rendering: auto; }
+
+.goal-request {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 244, 214, 0.7);
+}
+
+.goal-request-title {
+  font-weight: 700;
+  margin-bottom: 4px;
+}

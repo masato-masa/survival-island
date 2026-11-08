@@ -5,7 +5,7 @@
 import { AnimatePresence } from 'motion/react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
-import { AREAS, CROPS, FURNITURE, FURNITURE_FUNCTION, ISLAND_LEVEL_POINTS, BUFFS, MEALS, TREE_SPECIES } from '@/game/data';
+import { AREAS, CROPS, FURNITURE, FURNITURE_FUNCTION, ISLAND_LEVEL_POINTS, REQUESTS, BUFFS, MEALS, TREE_SPECIES } from '@/game/data';
 import { store } from '@/game/store';
 import { placementAt } from '@/game/rules';
 import { spriteDataUrl } from '@/render/sprites';
@@ -159,6 +159,13 @@ export function Game() {
             playHarvest();
             hapticHarvest();
             break;
+          case 'requestDone': {
+            const r = REQUESTS.find((q) => q.id === ev.id);
+            showBanner(`島のおねがい「${r?.name ?? ''}」をかなえた！ ごほうびを受け取りました`);
+            playHarvest();
+            hapticHarvest();
+            break;
+          }
           case 'placed':
             playPlace();
             hapticPlace();
@@ -439,7 +446,7 @@ export function Game() {
 
       <AnimatePresence>
         {sheet?.kind === 'goal' ? (
-          <GoalSheet key="goal" world={world} save={save} islandLevel={islandLevel} onClose={closeSheet} />
+          <GoalSheet key="goal" world={world} save={save} islandLevel={islandLevel} now={store.now()} onClose={closeSheet} />
         ) : null}
       </AnimatePresence>
 

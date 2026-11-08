@@ -26,6 +26,26 @@ export type MealId = 'turnipSoup' | 'sunflowerCookie' | 'gardenSalad' | 'grilled
 /** ごはんの効き目（SI-10）。食べてから BUFF_MS のあいだ効く。 */
 export type BuffId = 'power' | 'swift' | 'bounty';
 
+/** 島のおねがい（SI-11）。指定の効き目が全部効いている間に集めた数だけが進む。 */
+export interface RequestDef {
+  id: string;
+  name: string;
+  /** 全部が効いている間だけ数える。 */
+  buffs: BuffId[];
+  /** 数える物。 */
+  items: ItemId[];
+  goal: number;
+  reward: Partial<Record<ItemId, number>>;
+  unlockLevel: number;
+}
+
+export interface RequestState {
+  /** 終えたおねがいの id。 */
+  done: string[];
+  /** いまのおねがいの進み。 */
+  progress: number;
+}
+
 export interface MealDef {
   id: MealId;
   name: string;
@@ -302,6 +322,8 @@ export interface SaveState {
   chestsOpened: string[];
   seenIntro: boolean;
   buffs: Buff[];
+  /** 島のおねがい（SI-11）。 */
+  request: RequestState;
   /** 植えた苗木・花の種（"x,y" → 状態）。資源としての体力などは nodes["p:x,y"] に入る。 */
   planted: Record<string, PlantedState>;
   /** 最初から置く家具（作業台・柱など）を placements に入れ終えたか。古いセーブに一度だけ入れるための印。 */
@@ -356,6 +378,7 @@ export type GameEvent =
   | { type: 'crafted'; furniture: FurnitureId }
   /** 料理を食べた。restore = 実際に回復した量（上限で切れた後）。 */
   | { type: 'ate'; meal: MealId; restore: number }
+  | { type: 'requestDone'; id: string }
   /** 釣った（item が null なら逃げられた）。 */
   | { type: 'fished'; item: 'fish' | 'bigFish' | null }
   | { type: 'placed'; slot: string; furniture: FurnitureId | null }
