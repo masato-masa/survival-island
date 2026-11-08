@@ -23,6 +23,9 @@ export type CropId = 'turnip' | 'sunflower' | 'tomato';
 /** 料理（たき火で作ってその場で食べる。持ち物には残らない）。SI-8 */
 export type MealId = 'turnipSoup' | 'sunflowerCookie' | 'gardenSalad' | 'grilledFish' | 'fishStew';
 
+/** ごはんの効き目（SI-10）。食べてから BUFF_MS のあいだ効く。 */
+export type BuffId = 'power' | 'swift' | 'bounty';
+
 export interface MealDef {
   id: MealId;
   name: string;
@@ -32,6 +35,8 @@ export interface MealDef {
   restore: number;
   /** 島レベルがこれ以上で作れる（材料の作物が育てられるレベル）。 */
   unlockLevel: number;
+  /** 食べると付く効き目。 */
+  buffs: BuffId[];
 }
 
 export type SkillId =
@@ -276,8 +281,7 @@ export interface PlantedState {
 }
 
 export interface Buff {
-  // M1 では料理が無いので使わないが、セーブ形式として先に持っておく
-  id: string;
+  id: BuffId;
   until: number;
 }
 

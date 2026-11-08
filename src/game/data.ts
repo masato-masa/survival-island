@@ -12,6 +12,7 @@ import type {
   ItemId,
   MealDef,
   MealId,
+  BuffId,
   NodeDef,
   NodeKind,
   SeriesId,
@@ -104,13 +105,23 @@ export const NOT_YET_OBTAINABLE: readonly ItemId[] = [];
  * 回復は 1.5〜2.3 倍で、待ち時間（育つのに 2〜6 分）があるので、スタミナの足しにはなるが、
  * 家具の材料にするか食べるかの選択になる。数を変えたら __tests__/cooking.test.ts の収支を見る。
  */
+/** ごはんの効き目が続く時間。 */
+export const BUFF_MS = 10 * 60 * 1000;
+/** 手早い: 伐採・採掘・採取・畑の行動時間の倍率。 */
+export const SWIFT_FACTOR = 0.7;
+export const BUFFS: Record<BuffId, { name: string; text: string }> = {
+  power: { name: '力もち', text: '木と岩を叩く力 +1' },
+  swift: { name: '手早い', text: '行動が 3 割はやい' },
+  bounty: { name: '豊作', text: '収穫 +1' },
+};
+
 export const MEALS: Record<MealId, MealDef> = {
-  turnipSoup: { id: 'turnipSoup', name: 'カブのスープ', cost: { turnip: 2 }, restore: 6, unlockLevel: 1 },
-  sunflowerCookie: { id: 'sunflowerCookie', name: 'ヒマワリのクッキー', cost: { sunflower: 2 }, restore: 8, unlockLevel: 2 },
-  gardenSalad: { id: 'gardenSalad', name: '畑のサラダ', cost: { turnip: 1, sunflower: 1, tomato: 1 }, restore: 14, unlockLevel: 3 },
+  turnipSoup: { id: 'turnipSoup', name: 'カブのスープ', cost: { turnip: 2 }, restore: 6, unlockLevel: 1, buffs: ['power'] },
+  sunflowerCookie: { id: 'sunflowerCookie', name: 'ヒマワリのクッキー', cost: { sunflower: 2 }, restore: 8, unlockLevel: 2, buffs: ['bounty'] },
+  gardenSalad: { id: 'gardenSalad', name: '畑のサラダ', cost: { turnip: 1, sunflower: 1, tomato: 1 }, restore: 14, unlockLevel: 3, buffs: ['power', 'swift', 'bounty'] },
   // 魚は 1 回 1 スタミナで、うまく釣れる割合は 6〜7 割（SI-9）。さかな 2 匹 ≒ 2.9、大物 1 匹 ≒ 5.7 のスタミナ
-  grilledFish: { id: 'grilledFish', name: '焼き魚', cost: { fish: 2 }, restore: 6, unlockLevel: 1 },
-  fishStew: { id: 'fishStew', name: '魚のごった煮', cost: { bigFish: 1, turnip: 1 }, restore: 12, unlockLevel: 2 },
+  grilledFish: { id: 'grilledFish', name: '焼き魚', cost: { fish: 2 }, restore: 6, unlockLevel: 1, buffs: ['swift'] },
+  fishStew: { id: 'fishStew', name: '魚のごった煮', cost: { bigFish: 1, turnip: 1 }, restore: 12, unlockLevel: 2, buffs: ['power', 'swift'] },
 };
 
 export const MEAL_ORDER: MealId[] = ['turnipSoup', 'grilledFish', 'sunflowerCookie', 'fishStew', 'gardenSalad'];

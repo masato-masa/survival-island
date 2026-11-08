@@ -2,10 +2,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { cook } from '../src/game/actions';
-import { MEALS, MEAL_ORDER, STAMINA_BASE } from '../src/game/data';
-import { knownMeals } from '../src/game/rules';
+import { BUFF_MS, MEALS, MEAL_ORDER, STAMINA_BASE } from '../src/game/data';
+import { actionMs, damageFor, hasBuff, knownMeals } from '../src/game/rules';
 import { currentStamina } from '../src/game/time';
-import { freshSave } from './helpers';
+import { freshSave, world } from './helpers';
 
 describe('料理', () => {
   it('島レベルで作れる料理が増える', () => {
@@ -38,12 +38,36 @@ describe('料理', () => {
     if (r.ok) expect(r.events[0]).toMatchObject({ type: 'ate', restore: 2 });
   });
 
-  it('満タンのときは材料を使わずに断る', () => {
+  it('満タンでも食べられる（回復は 0、効き目だけ付く）', () => {
     const save = freshSave();
     save.inventory.turnip = 2;
     const r = cook(save, 'turnipSoup', 0);
-    expect(r).toEqual({ ok: false, reason: 'staminaFull' });
-    expect(save.inventory.turnip).toBe(2);
+    expect(r.ok).toBe(true);
+    expect(save.inventory.turnip).toBe(0);
+    expect(hasBuff(save, 'power', 1000)).toBe(true);
+  });
+
+  it('効き目: 力もちは叩く力 +1、手早いは行動 3 割はやい、豊作は収穫 +1。10 分で切れ、同じものは延ばし直すだけ', () => {
+    const save = freshSave();
+    const tree = world.nodes.find((n) => n.kind === 'tree')!;
+    const base = damageFor(save, tree, 0);
+    const baseMs = actionMs(save, 'axe', 0);
+    save.inventory.turnip = 1;
+    save.inventory.sunflower = 1;
+    save.inventory.tomato = 1;
+    save.maxPoints = 30;
+    save.stamina.value = 10;
+    expect(cook(save, 'gardenSalad', 0).ok).toBe(true);
+    expect(damageFor(save, tree, 1000)).toBe(base + 1);
+    expect(actionMs(save, 'axe', 1000)).toBeCloseTo(baseMs * 0.7);
+    expect(hasBuff(save, 'bounty', 1000)).toBe(true);
+    expect(damageFor(save, tree, BUFF_MS + 1)).toBe(base);
+    expect(actionMs(save, 'axe', BUFF_MS + 1)).toBe(baseMs);
+    // 再び食べても buffs は増えない
+    save.inventory.turnip = 2;
+    cook(save, 'turnipSoup', 5000);
+    expect(save.buffs.filter((b) => b.id === 'power')).toHaveLength(1);
+    expect(save.buffs.find((b) => b.id === 'power')!.until).toBe(5000 + BUFF_MS);
   });
 
   it('材料が足りない・まだ覚えていないときは断る', () => {

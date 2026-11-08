@@ -20,11 +20,12 @@ import {
   STAMINA_PER_LEVEL,
   TREE_GROW_MS,
   damageForLevel,
+  SWIFT_FACTOR,
   furnitureSize,
   skillCapForIslandLevel,
   treeSpeciesName,
 } from './data';
-import type { AreaId, CropId, FurnitureId, LiveNode, MapNode, MealId, SaveState, SkillId, World } from './types';
+import type { AreaId, BuffId, CropId, FurnitureId, LiveNode, MapNode, MealId, SaveState, SkillId, World } from './types';
 
 export function staminaMax(save: SaveState): number {
   return STAMINA_BASE + STAMINA_PER_LEVEL * (save.skills.staminaMax ?? 0);
@@ -80,18 +81,24 @@ function powerSkillFor(node: MapNode): SkillId | null {
 }
 
 /** 1 回叩いたときに減る体力。花（採取）は常に 1（1 回摘む）。 */
-export function damageFor(save: SaveState, node: MapNode): number {
+export function damageFor(save: SaveState, node: MapNode, now = 0): number {
   const skill = powerSkillFor(node);
   if (!skill) return 1;
-  return damageForLevel(save.skills[skill] ?? 0);
+  return damageForLevel(save.skills[skill] ?? 0) + (hasBuff(save, 'power', now) ? 1 : 0);
+}
+
+/** ごはんの効き目が今効いているか。 */
+export function hasBuff(save: SaveState, id: BuffId, now: number): boolean {
+  return save.buffs.some((b) => b.id === id && b.until > now);
 }
 
 /** 時間のかかる行動 1 回の長さ（ミリ秒）。伐採・採掘は速度スキル 1 段階ごとに 10% 短い。 */
-export function actionMs(save: SaveState, tool: 'axe' | 'pick' | 'gather' | 'farm'): number {
-  if (tool === 'farm') return FARM_ACTION_MS;
-  if (tool === 'gather') return GATHER_ACTION_MS;
+export function actionMs(save: SaveState, tool: 'axe' | 'pick' | 'gather' | 'farm', now = 0): number {
+  const swift = hasBuff(save, 'swift', now) ? SWIFT_FACTOR : 1;
+  if (tool === 'farm') return FARM_ACTION_MS * swift;
+  if (tool === 'gather') return GATHER_ACTION_MS * swift;
   const level = save.skills[tool === 'axe' ? 'axeSpeed' : 'pickSpeed'] ?? 0;
-  return CHOP_ACTION_MS * (1 - SPEED_PER_LEVEL * level);
+  return CHOP_ACTION_MS * (1 - SPEED_PER_LEVEL * level) * swift;
 }
 
 /** 覚えているレシピ（島レベルで覚えるもの＋宝箱などで覚えたもの）。 */

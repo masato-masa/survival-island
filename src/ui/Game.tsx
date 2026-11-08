@@ -5,7 +5,7 @@
 import { AnimatePresence } from 'motion/react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
-import { AREAS, CROPS, FURNITURE, FURNITURE_FUNCTION, ISLAND_LEVEL_POINTS, MEALS, TREE_SPECIES } from '@/game/data';
+import { AREAS, CROPS, FURNITURE, FURNITURE_FUNCTION, ISLAND_LEVEL_POINTS, BUFFS, MEALS, TREE_SPECIES } from '@/game/data';
 import { store } from '@/game/store';
 import { placementAt } from '@/game/rules';
 import { spriteDataUrl } from '@/render/sprites';
@@ -155,7 +155,7 @@ export function Game() {
             }
             break;
           case 'ate':
-            showBanner(`${MEALS[ev.meal].name}を食べた！ スタミナ +${ev.restore}`);
+            showBanner(`${MEALS[ev.meal].name}を食べた！ スタミナ +${ev.restore}／${MEALS[ev.meal].buffs.map((b) => BUFFS[b].name).join('・')}`);
             playHarvest();
             hapticHarvest();
             break;
@@ -361,6 +361,16 @@ export function Game() {
                 <span className="gauge-track"><span className="gauge-fill" style={{ width: '100%' }} /></span>
                 <span className="gauge-text">{save.xp}</span>
               </span>
+            </div>
+            {/* ごはんの効き目（絶対配置: 出入りでゲージが動かない） */}
+            <div className="buff-notes">
+              {save.buffs
+                .filter((b) => b.until > store.now())
+                .map((b) => (
+                  <span key={b.id} className="buff-note">
+                    {BUFFS[b.id].name} {formatCountdown(b.until - store.now())}
+                  </span>
+                ))}
             </div>
           </div>
         </div>

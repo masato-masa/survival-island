@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react';
 
-import { FURNITURE, FURNITURE_BY_ID, ITEMS, MEALS, MEAL_ORDER, NOT_YET_OBTAINABLE, SERIES, craftMs } from '@/game/data';
+import { BUFFS, FURNITURE, FURNITURE_BY_ID, ITEMS, MEALS, MEAL_ORDER, NOT_YET_OBTAINABLE, SERIES, craftMs } from '@/game/data';
 import { knownMeals, knownRecipes } from '@/game/rules';
 import { currentStamina } from '@/game/time';
 import type { FurnitureId, ItemId, MealId, SaveState } from '@/game/types';
@@ -72,19 +72,20 @@ export function CraftSheet({
       ) : null}
       <div className="craft-meals">
         <div className="craft-meals-title">
-          ごはん（その場で食べてスタミナ回復） スタミナ {stamina.value}/{stamina.max}
+          ごはん（食べるとスタミナ回復＋10分間の効き目） スタミナ {stamina.value}/{stamina.max}
         </div>
         {MEAL_ORDER.map((id) => {
           const meal = MEALS[id];
           const isKnown = knownMeals(save).includes(id);
           const costEntries = Object.entries(meal.cost) as [ItemId, number][];
           const canAfford = costEntries.every(([item, need]) => (save.inventory[item] ?? 0) >= need);
-          const full = stamina.value >= stamina.max;
           return (
             <div className={`craft-row${isKnown ? '' : ' is-locked'}`} key={id}>
               <div className="craft-info">
                 <div className="craft-name">{meal.name}</div>
-                <div className="craft-meta">スタミナ +{meal.restore}</div>
+                <div className="craft-meta">
+                  スタミナ +{meal.restore}／10分間 {meal.buffs.map((b) => `${BUFFS[b].name}（${BUFFS[b].text}）`).join('・')}
+                </div>
                 {isKnown ? (
                   <div className="cost-chips">
                     {costEntries.map(([item, need]) => {
@@ -101,8 +102,8 @@ export function CraftSheet({
                   <div className="craft-locked-text">島Lv {meal.unlockLevel} で覚える</div>
                 )}
               </div>
-              <button className="sheet-btn craft-btn" disabled={!isKnown || !canAfford || full} onClick={() => onCook(id)}>
-                {full ? '満タン' : '食べる'}
+              <button className="sheet-btn craft-btn" disabled={!isKnown || !canAfford} onClick={() => onCook(id)}>
+                食べる
               </button>
             </div>
           );

@@ -256,7 +256,7 @@ export function createStore(opts: CreateStoreOptions = {}): GameStore {
           nodeId: node.id,
           nodeKind: node.kind,
           startedAt: t,
-          endsAt: t + actionMs(save, tool),
+          endsAt: t + actionMs(save, tool, t),
         };
         return startAction(action, (tt) => {
           const live = liveNodeById(world, save, node.id, tt);
@@ -269,7 +269,7 @@ export function createStore(opts: CreateStoreOptions = {}): GameStore {
       const blocked = Actions.checkFarm(save, tgt.plot, tgt.x, tgt.y, t);
       if (blocked) return fail(blocked);
       const plot = tgt.plot;
-      const action: TimedAction = { kind: 'farm', x: tgt.x, y: tgt.y, startedAt: t, endsAt: t + actionMs(save, 'farm') };
+      const action: TimedAction = { kind: 'farm', x: tgt.x, y: tgt.y, startedAt: t, endsAt: t + actionMs(save, 'farm', t) };
       return startAction(action, (tt) => Actions.farmAction(world, save, plot, action.x, action.y, tt));
     },
 

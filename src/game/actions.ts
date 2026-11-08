@@ -2,6 +2,7 @@
 // 行動にかかる時間（約 3 秒）はここでは見ない（store.ts が始めて、終わったときにここの関数で結果を出す）。
 
 import {
+  BUFF_MS,
   FARM_RANGE,
   FURNITURE_BY_ID,
   MEALS,
@@ -20,6 +21,7 @@ import {
   canHit,
   canPlaceAt,
   damageFor,
+  hasBuff,
   isAreaOpen,
   isBuildable,
   knownCrops,
@@ -108,7 +110,7 @@ export function hitNode(world: World, save: SaveState, node: HittableNode, now: 
   const isTree = TREE_KINDS.has(node.kind);
   const isStump = state?.stump === true;
   const hpBefore = state?.hp ?? def.hp;
-  const damage = damageFor(save, node);
+  const damage = damageFor(save, node, now);
   const hpAfter = hpBefore - damage;
 
   const events: GameEvent[] = [];
@@ -318,7 +320,7 @@ function harvestTiles(world: World, save: SaveState, plot: Plot, x: number, y: n
   if (candidates.length === 0) return { ok: false, reason: 'notReady' };
 
   const yieldLevel = save.skills.farmYield ?? 0;
-  const amountPerTile = harvestAmount(yieldLevel);
+  const amountPerTile = harvestAmount(yieldLevel) + (hasBuff(save, 'bounty', now) ? 1 : 0);
   const byCrop = new Map<CropId, { tiles: { x: number; y: number }[]; amount: number }>();
   let xpGained = 0;
 
@@ -395,7 +397,7 @@ export function craft(save: SaveState, furnitureId: FurnitureId, now: number): R
 
 /**
  * 料理を作って食べる（SI-8）。材料の作物を使い、スタミナが回復する。経験値は入らない（スタミナを使わないので）。
- * 満タンのときは材料を無駄にしないよう断る。回復は上限で切れる。
+ * 回復は上限で切れる。食べると BUFF_MS のあいだ効き目（力もち・手早い・豊作）が付く（SI-10）。満タンでも食べられる。
  */
 export function cook(save: SaveState, mealId: MealId, now: number): Result {
   const def = MEALS[mealId];
@@ -405,13 +407,15 @@ export function cook(save: SaveState, mealId: MealId, now: number): Result {
   }
   normalizeStamina(save, now);
   const max = staminaMax(save);
-  if (save.stamina.value >= max) return { ok: false, reason: 'staminaFull' };
   for (const [item, amount] of Object.entries(def.cost) as [ItemId, number][]) {
     save.inventory[item] = (save.inventory[item] ?? 0) - amount;
   }
   const before = save.stamina.value;
   save.stamina.value = Math.min(max, before + def.restore);
   if (save.stamina.value >= max) save.stamina.updatedAt = now;
+  // 効き目: 同じものは時間を延ばし直す（重ねがけで長くはならない）
+  save.buffs = save.buffs.filter((b) => b.until > now && !def.buffs.includes(b.id));
+  for (const id of def.buffs) save.buffs.push({ id, until: now + BUFF_MS });
   return { ok: true, events: [{ type: 'ate', meal: mealId, restore: save.stamina.value - before }] };
 }
 

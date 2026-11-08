@@ -23,7 +23,7 @@ describe('クラフト画面', () => {
     );
     expect(html).toContain('ごはん');
     expect(html).toContain('カブのスープ');
-    expect(html).toContain('満タン'); // 新しいセーブはスタミナが満タン
+    expect(html).toContain('力もち'); // 効き目が並ぶ
     expect(html).toContain('島Lv 2 で覚える'); // ヒマワリのクッキー
   });
 });
