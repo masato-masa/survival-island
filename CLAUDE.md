@@ -99,3 +99,6 @@
 - **釣り（SI-9）。** 桟橋の係留柱（船着き場）に触れると釣りの画面（`FishingSheet.tsx`）。浮きが左右に動き、中央で「つる！」。1 回 1 スタミナ（島の経験値も入る）。
   中央の狭いところ（perfect）だと半々で大物、広い緑（good）ならさかな、外れは逃げられる（`actions.fish`・`fishQuality`）。魚は「ごはん」の焼き魚（さかな 2）・魚のごった煮（大物 + カブ）になる。
   収支は `__tests__/cooking.test.ts`（魚 1 匹 = 1÷0.65 スタミナ、大物 = 5）。魚の絵は ChatGPT 製（`refs/gen/fish.png` → `slice-gen.mjs fish`。元画像は game-assets）。
+- **島のおねがい（SI-11・12）と毎日のおねがい（SI-13）。** 固定の 5 件（`REQUESTS`）は順番に。終えたあとは日付（日本時間 0 時切替、`daily.ts` の `dailyDay`）から
+  3 件（小 2 + 大 1。大は効き目 2 つ要求）が決まる（`DAILY_SMALL`/`DAILY_BIG`）。同じ作業が効き目の合うおねがい全部に数えられる。
+  ごほうびは作業スタミナの 3〜9 割（`__tests__/requests.test.ts` が全部の型を測る）。数を変えたらそのテストを見る。
