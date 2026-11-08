@@ -58,7 +58,7 @@
    シートの格子と名前は `slice-gen.mjs` の `SHEETS`。`sprites.ts` の `GEN_TARGET` が `PAINTERS` より優先され、
    画像が無いときだけコード描画に戻る。大きさは `scale`（同じシートの絵の大小をそのまま保つ。作物）か `fit`（長辺。アイコン）で決める。
    生成済み: 作物 3 種 × 3 段階、作物・資源のアイテムアイコン 9 個。花 4 種・芽・苗木・幹 4 種（`plants` シート、2026-11-07）。
-   木（`SHEETS.trees` / `gates`）はまだ。Chrome の窓が裏に回っている（`visibilityState: hidden`）と、生成画像の読み込みも
+   木 4 樹種（若木・カシ・スギ・森の主、`trees` シート、2026-11-08）。扉つきの木（`gates`）はまだコード描画。Chrome の窓が裏に回っている（`visibilityState: hidden`）と、生成画像の読み込みも
    ダウンロードも止まるので、窓を前に出してから取り出す。
 
 1. ユーザー提供の素材シート `src/assets/refimg/`（木・岩・家具・花）と `src/assets/pigg/`（主人公・宝箱・岩）。

@@ -363,6 +363,12 @@ const GEN_TARGET: Partial<Record<SpriteName, SheetSpec>> = {
   stumpOak: { src: 'stumpOak', worldW: 28 },
   stumpCedar: { src: 'stumpCedar', worldW: 26 },
   stumpAncient: { src: 'stumpAncient', worldW: 31 },
+  // 樹種（ChatGPT 製の trees シート）。下辺中央が根元。段階が上がるほど大きく。
+  tree: { src: 'gen_tree', worldW: 30 },
+  bigTree: { src: 'gen_bigTree', worldW: 44 },
+  cedarTree: { src: 'gen_cedarTree', worldW: 38 },
+  ancientTree: { src: 'gen_ancientTree', worldW: 56 },
+  ancientTree2: { src: 'gen_ancientTree', worldW: 56, flip: true },
 };
 
 // ---------------------------------------------------------------------------
