@@ -2,7 +2,12 @@
 // 行動にかかる時間（約 3 秒）はここでは見ない（store.ts が始めて、終わったときにここの関数で結果を出す）。
 
 import {
+  BIG_FISH_RATE,
+  BOUNTY_BIG_FISH_RATE,
   BUFF_MS,
+  FISH_GOOD_HALF,
+  FISH_PERFECT_HALF,
+  SWIFT_FISH_WIDEN,
   FARM_RANGE,
   FURNITURE_BY_ID,
   MEALS,
@@ -441,9 +446,10 @@ export function cook(save: SaveState, mealId: MealId, now: number): Result {
 export type CatchQuality = 'miss' | 'good' | 'perfect';
 
 /** 釣りの浮きの位置（0〜1）から、釣れ具合を決める。中央ほどよい。 */
-export function fishQuality(pos: number): CatchQuality {
+export function fishQuality(pos: number, swift = false): CatchQuality {
   const d = Math.abs(pos - 0.5);
-  return d < 0.08 ? 'perfect' : d < 0.22 ? 'good' : 'miss';
+  const w = swift ? SWIFT_FISH_WIDEN : 1;
+  return d < FISH_PERFECT_HALF * w ? 'perfect' : d < FISH_GOOD_HALF * w ? 'good' : 'miss';
 }
 
 /**
@@ -452,7 +458,7 @@ export function fishQuality(pos: number): CatchQuality {
  */
 export function fish(save: SaveState, quality: CatchQuality, roll: number, now: number): Result {
   if (!spend(save, 1, now)) return { ok: false, reason: 'noStamina' };
-  const item = quality === 'perfect' ? (roll < 0.5 ? 'bigFish' : 'fish') : quality === 'good' ? 'fish' : null;
+  const item = quality === 'perfect' ? (roll < (hasBuff(save, 'bounty', now) ? BOUNTY_BIG_FISH_RATE : BIG_FISH_RATE) ? 'bigFish' : 'fish') : quality === 'good' ? 'fish' : null;
   if (item) addItem(save, item, 1, now);
   const events: GameEvent[] = [{ type: 'fished', item }];
   settleRequest(save, events);

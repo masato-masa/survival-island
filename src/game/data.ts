@@ -110,10 +110,19 @@ export const NOT_YET_OBTAINABLE: readonly ItemId[] = [];
 export const BUFF_MS = 10 * 60 * 1000;
 /** 手早い: 伐採・採掘・採取・畑の行動時間の倍率。 */
 export const SWIFT_FACTOR = 0.7;
+/**
+ * 釣りへの効き目（SI-12）。手早い: 浮きの合わせ幅（good / perfect）が広がる。豊作: 大物の出る割合が上がる。
+ * 力もちは釣りには効かない（釣りは叩かない）。
+ */
+export const FISH_GOOD_HALF = 0.22;
+export const FISH_PERFECT_HALF = 0.08;
+export const SWIFT_FISH_WIDEN = 1.3;
+export const BIG_FISH_RATE = 0.5;
+export const BOUNTY_BIG_FISH_RATE = 0.75;
 export const BUFFS: Record<BuffId, { name: string; text: string }> = {
   power: { name: '力もち', text: '木と岩を叩く力 +1' },
-  swift: { name: '手早い', text: '行動が 3 割はやい' },
-  bounty: { name: '豊作', text: '収穫 +1' },
+  swift: { name: '手早い', text: '行動が 3 割はやい・釣りの合わせ幅が広い' },
+  bounty: { name: '豊作', text: '収穫 +1・大物が釣れやすい' },
 };
 
 export const MEALS: Record<MealId, MealDef> = {
@@ -131,11 +140,11 @@ export const MEALS: Record<MealId, MealDef> = {
  * 2 つ同時のおねがいは、2 つの料理を食べる（またはごった煮・サラダで一度に付ける）判断になる。
  */
 export const REQUESTS: RequestDef[] = [
-  { id: 'wood16', name: '力もちで木こり', buffs: ['power'], items: ['wood'], goal: 16, reward: { sapling: 3 }, unlockLevel: 1 },
+  { id: 'wood16', name: '力もちで木こり', buffs: ['power'], items: ['wood'], goal: 16, reward: { sapling: 2 }, unlockLevel: 1 },
   { id: 'fish5', name: '手早く釣り上げる', buffs: ['swift'], items: ['fish', 'bigFish'], goal: 5, reward: { bigFish: 1 }, unlockLevel: 1 },
-  { id: 'crop8', name: '豊作の収穫', buffs: ['bounty'], items: ['turnip', 'sunflower', 'tomato'], goal: 8, reward: { sunflower: 2, turnip: 2 }, unlockLevel: 2 },
-  { id: 'stone12', name: '力もちで岩掘り', buffs: ['power'], items: ['stone', 'copper'], goal: 12, reward: { wood: 12 }, unlockLevel: 2 },
-  { id: 'wood30', name: '力もち＋手早いで大木こり', buffs: ['power', 'swift'], items: ['wood'], goal: 30, reward: { sapling: 4, bigFish: 2 }, unlockLevel: 3 },
+  { id: 'crop8', name: '豊作の収穫', buffs: ['bounty'], items: ['turnip', 'sunflower', 'tomato'], goal: 8, reward: { sunflower: 1, turnip: 2 }, unlockLevel: 2 },
+  { id: 'stone12', name: '力もちで岩掘り', buffs: ['power'], items: ['stone', 'copper'], goal: 16, reward: { wood: 5 }, unlockLevel: 2 },
+  { id: 'wood30', name: '力もち＋手早いで大木こり', buffs: ['power', 'swift'], items: ['wood'], goal: 30, reward: { sapling: 3, bigFish: 1 }, unlockLevel: 3 },
 ];
 
 export const MEAL_ORDER: MealId[] = ['turnipSoup', 'grilledFish', 'sunflowerCookie', 'fishStew', 'gardenSalad'];

@@ -37,6 +37,23 @@ describe('釣り', () => {
     expect(save.inventory.fish).toBe(2);
   });
 
+  it('手早いの効き目で合わせ幅が広がる。豊作で大物が出やすい（SI-12）', () => {
+    expect(fishQuality(0.75)).toBe('miss');
+    expect(fishQuality(0.75, true)).toBe('good');
+    expect(fishQuality(0.41)).toBe('good');
+    expect(fishQuality(0.41, true)).toBe('perfect');
+    let hit = 0;
+    for (let i = 0; i < 1000; i++) if (fishQuality(i / 1000, true) !== 'miss') hit++;
+    expect(hit / 1000).toBeGreaterThan(0.52);
+    expect(hit / 1000).toBeLessThan(0.6);
+    const save = freshSave();
+    fish(save, 'perfect', 0.7, 0);
+    expect(save.inventory.fish).toBe(1);
+    save.buffs = [{ id: 'bounty', until: 1e9 }];
+    fish(save, 'perfect', 0.7, 0);
+    expect(save.inventory.bigFish).toBe(1);
+  });
+
   it('スタミナが無ければ釣れない', () => {
     const save = freshSave();
     save.stamina.value = 0;

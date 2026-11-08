@@ -4,6 +4,8 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { fishQuality } from '@/game/actions';
+import { FISH_GOOD_HALF, FISH_PERFECT_HALF, SWIFT_FISH_WIDEN } from '@/game/data';
+import { hasBuff } from '@/game/rules';
 import type { CatchQuality } from '@/game/actions';
 import { currentStamina } from '@/game/time';
 import type { Result, SaveState } from '@/game/types';
@@ -60,12 +62,15 @@ export function FishingSheet({
   }, []);
 
   const stamina = currentStamina(save, now()).value;
+  const swift = hasBuff(save, 'swift', now());
+  const w = swift ? SWIFT_FISH_WIDEN : 1;
+  const zone = (half: number) => ({ left: `${(0.5 - half * w) * 100}%`, width: `${half * w * 200}%` });
   const fish = save.inventory.fish ?? 0;
   const big = save.inventory.bigFish ?? 0;
 
   const cast = () => {
     if (heldRef.current) return;
-    const quality = fishQuality(posRef.current);
+    const quality = fishQuality(posRef.current, hasBuff(save, 'swift', now()));
     const r = onCast(quality);
     if (!r.ok) {
       setHeld({ quality: 'miss', message: 'スタミナが足りません' });
@@ -85,10 +90,11 @@ export function FishingSheet({
   return (
     <Sheet title="釣り" subtitle="浮きが中央に来たところで「つる！」" onClose={onClose}>
       <div className="fish-bar" aria-hidden>
-        <div className="fish-zone good" />
-        <div className="fish-zone perfect" />
+        <div className="fish-zone good" style={zone(FISH_GOOD_HALF)} />
+        <div className="fish-zone perfect" style={zone(FISH_PERFECT_HALF)} />
         <div className={`fish-bobber${held ? ` ${held.quality}` : ''}`} style={{ left: `${pos * 100}%` }} />
       </div>
+      {swift && <p className="sheet-text">手早い効き目で、合わせられる幅が広がっています。</p>}
       <p className="sheet-text fish-msg">{held ? held.message : stamina < 1 ? 'スタミナが足りません' : '浮きをよく見て…'}</p>
       <button type="button" className="fish-cast" disabled={stamina < 1 || held !== null} onClick={cast}>
         つる！（スタミナ 1）
