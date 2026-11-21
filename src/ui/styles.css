@@ -490,7 +490,7 @@ button.hud-portrait:active {
   border-radius: 6px;
   background: rgb(50 40 30 / 0.55);
   color: #fff;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 14px;
   white-space: nowrap;
@@ -512,7 +512,7 @@ button.hud-portrait:active {
   border-radius: 6px;
   background: rgb(214 140 40 / 0.85);
   color: #fff;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 14px;
   white-space: nowrap;
@@ -1125,7 +1125,7 @@ button.hud-portrait:active {
 }
 
 .craft-meta {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--muted);
   margin-bottom: 4px;
@@ -1134,11 +1134,11 @@ button.hud-portrait:active {
 .craft-soon {
   /* 材料の入手元がまだ無いレシピ（SI-7）。チップの列の下に 1 行で */
   flex-basis: 100%;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--muted, #8a7a66);
 }
 .craft-locked-text {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--muted);
 }
@@ -1156,7 +1156,7 @@ button.hud-portrait:active {
   padding: 1px 8px;
   border-radius: 999px;
   background: #f6f0e2;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
   color: var(--ink);
 }
@@ -1194,7 +1194,7 @@ button.hud-portrait:active {
 .craft-btn {
   flex: none;
   padding: 6px 16px;
-  min-height: 36px;
+  min-height: 44px;
   font-size: 14px;
 }
 
@@ -1266,7 +1266,7 @@ button.hud-portrait:active {
 .help-credit {
   margin-top: 12px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   text-align: center;
 }
@@ -1361,8 +1361,8 @@ button.hud-portrait:active {
 
 /* 見張り台の建て増し（SI-15） */
 .tower-view {
-  width: 170px;
-  height: 170px;
+  width: 130px;
+  height: 130px;
 }
 /* 商船の修理（SI-14） */
 .ship-view {
@@ -1371,7 +1371,7 @@ button.hud-portrait:active {
   padding: 4px 0 8px;
 }
 .ship-view img {
-  height: 150px;
+  height: 112px;
   width: auto;
   object-fit: contain;
 }
@@ -1481,3 +1481,32 @@ button.hud-portrait:active {
   padding: 3px;
   margin: -3px;
 }
+
+/* 段階の進み（商船・見張り台）: 1 行 1 段階、済み・次・まだの 3 状態 */
+.step-dots {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 4px 0;
+}
+.step-dot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #a58f6c;
+}
+.step-dot i {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2.5px solid #cdb88f;
+  background: transparent;
+}
+.step-dot.is-done { color: var(--ink); }
+.step-dot.is-done i { background: #47c43a; border-color: #47c43a; }
+.step-dot.is-next { color: var(--ink); }
+.step-dot.is-next i { border-color: #47c43a; }

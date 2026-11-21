@@ -125,17 +125,12 @@ export function TowerSheet({
         )}
       </div>
 
-      <div className="sheet-list">
+      <div className="step-dots" aria-label={`建て増し ${stage}/${TOWER_STAGES.length}`}>
         {TOWER_STAGES.map((st, i) => (
-          <div className={`craft-row${i < stage ? '' : ' is-locked'}`} key={st.id}>
-            <div className="craft-info">
-              <div className="craft-name">
-                {i < stage ? '✓ ' : ''}
-                {i + 1}. {st.name}
-              </div>
-              <div className="craft-meta">{i < stage ? st.after : `${st.view}／贈り物: ${st.gift.map(([k, n]) => `${ITEMS[k].name}×${n}`).join('か')}`}</div>
-            </div>
-          </div>
+          <span key={st.id} className={`step-dot${i < stage ? ' is-done' : i === stage ? ' is-next' : ''}`}>
+            <i />
+            {st.name}
+          </span>
         ))}
       </div>
     </Sheet>

@@ -67,9 +67,6 @@ export function ShipSheet({
       ) : (
         <p className="sheet-text">船は すっかり直りました。赤い旗をかかげて、毎日お届けが来ます。</p>
       )}
-      <p className="sheet-text">
-        木材・石は木こりと岩掘りで、銅は洞窟で。力もちのごはんを食べてから集めると、木材も石もスタミナが3割ほど少なくてすみます。
-      </p>
       <div className="craft-row">
         <div className="craft-info">
           <div className="craft-name">毎日のお届け</div>
@@ -81,19 +78,15 @@ export function ShipSheet({
           {stage === 0 ? '—' : ready ? '受け取る' : '受け取り済み'}
         </button>
       </div>
-      <div className="sheet-list">
+      <div className="step-dots" aria-label={`直した段階 ${stage}/${SHIP_STAGES.length}`}>
         {SHIP_STAGES.map((st, i) => (
-          <div className={`craft-row${i < stage ? '' : ' is-locked'}`} key={st.id}>
-            <div className="craft-info">
-              <div className="craft-name">
-                {i < stage ? '✓ ' : ''}
-                {i + 1}. {st.name}
-              </div>
-              <div className="craft-meta">{i < stage ? st.after : `お届け: ${giftText(st.gift)}`}</div>
-            </div>
-          </div>
+          <span key={st.id} className={`step-dot${i < stage ? ' is-done' : i === stage ? ' is-next' : ''}`}>
+            <i />
+            {st.name}
+          </span>
         ))}
       </div>
+      <p className="goal-note">木材・石は木こりと岩掘りで、銅は洞窟で。力もちのごはんを食べてから集めるとスタミナが 3 割ほど減ります。</p>
     </Sheet>
   );
 }
