@@ -3,6 +3,7 @@
 
 import { CROPS, NODES, STAMINA_REGEN_MS } from './data';
 import { staminaMax } from './rules';
+import { SUNNY_REGEN_FACTOR, weatherAt } from './weather';
 import type { CropTile, SaveState, World } from './types';
 
 export interface StaminaInfo {
@@ -12,13 +13,19 @@ export interface StaminaInfo {
   nextInMs: number;
 }
 
+/** スタミナが 1 回復するまでの時間。晴れの日は短い（now の天気で、経過した時間ぜんぶを数える）。 */
+export function regenMs(now: number): number {
+  return STAMINA_REGEN_MS * (weatherAt(now) === 'sunny' ? SUNNY_REGEN_FACTOR : 1);
+}
+
 /** 現在のスタミナを計算する（save は変更しない）。 */
 export function currentStamina(save: SaveState, now: number): StaminaInfo {
   const max = staminaMax(save);
   const elapsed = Math.max(0, now - save.stamina.updatedAt);
-  const gained = Math.floor(elapsed / STAMINA_REGEN_MS);
+  const unit = regenMs(now);
+  const gained = Math.floor(elapsed / unit);
   const value = Math.min(max, save.stamina.value + gained);
-  const nextInMs = value >= max ? 0 : STAMINA_REGEN_MS - (elapsed % STAMINA_REGEN_MS);
+  const nextInMs = value >= max ? 0 : unit - (elapsed % unit);
   return { value, max, nextInMs };
 }
 
@@ -29,7 +36,8 @@ export function currentStamina(save: SaveState, now: number): StaminaInfo {
 export function normalizeStamina(save: SaveState, now: number): void {
   const max = staminaMax(save);
   const elapsed = now - save.stamina.updatedAt;
-  const gained = Math.floor(elapsed / STAMINA_REGEN_MS);
+  const unit = regenMs(now);
+  const gained = Math.floor(elapsed / unit);
   if (gained <= 0) return;
   const value = Math.min(max, save.stamina.value + gained);
   if (value >= max) {
@@ -37,7 +45,7 @@ export function normalizeStamina(save: SaveState, now: number): void {
     save.stamina.updatedAt = now;
   } else {
     save.stamina.value = value;
-    save.stamina.updatedAt = save.stamina.updatedAt + gained * STAMINA_REGEN_MS;
+    save.stamina.updatedAt = save.stamina.updatedAt + gained * unit;
   }
 }
 

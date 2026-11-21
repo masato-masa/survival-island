@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { cook, fish } from '../src/game/actions';
 import { BUFF_MS, CHOP_ACTION_MS, CROPS } from '../src/game/data';
 import { actionMs } from '../src/game/rules';
+import { currentStamina, regenMs } from '../src/game/time';
 import {
   CLOUDY_BUFF_FACTOR,
   RAIN_ACTION_FACTOR,
@@ -61,6 +62,19 @@ describe('天気', () => {
     expect(actionMs(save, 'axe', 0)).toBeCloseTo(CHOP_ACTION_MS * RAIN_ACTION_FACTOR);
     setWeatherOverride('cloudy');
     expect(actionMs(save, 'axe', 0)).toBe(CHOP_ACTION_MS);
+  });
+
+  it('晴れはスタミナの回復が 2 割はやい（30 分で 30 → 37 回復）', () => {
+    const save = freshSave();
+    save.stamina.value = 0;
+    save.stamina.updatedAt = 0;
+    save.maxPoints = 0;
+    setWeatherOverride('plain');
+    expect(regenMs(0)).toBe(60000);
+    expect(currentStamina(save, 1800000).value).toBe(30);
+    setWeatherOverride('sunny');
+    expect(regenMs(0)).toBe(48000);
+    expect(currentStamina(save, 1800000).value).toBe(37);
   });
 
   it('くもりはごはんの効き目が 1.5 倍長持ち', () => {

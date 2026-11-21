@@ -1,6 +1,7 @@
 // 天気（SI-18）。日付（日本時間 0 時切替、dailyDay）から決まる。同じ日なら必ず同じ。時刻は now を引数で受ける。
 //
-//   晴れ   : 木・岩・花・畑の作業が 1 割はやい
+//   晴れ   : スタミナの回復が 2 割はやい（1 分 → 48 秒）。作業も 1 割はやい。作業の速さは実時間だけで、
+//            スタミナの消費は変わらないので、暮らしの効きは回復のほうが大きい
 //   くもり : ごはんの効き目が 1.5 倍長持ち（10 分 → 15 分）
 //   雨     : 作業は 1 割おそい（ぬかるみ）が、畑は植えた作物が 3 割進んだ状態で育ち、釣りは大物が出やすい
 //
@@ -23,7 +24,7 @@ export interface WeatherDef {
 }
 
 export const WEATHERS: Record<WeatherId, WeatherDef> = {
-  sunny: { id: 'sunny', name: '晴れ', effect: '木・岩・花・畑の作業が 1 割はやい', weight: 45 },
+  sunny: { id: 'sunny', name: '晴れ', effect: 'スタミナの回復と、作業の速さが上がる（回復 1 分→48 秒）', weight: 45 },
   cloudy: { id: 'cloudy', name: 'くもり', effect: 'ごはんの効き目が 15 分に長持ち', weight: 25 },
   plain: { id: 'plain', name: '（なし）', effect: '', weight: 0 }, // テスト用。日付からは出ない
   rainy: { id: 'rainy', name: '雨', effect: '畑の作物が早く育ち、大物が釣れやすい（作業は 1 割おそい）', weight: 30 },
@@ -31,6 +32,8 @@ export const WEATHERS: Record<WeatherId, WeatherDef> = {
 
 export const WEATHER_ORDER: Exclude<WeatherId, 'plain'>[] = ['sunny', 'cloudy', 'rainy'];
 
+/** 晴れのスタミナ回復の間隔の倍率（0.8 = 2 割はやい）。 */
+export const SUNNY_REGEN_FACTOR = 0.8;
 /** 晴れの作業の長さの倍率（0.9 = 1 割はやい）。 */
 export const SUNNY_ACTION_FACTOR = 0.9;
 /** 雨の作業の長さの倍率。 */
