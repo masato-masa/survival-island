@@ -33,123 +33,130 @@ export function GoalSheet({
   const openAreas = AREA_ORDER.filter((area) => isAreaOpen(world, save, area)).length;
 
   return (
-    <Sheet
-      title="もくひょう"
-      subtitle={`島ポイント ${points.total}${nextThreshold ? ` / ${nextThreshold}` : '（最大）'}`}
-      onClose={onClose}
-    >
-      <p className="sheet-text">
-        島レベル {islandLevel}・ひらいたエリア {openAreas}/{AREA_ORDER.length}
-      </p>
-      <div className="goal-progress">
-        <div className="goal-progress-bar">
-          <div className="goal-progress-fill" style={{ width: `${progress * 100}%` }} />
-        </div>
-        <p className="sheet-text">
-          {nextThreshold
-            ? `次の島レベルまであと ${Math.max(0, nextThreshold - points.total)} ポイント`
-            : '島レベルは最大です'}
-        </p>
-      </div>
-      <div className="goal-request">
-        <div className="goal-request-title">島のおねがい {save.request.done.length}/{REQUESTS.length}</div>
-        {req ? (
-          req.locked ? (
-            <p className="sheet-text">「{req.def.name}」は 島レベル {req.def.unlockLevel} で受けられます</p>
-          ) : (
-            <>
-              <p className="sheet-text">
-                <b>{req.def.name}</b>：{req.def.buffs.map((b) => BUFFS[b].name).join('と')}が効いている間に{' '}
-                {req.def.items.map((i) => ITEMS[i].name).join('・')}を {req.def.goal} 個集める
-              </p>
-              <div className="goal-progress-bar">
-                <div className="goal-progress-fill" style={{ width: `${Math.min(100, (save.request.progress / req.def.goal) * 100)}%` }} />
-              </div>
-              <p className="sheet-text">
-                {save.request.progress} / {req.def.goal}　ごほうび: {itemList(req.def.reward)}
-              </p>
-              <p className="sheet-text">
-                {req.def.buffs.every((b) => hasBuff(save, b, now))
-                  ? '効き目が効いています。今のうちに！'
-                  : `作業台のごはんで ${req.def.buffs.map((b) => BUFFS[b].name).join('・')} を付けてから集めよう（効いていない間は数えません）`}
-              </p>
-            </>
-          )
-        ) : (
-          <p className="sheet-text">島のおねがいは全部かないました！</p>
-        )}
-      </div>
-      {dailyOpen(save) && (
-        <div className="goal-request">
-          <div className="goal-request-title">毎日のおねがい（日付で入れ替わる）</div>
-          <p className="sheet-text">
-            称号: <b>{dailyTitle(save.request.daily.total).name}</b>（かなえた数 {save.request.daily.total}
-            {dailyTitle(save.request.daily.total).next
-              ? `、「${dailyTitle(save.request.daily.total).next!.name}」まであと ${dailyTitle(save.request.daily.total).next!.total - save.request.daily.total}`
-              : ''}
-            ）
+    <Sheet title="もくひょう" onClose={onClose}>
+      <div className="goal-scroll">
+        <div className="goal-card">
+          <div className="goal-head">
+            <b>島レベル {islandLevel}</b>
+            <span>{nextThreshold ? `${points.total} / ${nextThreshold} pt` : '最大'}</span>
+          </div>
+          <Bar ratio={progress} />
+          <p className="goal-note">
+            {nextThreshold ? `あと ${Math.max(0, nextThreshold - points.total)} ポイントで次のレベル` : '島レベルは最大です'}
+            ・ひらいたエリア {openAreas}/{AREA_ORDER.length}
           </p>
-          {dailyView(save, now).map(({ def, progress, claimed }) => (
-            <div key={def.id} style={{ marginTop: 8 }}>
-              <p className="sheet-text">
-                <b>{def.name}</b>：{def.buffs.map((b) => BUFFS[b].name).join('と')}が効いている間に{' '}
-                {def.items.map((i) => ITEMS[i].name).join('・')}を {def.goal} 個
-              </p>
-              <div className="goal-progress-bar">
-                <div className="goal-progress-fill" style={{ width: `${claimed ? 100 : Math.min(100, (progress / def.goal) * 100)}%` }} />
+        </div>
+        <div className="goal-card">
+          <div className="goal-head">
+            <b>島のおねがい</b>
+            <span>
+              {save.request.done.length} / {REQUESTS.length}
+            </span>
+          </div>
+          {req ? (
+            req.locked ? (
+              <p className="goal-note">「{req.def.name}」は 島レベル {req.def.unlockLevel} で受けられます</p>
+            ) : (
+              <>
+                <p className="goal-main">
+                  {req.def.buffs.map((b) => BUFFS[b].name).join('と')}の間に {req.def.items.map((i) => ITEMS[i].name).join('・')}を {req.def.goal} 個
+                </p>
+                <Bar ratio={save.request.progress / req.def.goal} label={`${save.request.progress} / ${req.def.goal}`} />
+                <p className="goal-note">ごほうび: {itemList(req.def.reward)}</p>
+                <p className="goal-note">
+                  {req.def.buffs.every((b) => hasBuff(save, b, now))
+                    ? '効き目が効いています。今のうちに！'
+                    : `作業台のごはんで ${req.def.buffs.map((b) => BUFFS[b].name).join('・')} を付けてから（効いていない間は数えません）`}
+                </p>
+              </>
+            )
+          ) : (
+            <p className="goal-note">全部かないました！</p>
+          )}
+        </div>
+        {dailyOpen(save) && (
+          <div className="goal-card">
+            <div className="goal-head">
+              <b>毎日のおねがい</b>
+              <span>{dailyTitle(save.request.daily.total).name}</span>
+            </div>
+            {dailyView(save, now).map(({ def, progress: pr, claimed }) => (
+              <div key={def.id} className="goal-daily">
+                <p className="goal-main">
+                  {def.buffs.map((b) => BUFFS[b].name).join('と')}の間に {def.items.map((i) => ITEMS[i].name).join('・')}を {def.goal} 個
+                </p>
+                <Bar ratio={claimed ? 1 : pr / def.goal} label={claimed ? 'かなえた！' : `${Math.min(pr, def.goal)} / ${def.goal}`} />
+                <p className="goal-note">ごほうび: {itemList(def.reward)}</p>
               </div>
-              <p className="sheet-text">
-                {claimed ? 'かなえた！' : `${Math.min(progress, def.goal)} / ${def.goal}${def.buffs.every((b) => hasBuff(save, b, now)) ? '　効き目が効いています' : ''}`}　ごほうび: {itemList(def.reward)}
-              </p>
-            </div>
-          ))}
-          <p className="sheet-text">同じ作業が、効き目の合うおねがい全部に数えられます。</p>
+            ))}
+            <p className="goal-note">かなえた数 {save.request.daily.total}。同じ作業は合うおねがい全部に数えます。</p>
+          </div>
+        )}
+        <div className="goal-card">
+          <div className="goal-head">
+            <b>商船の修理</b>
+            <span>
+              {save.ship.stage} / {SHIP_STAGES.length}
+            </span>
+          </div>
+          <Bar ratio={save.ship.stage / SHIP_STAGES.length} />
+          <p className="goal-note">
+            {SHIP_STAGES[save.ship.stage]
+              ? `次: ${SHIP_STAGES[save.ship.stage]!.name}（島レベル ${SHIP_STAGES[save.ship.stage]!.unlockLevel}〜）。桟橋の商船へ`
+              : 'すっかり直りました'}
+          </p>
         </div>
-      )}
-      <div className="goal-request">
-        <div className="goal-request-title">商船の修理 {save.ship.stage}/{SHIP_STAGES.length}</div>
-        <div className="goal-progress-bar">
-          <div className="goal-progress-fill" style={{ width: `${(save.ship.stage / SHIP_STAGES.length) * 100}%` }} />
+        <div className="goal-card">
+          <div className="goal-head">
+            <b>見張り台の建て増し</b>
+            <span>
+              {save.tower.stage} / {TOWER_STAGES.length}
+            </span>
+          </div>
+          <Bar ratio={save.tower.stage / TOWER_STAGES.length} />
+          <p className="goal-note">
+            {TOWER_STAGES[save.tower.stage]
+              ? `次: ${TOWER_STAGES[save.tower.stage]!.name}（島レベル ${TOWER_STAGES[save.tower.stage]!.unlockLevel}〜）。丸太の見張り台を置いて触ろう`
+              : '島一番の高さになりました'}
+          </p>
         </div>
-        <p className="sheet-text">
-          {SHIP_STAGES[save.ship.stage]
-            ? `次: ${SHIP_STAGES[save.ship.stage]!.name}（島レベル ${SHIP_STAGES[save.ship.stage]!.unlockLevel}〜）。桟橋の商船に触れて素材を納めよう`
-            : '商船は すっかり直りました'}
-        </p>
-      </div>
-      <div className="goal-request">
-        <div className="goal-request-title">見張り台の建て増し {save.tower.stage}/{TOWER_STAGES.length}</div>
-        <div className="goal-progress-bar">
-          <div className="goal-progress-fill" style={{ width: `${(save.tower.stage / TOWER_STAGES.length) * 100}%` }} />
+        <div className="goal-card">
+          <div className="goal-head">
+            <b>エリア</b>
+            <span>
+              {openAreas} / {AREA_ORDER.length}
+            </span>
+          </div>
+          {AREA_ORDER.map((areaId) => {
+            const area = AREAS[areaId];
+            const open = isAreaOpen(world, save, areaId);
+            return (
+              <div className="goal-area-row" key={areaId}>
+                <span>{area.name}</span>
+                <span className={open ? 'goal-open' : 'goal-locked'}>
+                  {open
+                    ? '開放済み'
+                    : area.border
+                      ? `${SKILLS[area.border.skill].name} Lv${area.border.level} で境界を壊す`
+                      : area.entry
+                        ? `${AREAS[area.entry].name}の奥に入口がある`
+                        : ''}
+                </span>
+              </div>
+            );
+          })}
         </div>
-        <p className="sheet-text">
-          {TOWER_STAGES[save.tower.stage]
-            ? `次: ${TOWER_STAGES[save.tower.stage]!.name}（島レベル ${TOWER_STAGES[save.tower.stage]!.unlockLevel}〜）。丸太の見張り台を島に置いて触ろう`
-            : '見張り台は島一番の高さになりました'}
-        </p>
-      </div>
-      <p className="sheet-text">次の島レベルで増えるもの: スキルの上限・新しいレシピ・新しい種</p>
-      <p className="sheet-text">謎の遺跡でスキルを授かり、作業台で家具をクラフトできます。</p>
-      <div className="sheet-list">
-        {AREA_ORDER.map((areaId) => {
-          const area = AREAS[areaId];
-          const open = isAreaOpen(world, save, areaId);
-          return (
-            <div className="sheet-row static goal-area-row" key={areaId}>
-              <span>{area.name}</span>
-              <span className={open ? 'goal-open' : 'goal-locked'}>
-                {open
-                  ? '開放済み'
-                  : area.border
-                    ? `${SKILLS[area.border.skill].name} Lv${area.border.level} で境界を壊す`
-                    : area.entry
-                      ? `${AREAS[area.entry].name}の奥に入口がある`
-                      : ''}
-              </span>
-            </div>
-          );
-        })}
       </div>
     </Sheet>
+  );
+}
+
+function Bar({ ratio, label }: { ratio: number; label?: string }) {
+  const r = Math.max(0, Math.min(1, ratio));
+  return (
+    <div className="goal-bar">
+      <div className="goal-bar-fill" style={{ width: `${r * 100}%` }} />
+      {label ? <span className="goal-bar-label">{label}</span> : null}
+    </div>
   );
 }

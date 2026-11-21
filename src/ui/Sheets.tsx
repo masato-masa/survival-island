@@ -41,7 +41,8 @@ export function Sheet({
         </button>
         <h2 className="sheet-title">{title}</h2>
         {subtitle ? <p className="sheet-subtitle">{subtitle}</p> : null}
-        {children}
+        {/* 中身が枠より高くなっても枠の外へはみ出さず、ここだけが縦にスクロールする */}
+        <div className="sheet-body">{children}</div>
       </motion.div>
     </motion.div>
   );

@@ -585,12 +585,23 @@ button.hud-portrait:active {
   border-radius: 999px;
   padding: 3px 12px;
   font: inherit;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--ink);
   background: rgb(255 251 241 / 0.85);
   cursor: pointer;
   opacity: 0.85;
+}
+
+.dev-pill::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100% + 8px, var(--hit));
+  width: 88px;
+  height: var(--hit);
+  transform: translate(-50%, -50%);
 }
 
 .dev-pill:active {
@@ -1363,4 +1374,110 @@ button.hud-portrait:active {
   height: 150px;
   width: auto;
   object-fit: contain;
+}
+
+/* もくひょう（UI 磨き）: 全体を 1 つの縦スクロールにし、カードごとに 見出し・数・バー・ひとこと の順にそろえる */
+.goal-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 2px;
+  margin: 0 -2px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--wood) transparent;
+}
+.goal-card {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 2.5px solid var(--card-edge);
+  border-radius: var(--radius-m);
+  background: var(--card);
+}
+.goal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 16px;
+  color: var(--ink);
+}
+.goal-head span {
+  font-size: 14px;
+  font-weight: 800;
+  color: #7d6644;
+}
+.goal-main {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.goal-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #7d6644;
+}
+.goal-daily {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 6px;
+  border-top: 1.5px dashed var(--card-edge);
+}
+.goal-bar {
+  position: relative;
+  height: 20px;
+  border: 2.5px solid #5fcf5a;
+  border-radius: 999px;
+  background: #efe4c8;
+  overflow: hidden;
+}
+.goal-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(#a7ef8a, #47c43a);
+  transition: width 0.3s ease;
+}
+.goal-bar-label {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 800;
+  color: #4a3a22;
+  text-shadow: 0 0 3px #fff, 0 0 3px #fff;
+}
+.goal-card .goal-area-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 32px;
+  font-size: 14px;
+}
+.goal-card .goal-open { font-size: 13px; }
+.goal-card .goal-locked { font-size: 13px; }
+
+.sheet-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  padding: 3px;
+  margin: -3px;
 }
