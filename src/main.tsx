@@ -15,6 +15,8 @@ import { loadArt } from './render/sprites';
   const w = q.get('weather');
   if (q.has('dev') && (w === 'sunny' || w === 'cloudy' || w === 'rainy')) setWeatherOverride(w);
 }
+// 音量の測定用（?dev）。各効果音の関数を window.__sound に出す。
+if (import.meta.env.DEV || new URLSearchParams(location.search).has('dev')) void import('./ui/sound').then((m) => ((window as unknown as { __sound: unknown }).__sound = m));
 if (import.meta.env.DEV || new URLSearchParams(location.search).has('dev')) (window as unknown as { __store: typeof store }).__store = store;
 
 function render() {

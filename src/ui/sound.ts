@@ -60,8 +60,8 @@ const samples = new Map<string, AudioBuffer>();
 
 /** 音ごとの音量（ピークをそろえたあとに掛ける）。 */
 const SAMPLE_GAIN: Record<string, number> = {
-  chop: 0.7, mine: 0.6, fell: 0.6, pop: 0.5, pick: 0.55, dig: 0.55, plant: 0.5, harvest: 0.55,
-  collect: 0.4, craft: 0.55, place: 0.55, levelUp: 0.6, fail: 0.45, tap: 0.3,
+  chop: 0.17, mine: 0.6, fell: 0.3, pop: 0.5, pick: 0.72, dig: 0.55, plant: 0.5, harvest: 0.2,
+  collect: 0.25, craft: 0.4, place: 0.4, levelUp: 0.28, fail: 0.25, tap: 0.3,
 };
 
 /** 音ごとの最大の長さ（ms）。生成した音は余韻が長いことがあるので、ここで切ってフェードする。 */
@@ -372,11 +372,11 @@ function filteredNoise(c: AudioContext, opts: { duration: number; gain: number; 
 export function playEat(): void {
   play(true, (c) => {
     [0, 0.14].forEach((d) => {
-      filteredNoise(c, { duration: 0.09, gain: 0.2, freq: 700, q: 1.2, delay: d });
-      tone(c, { freq: 190, freqEnd: 140, duration: 0.09, type: 'sine', gain: 0.1, delay: d });
+      filteredNoise(c, { duration: 0.09, gain: 0.3, freq: 700, q: 1.2, delay: d });
+      tone(c, { freq: 190, freqEnd: 140, duration: 0.09, type: 'sine', gain: 0.15, delay: d });
     });
-    tone(c, { freq: 660, duration: 0.16, type: 'triangle', gain: 0.08, delay: 0.32 });
-    tone(c, { freq: 880, duration: 0.2, type: 'triangle', gain: 0.08, delay: 0.4 });
+    tone(c, { freq: 660, duration: 0.16, type: 'triangle', gain: 0.12, delay: 0.32 });
+    tone(c, { freq: 880, duration: 0.2, type: 'triangle', gain: 0.12, delay: 0.4 });
   });
 }
 
@@ -401,8 +401,8 @@ export function playCatch(big: boolean): void {
 export function playBuild(): void {
   play(true, (c) => {
     [0, 0.13].forEach((d) => {
-      noiseBurst(c, 0.05, 0.22, d);
-      tone(c, { freq: 160, freqEnd: 110, duration: 0.08, type: 'triangle', gain: 0.16, delay: d });
+      noiseBurst(c, 0.05, 0.14, d);
+      tone(c, { freq: 160, freqEnd: 110, duration: 0.08, type: 'triangle', gain: 0.11, delay: d });
     });
     [523, 659, 784].forEach((freq, i) => tone(c, { freq, duration: 0.5, type: 'sine', gain: 0.1, delay: 0.3 + i * 0.03 }));
   });
@@ -429,7 +429,7 @@ export function playStep(): void {
   try {
     const c = getContext();
     if (!c) return;
-    filteredNoise(c, { duration: 0.05, gain: 0.05 + Math.random() * 0.02, freq: 420 + Math.random() * 120, q: 0.8 });
+    filteredNoise(c, { duration: 0.05, gain: 0.42 + Math.random() * 0.12, freq: 420 + Math.random() * 120, q: 0.8 });
   } catch {
     // 鳴らせなくても続行
   }
@@ -472,7 +472,7 @@ export function setRainSound(on: boolean): void {
     lp.frequency.value = 6000;
     const amp = c.createGain();
     amp.gain.setValueAtTime(0.0001, c.currentTime);
-    amp.gain.setTargetAtTime(0.06, c.currentTime, 0.6);
+    amp.gain.setTargetAtTime(0.09, c.currentTime, 0.6);
     src.connect(hp);
     hp.connect(lp);
     lp.connect(amp);
@@ -482,4 +482,9 @@ export function setRainSound(on: boolean): void {
   } catch {
     rainNodes = null;
   }
+}
+
+/** 音量の測定用: すべての音の出口（コンプレッサー）。?dev で window.__sound から使う。 */
+export function masterForTest(): { node: AudioNode; context: AudioContext } | null {
+  return masterNode && masterFor ? { node: masterNode, context: masterFor } : null;
 }
