@@ -32,7 +32,9 @@ import type {
 // 癒やし系の農場ゲームで定番の不満（Knowledge/game-fun の調査 4）。いまは満タンまで 40 分。
 export const STAMINA_BASE = 40;
 export const STAMINA_PER_LEVEL = 5; // staminaMax 1 段階ごと
-export const STAMINA_REGEN_MS = 60 * 1000; // 1 分で 1 回復
+export const STAMINA_REGEN_MS = 60 * 1000; // 1 分で 1 回復（島レベル 3 以上）
+/** 島レベルが低いうちは回復がはやい（SI-22。最初の 10 分で手が止まる時間を減らす。index = 島レベル - 1）。 */
+export const STAMINA_REGEN_BY_LEVEL_MS = [40 * 1000, 50 * 1000, 60 * 1000, 60 * 1000, 60 * 1000];
 export const XP_PER_STAMINA = 1; // 経験値は消費スタミナに比例
 
 /**

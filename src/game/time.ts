@@ -1,8 +1,8 @@
 // 時間まわりの計算。スタミナの現在値・正規化、作物の成長、資源の復活。
 // now は必ず引数で受け取る。ここで Date.now() を呼ばない。
 
-import { CROPS, NODES, STAMINA_REGEN_MS } from './data';
-import { staminaMax } from './rules';
+import { CROPS, NODES, STAMINA_REGEN_BY_LEVEL_MS, STAMINA_REGEN_MS } from './data';
+import { islandLevel, staminaMax } from './rules';
 import { SUNNY_REGEN_FACTOR, weatherAt } from './weather';
 import type { CropTile, SaveState, World } from './types';
 
@@ -14,15 +14,16 @@ export interface StaminaInfo {
 }
 
 /** スタミナが 1 回復するまでの時間。晴れの日は短い（now の天気で、経過した時間ぜんぶを数える）。 */
-export function regenMs(now: number): number {
-  return STAMINA_REGEN_MS * (weatherAt(now) === 'sunny' ? SUNNY_REGEN_FACTOR : 1);
+export function regenMs(save: SaveState, now: number): number {
+  const base = STAMINA_REGEN_BY_LEVEL_MS[Math.min(islandLevel(save), STAMINA_REGEN_BY_LEVEL_MS.length) - 1] ?? STAMINA_REGEN_MS;
+  return base * (weatherAt(now) === 'sunny' ? SUNNY_REGEN_FACTOR : 1);
 }
 
 /** 現在のスタミナを計算する（save は変更しない）。 */
 export function currentStamina(save: SaveState, now: number): StaminaInfo {
   const max = staminaMax(save);
   const elapsed = Math.max(0, now - save.stamina.updatedAt);
-  const unit = regenMs(now);
+  const unit = regenMs(save, now);
   const gained = Math.floor(elapsed / unit);
   const value = Math.min(max, save.stamina.value + gained);
   const nextInMs = value >= max ? 0 : unit - (elapsed % unit);
@@ -36,7 +37,7 @@ export function currentStamina(save: SaveState, now: number): StaminaInfo {
 export function normalizeStamina(save: SaveState, now: number): void {
   const max = staminaMax(save);
   const elapsed = now - save.stamina.updatedAt;
-  const unit = regenMs(now);
+  const unit = regenMs(save, now);
   const gained = Math.floor(elapsed / unit);
   if (gained <= 0) return;
   const value = Math.min(max, save.stamina.value + gained);

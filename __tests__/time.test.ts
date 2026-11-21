@@ -3,7 +3,28 @@ import { describe, expect, it } from 'vitest';
 import { STAMINA_BASE, STAMINA_REGEN_MS } from '../src/game/data';
 import { applyRespawns, cropProgress, currentStamina, isReady, normalizeStamina } from '../src/game/time';
 import { buildWorld } from '../src/game/world';
-import { freshSave, world } from './helpers';
+import { freshSave as freshSaveRaw, world } from './helpers';
+import { regenMs } from '../src/game/time';
+
+/** 島レベル 3（回復が 60 秒）にした新しいセーブ。島レベルが低いうちの回復は別のテストで見る。 */
+function freshSave(now = 0) {
+  const s = freshSaveRaw(now);
+  s.maxPoints = 30;
+  return s;
+}
+
+describe('島レベルが低いうちは回復がはやい（SI-22）', () => {
+  it('Lv1 は 40 秒、Lv2 は 50 秒、Lv3 以上は 60 秒', () => {
+    const save = freshSaveRaw(0);
+    expect(regenMs(save, 0)).toBe(40000);
+    save.maxPoints = 10;
+    expect(regenMs(save, 0)).toBe(50000);
+    save.maxPoints = 30;
+    expect(regenMs(save, 0)).toBe(60000);
+    save.maxPoints = 100;
+    expect(regenMs(save, 0)).toBe(60000);
+  });
+});
 
 describe('currentStamina', () => {
   it('時間が経っていなければそのまま', () => {

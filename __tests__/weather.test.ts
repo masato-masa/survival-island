@@ -68,12 +68,12 @@ describe('天気', () => {
     const save = freshSave();
     save.stamina.value = 0;
     save.stamina.updatedAt = 0;
-    save.maxPoints = 0;
+    save.maxPoints = 30; // 島レベル 3（回復は 60 秒）
     setWeatherOverride('plain');
-    expect(regenMs(0)).toBe(60000);
+    expect(regenMs(save, 0)).toBe(60000);
     expect(currentStamina(save, 1800000).value).toBe(30);
     setWeatherOverride('sunny');
-    expect(regenMs(0)).toBe(48000);
+    expect(regenMs(save, 0)).toBe(48000);
     expect(currentStamina(save, 1800000).value).toBe(37);
   });
 
