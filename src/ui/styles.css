@@ -164,11 +164,14 @@ button {
   pointer-events: none;
 }
 
-.wood-btn svg {
+.wood-btn svg,
+.wood-btn img {
   position: relative;
-  width: 64%;
-  height: 64%;
+  width: 70%;
+  height: 70%;
   display: block;
+  object-fit: contain;
+  pointer-events: none;
 }
 
 .wood-btn.is-small {
@@ -444,10 +447,12 @@ button.hud-portrait:active {
   filter: drop-shadow(0 1px 1px rgb(60 40 20 / 0.35));
 }
 
-.gauge-icon svg {
+.gauge-icon svg,
+.gauge-icon img {
   width: 100%;
   height: 100%;
   display: block;
+  object-fit: contain;
 }
 
 /* つまみの左下の数字（ピグの葉っぱの「2」と同じ、白文字 + 濃い緑のふち） */
@@ -795,11 +800,13 @@ button.hud-portrait:active {
   color: var(--ink-strong);
 }
 
-.help-sec h3 svg {
+.help-sec h3 svg,
+.help-sec h3 img {
   width: 26px;
   height: 26px;
   flex: none;
   display: block;
+  object-fit: contain;
 }
 
 .help-sec p {

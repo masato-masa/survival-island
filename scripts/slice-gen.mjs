@@ -36,6 +36,13 @@ const SHEETS = {
     maxSize: 256,
     names: ['weather_sunny', 'weather_cloudy', 'weather_rainy', 'rain_drop', 'rain_ripple', 'rain_cloud'],
   },
+  uiicons: {
+    file: 'refs/gen/uiicons.png',
+    cols: 3,
+    rows: 2,
+    maxSize: 192,
+    names: ['ui_bag', 'ui_flag', 'ui_sofa', 'ui_heart', 'ui_sprout', 'ui_star'],
+  },
   fish: {
     file: 'refs/gen/fish.png',
     cols: 2,
