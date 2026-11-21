@@ -1,3 +1,4 @@
+import { recordLife } from './lifelog';
 // 実行時の状態（セーブ＋時計）。React と Canvas の両方がこれを購読する。
 // ここだけが Date.now() を直接呼んでよい（now()）。
 
@@ -153,6 +154,7 @@ export function createStore(opts: CreateStoreOptions = {}): GameStore {
 
   const runAction = (result: Result): Result => {
     if (result.ok) {
+      recordLife(save, result.events, now());
       persist();
       notify();
       for (const fn of eventListeners) fn(result.events);

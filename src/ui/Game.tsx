@@ -6,7 +6,7 @@ import { AnimatePresence } from 'motion/react';
 import { WEATHERS, weatherAt } from '@/game/weather';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
-import { AREAS, CROPS, FURNITURE, FURNITURE_FUNCTION, ISLAND_LEVEL_POINTS, REQUESTS, SHIP_STAGES, TOWER_STAGES, BUFFS, MEALS, TREE_SPECIES } from '@/game/data';
+import { AREAS, CROPS, FURNITURE, FURNITURE_FUNCTION, ISLAND_LEVEL_POINTS, REQUESTS, SHIP_STAGES, TOWER_STAGES, BUFFS, ITEMS, MEALS, TREE_SPECIES } from '@/game/data';
 import { store } from '@/game/store';
 import { placementAt } from '@/game/rules';
 import { spriteDataUrl } from '@/render/sprites';
@@ -182,6 +182,11 @@ export function Game() {
             hapticHarvest();
             break;
           }
+          case 'lifeTier':
+            showBanner(`暮らしの記録「${ev.name}」${ev.tier} 段目！ ${Object.entries(ev.reward).map(([k, n]) => `${ITEMS[k as keyof typeof ITEMS].name}×${n}`).join('・')}`);
+            playRequestDone();
+            hapticHarvest();
+            break;
           case 'shipRepaired':
             showBanner(`商船を直した！ ${SHIP_STAGES[ev.stage - 1]?.after ?? ''}`);
             playBuild();

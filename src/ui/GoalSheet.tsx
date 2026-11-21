@@ -2,6 +2,7 @@
 // エリアごとの開放状況と必要スキルを見せる。
 
 import { AREA_ORDER, AREAS, BUFFS, ISLAND_LEVEL_POINTS, ITEMS, REQUESTS, SHIP_STAGES, SKILLS, TOWER_STAGES } from '@/game/data';
+import { LIFE, lifeCount } from '@/game/lifelog';
 import { dailyOpen, dailyTitle, dailyView } from '@/game/daily';
 import { currentRequest, hasBuff, isAreaOpen } from '@/game/rules';
 import { islandPoints } from '@/game/score';
@@ -133,6 +134,32 @@ export function GoalSheet({
               ? `次: ${TOWER_STAGES[save.tower.stage]!.name}（島レベル ${TOWER_STAGES[save.tower.stage]!.unlockLevel}〜）。丸太の見張り台を置いて触ろう`
               : '島一番の高さになりました'}
           </p>
+        </div>
+        <div className="goal-card">
+          <div className="goal-head">
+            <b>暮らしの記録</b>
+            <span>
+              {LIFE.reduce((n, d) => n + (save.life.tier[d.id] ?? 0), 0)} / {LIFE.length * 3}
+            </span>
+          </div>
+          {LIFE.map((d) => {
+            const have = lifeCount(save, d.id);
+            const tier = save.life.tier[d.id] ?? 0;
+            const next = d.tiers[tier];
+            const prev = tier > 0 ? d.tiers[tier - 1]! : 0;
+            return (
+              <div key={d.id} className="goal-life">
+                <div className="goal-life-head">
+                  <span>{d.name}</span>
+                  <span>{next ? `${have} / ${next}${d.unit}` : '達成！'}</span>
+                </div>
+                <Bar ratio={next ? (have - prev) / (next - prev) : 1} />
+                <p className="goal-note">
+                  {next ? `${d.hint}。${tier + 1} 段目のごほうび: ${itemList(d.rewards[tier]!)}` : '3 段ぜんぶ達成'}
+                </p>
+              </div>
+            );
+          })}
         </div>
         <div className="goal-card">
           <div className="goal-head">

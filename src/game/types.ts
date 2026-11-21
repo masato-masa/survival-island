@@ -1,3 +1,4 @@
+import type { LifeState } from './lifelog';
 // ゲーム全体で使う型。描画にも React にも依存しない。
 // 座標はすべて「マス」単位。1 マス = 32 ワールドピクセル（描画側の都合）。
 
@@ -378,6 +379,8 @@ export interface SaveState {
   /** 商船の修理（SI-14）。 */
   ship: ShipState;
   tower: TowerState;
+  /** 暮らしの記録（SI-25）。 */
+  life: LifeState;
   /** 植えた苗木・花の種（"x,y" → 状態）。資源としての体力などは nodes["p:x,y"] に入る。 */
   planted: Record<string, PlantedState>;
   /** 最初から置く家具（作業台・柱など）を placements に入れ終えたか。古いセーブに一度だけ入れるための印。 */
@@ -444,6 +447,8 @@ export type GameEvent =
   /** 釣った（item が null なら逃げられた）。 */
   | { type: 'fished'; item: 'fish' | 'bigFish' | null }
   | { type: 'placed'; slot: string; furniture: FurnitureId | null }
+  /** 暮らしの記録（SI-25）の段を越えた。 */
+  | { type: 'lifeTier'; id: string; name: string; tier: number; reward: Partial<Record<ItemId, number>> }
   | { type: 'skill'; skill: SkillId; level: number };
 
 export type Fail =

@@ -1565,3 +1565,19 @@ body {
   padding: 10px 16px;
   font-size: 14px;
 }
+
+.goal-life {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 6px;
+  border-top: 1.5px dashed var(--card-edge);
+}
+.goal-life:first-of-type { border-top: 0; padding-top: 0; }
+.goal-life-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ink);
+}
