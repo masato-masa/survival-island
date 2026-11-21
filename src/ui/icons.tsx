@@ -1,3 +1,7 @@
+import weatherCloudy from '@/assets/gen/weather_cloudy.png';
+import weatherRainy from '@/assets/gen/weather_rainy.png';
+import weatherSunny from '@/assets/gen/weather_sunny.png';
+
 // このゲーム専用のアイコン。shared-ui のものではないので、ここに直接置く。
 // ピグライフのボタンの絵に合わせて「塗りの 2 色 + 同じ色相の濃い輪郭 + 左上の白いつや」で描く
 // （線だけのアイコンは使わない）。すべて 24x24 の枠。実測値の一覧は styles.css の先頭。
@@ -147,31 +151,8 @@ export function SproutIcon() {
   );
 }
 
-/** 天気のアイコン（HUD と もくひょう用）。 */
+/** 天気のアイコン（HUD と もくひょう用）。ChatGPT 製の絵（scripts/slice-gen.mjs の weather シート）。 */
 export function WeatherIcon({ id }: { id: 'sunny' | 'cloudy' | 'rainy' | 'plain' }) {
-  if (id === 'sunny') {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <g stroke="#ffb02e" strokeWidth="2.2" strokeLinecap="round">
-          <path d="M12 2.2v2.6M12 19.2v2.6M2.2 12h2.6M19.2 12h2.6M5.1 5.1l1.8 1.8M17.1 17.1l1.8 1.8M5.1 18.9l1.8-1.8M17.1 6.9l1.8-1.8" />
-        </g>
-        <circle cx="12" cy="12" r="5" fill="#ffd54a" stroke="#fff" strokeWidth="1.4" />
-      </svg>
-    );
-  }
-  if (id === 'rainy') {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M7 14.5a4.2 4.2 0 0 1-.4-8.4A5.4 5.4 0 0 1 17 7.4a3.6 3.6 0 0 1 .5 7.1z" fill="#b9c8d8" stroke="#fff" strokeWidth="1.4" strokeLinejoin="round" />
-        <g stroke="#4aa3e8" strokeWidth="2.2" strokeLinecap="round">
-          <path d="M8 17.2l-1 3M12.5 17.2l-1 3M17 17.2l-1 3" />
-        </g>
-      </svg>
-    );
-  }
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M7 19a4.6 4.6 0 0 1-.5-9.2A6 6 0 0 1 18 10.6 4.2 4.2 0 0 1 17.4 19z" fill="#e3e9ef" stroke="#fff" strokeWidth="1.4" strokeLinejoin="round" />
-    </svg>
-  );
+  const src = id === 'sunny' ? weatherSunny : id === 'rainy' ? weatherRainy : weatherCloudy;
+  return <img src={src} alt="" draggable={false} />;
 }

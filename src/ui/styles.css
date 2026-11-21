@@ -1532,9 +1532,11 @@ button.hud-portrait:active {
   cursor: pointer;
   z-index: 1;
 }
-.hud-weather svg {
-  width: 20px;
-  height: 20px;
+.hud-weather img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  pointer-events: none;
 }
 .hud-weather::after {
   content: '';
@@ -1549,9 +1551,10 @@ button.hud-portrait:active {
   align-items: center;
   gap: 6px;
 }
-.goal-weather-now svg {
-  width: 24px;
-  height: 24px;
+.goal-weather-now img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
 }
 
 /* 長押し・ダブルタップで文字が選択される・コピーの吹き出しが出るのを防ぐ */

@@ -29,6 +29,13 @@ const SHEETS = {
     maxSize: 256,
     names: ['item_wood', 'item_stone', 'item_copper', 'item_sapling', 'item_flowerSeed', 'item_petal'],
   },
+  weather: {
+    file: 'refs/gen/weather.png',
+    cols: 3,
+    rows: 2,
+    maxSize: 256,
+    names: ['weather_sunny', 'weather_cloudy', 'weather_rainy', 'rain_drop', 'rain_ripple', 'rain_cloud'],
+  },
   fish: {
     file: 'refs/gen/fish.png',
     cols: 2,

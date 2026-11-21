@@ -13,6 +13,9 @@
 
 import { GROUND_DEPTH, HEIGHT_SCALE, project3, TILE, worldToScreen, type CameraState, type Viewport } from './camera';
 
+import rainDropUrl from '@/assets/gen/rain_drop.png';
+import rainRippleUrl from '@/assets/gen/rain_ripple.png';
+
 type Ctx = CanvasRenderingContext2D;
 
 function hash2(x: number, y: number, seed = 0): number {
@@ -385,8 +388,13 @@ export function liftPx(z: number, k: number): number {
 // ---------------------------------------------------------------------------
 // 天気（SI-18）。雨は斜めの線が落ちる。くもりは空気が灰色にくもる。晴れは光が少し強い（drawLightBreath 側）。
 
-/** 雨の線の本数。1 フレームで fillRect でなく 1 本の path にまとめて描く。 */
-const RAIN_DROPS = 110;
+/** 雨の素材（ChatGPT 製、scripts/slice-gen.mjs の weather シート）。読み込めるまでは線で代わりに描く。 */
+const rainDropImg = new Image();
+rainDropImg.src = rainDropUrl;
+const rainRippleImg = new Image();
+rainRippleImg.src = rainRippleUrl;
+const RAIN_DROPS = 46;
+const RIPPLES = 14;
 
 export function drawWeather(ctx: Ctx, w: number, h: number, now: number, weather: 'sunny' | 'cloudy' | 'rainy' | 'plain'): void {
   if (weather === 'cloudy') {
@@ -400,22 +408,42 @@ export function drawWeather(ctx: Ctx, w: number, h: number, now: number, weather
   ctx.save();
   ctx.fillStyle = 'rgba(70,90,115,0.2)';
   ctx.fillRect(0, 0, w, h);
-  ctx.strokeStyle = 'rgba(240,248,255,0.75)';
-  ctx.lineWidth = 1.6;
+  const t = now / 1000;
+  const dropsReady = rainDropImg.complete && rainDropImg.naturalWidth > 0;
+  // 水滴: 斜めに落ちる。手前（大きい）ほどはやい
+  ctx.strokeStyle = 'rgba(240,248,255,0.55)';
+  ctx.lineWidth = 1.4;
   ctx.lineCap = 'round';
   ctx.beginPath();
-  const t = now / 1000;
-  const slant = 0.22;
-  const len = 13;
   for (let i = 0; i < RAIN_DROPS; i++) {
-    const speed = 0.9 + hash2(i, 3) * 0.5; // 画面の高さ/秒に対する割合
-    const phase = hash2(i, 1);
-    const fy = (phase + t * speed * 0.9) % 1;
-    const y = fy * (h + len * 2) - len;
-    const x = ((hash2(i, 2) * (w + h * slant) - fy * h * slant * 0.3) % (w + 20)) + (fy * len * slant);
-    ctx.moveTo(x, y);
-    ctx.lineTo(x - len * slant, y + len);
+    const near = hash2(i, 3);
+    const speed = 0.8 + near * 0.6;
+    const fy = (hash2(i, 1) + t * speed * 0.75) % 1;
+    const x = (hash2(i, 2) * (w + 40) - fy * 24) % (w + 20);
+    const y = fy * (h + 40) - 20;
+    if (dropsReady) {
+      const dw = 6 + near * 5;
+      const dh = dw * (rainDropImg.naturalHeight / rainDropImg.naturalWidth);
+      ctx.globalAlpha = 0.55 + near * 0.3;
+      ctx.drawImage(rainDropImg, x, y, dw, dh);
+    } else {
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - 3, y + 13);
+    }
   }
-  ctx.stroke();
+  if (!dropsReady) ctx.stroke();
+  // 波紋: 画面の下 2/3 のあちこちに、ふくらんで消える
+  if (rainRippleImg.complete && rainRippleImg.naturalWidth > 0) {
+    for (let i = 0; i < RIPPLES; i++) {
+      const life = (t * 0.6 + hash2(i, 5) * 7) % 1.6;
+      if (life > 1) continue;
+      const cycle = Math.floor((t * 0.6 + hash2(i, 5) * 7) / 1.6);
+      const x = hash2(i + cycle * 31, 6) * w;
+      const y = h * 0.34 + hash2(i + cycle * 17, 7) * h * 0.62;
+      const rw = 10 + life * 26;
+      ctx.globalAlpha = (1 - life) * 0.5;
+      ctx.drawImage(rainRippleImg, x - rw / 2, y - rw * 0.2, rw, rw * 0.4);
+    }
+  }
   ctx.restore();
 }
