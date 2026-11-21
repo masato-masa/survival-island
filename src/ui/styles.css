@@ -330,6 +330,8 @@ button.hud-portrait:active {
 
 /* 札: ピグライフの上部の案内札（縁 #cee75d, 面 白 → #f3fedc, 文字 #9a784c）。顔の右に少し潜らせる */
 .hud-area-name {
+  display: flex;
+  align-items: center;
   margin-left: -10px;
   padding: 4px 14px 4px 16px;
   border: 3px solid #cee75d;
@@ -1511,26 +1513,19 @@ button.hud-portrait:active {
 .step-dot.is-next { color: var(--ink); }
 .step-dot.is-next i { border-color: #47c43a; }
 
-/* 天気の札（左上、顔アイコンの下）。タップで もくひょう（天気の効き目）を開く */
+/* 天気のアイコン（エリア名の札の右端。タップで もくひょう（天気の効き目）を開く） */
 .hud-weather {
-  position: absolute;
-  top: 62px;
-  left: 2px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  height: 28px;
-  padding: 0 12px 0 6px;
-  border: 3px solid var(--wood);
-  border-radius: 999px;
-  background: rgb(255 251 241 / 0.92);
-  box-shadow: 0 2px 0 #c9a46c, 0 3px 6px rgb(90 60 30 / 0.2);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 800;
-  color: var(--ink);
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin: -4px -8px -4px 6px;
+  padding: 0;
+  border: 0;
+  background: none;
   cursor: pointer;
-  z-index: 1;
 }
 .hud-weather img {
   width: 24px;
@@ -1541,10 +1536,10 @@ button.hud-portrait:active {
 .hud-weather::after {
   content: '';
   position: absolute;
-  inset: -8px -6px;
+  inset: -9px -8px;
 }
 .hud-weather:active {
-  transform: scale(0.95);
+  transform: scale(0.92);
 }
 .goal-weather-now {
   display: flex;

@@ -350,11 +350,14 @@ export function Game() {
           >
             <img src={spriteDataUrl('player_down0')} alt="" />
           </button>
-          <span className="hud-area-name">{areaName}</span>
-          <button className="hud-weather" aria-label={`今日の天気 ${WEATHERS[weatherAt(store.now())].name}。くわしく見る`} onClick={() => setSheet({ kind: 'goal' })}>
-            <WeatherIcon id={weatherAt(store.now())} />
-            {WEATHERS[weatherAt(store.now())].name}
-          </button>
+          <span className="hud-area-name">
+            {areaName}
+            {areaName ? (
+              <button className="hud-weather" aria-label={`今日の天気 ${WEATHERS[weatherAt(store.now())].name}。くわしく見る`} onClick={() => setSheet({ kind: 'goal' })}>
+                <WeatherIcon id={weatherAt(store.now())} />
+              </button>
+            ) : null}
+          </span>
           {menuOpen ? (
             <MenuPopover
               onClose={() => setMenuOpen(false)}
@@ -402,6 +405,8 @@ export function Game() {
               </span>
             </div>
 
+            {/* 経験値は、最初の行動で増えてから出す（0 のまま意味の分からない星を見せない） */}
+            {save.totalXp > 0 ? (
             <div className="gauge is-xp" aria-label={`経験値 ${save.xp}`}>
               <span className="gauge-icon">
                 <StarIcon />
@@ -411,6 +416,7 @@ export function Game() {
                 <span className="gauge-text">{save.xp}</span>
               </span>
             </div>
+            ) : null}
             {/* ごはんの効き目（絶対配置: 出入りでゲージが動かない） */}
             <div className="buff-notes">
               {save.buffs
