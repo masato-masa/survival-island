@@ -1,6 +1,7 @@
 // 釣り（SI-9）: 桟橋で開く。浮きが左右に動くので、中央のあたりで「つる！」を押す。
 // 中央のいちばん狭いところで合わせると大物が出ることがある。1 回 1 スタミナ。
 
+import { playCast } from './sound';
 import { useEffect, useRef, useState } from 'react';
 
 import { fishQuality } from '@/game/actions';
@@ -71,6 +72,7 @@ export function FishingSheet({
   const cast = () => {
     if (heldRef.current) return;
     const quality = fishQuality(posRef.current, hasBuff(save, 'swift', now()));
+    playCast();
     const r = onCast(quality);
     if (!r.ok) {
       setHeld({ quality: 'miss', message: 'スタミナが足りません' });

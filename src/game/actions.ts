@@ -1,10 +1,12 @@
 // プレイヤーの行動。すべて save を書き換えて Result を返す。
 // 行動にかかる時間（約 3 秒）はここでは見ない（store.ts が始めて、終わったときにここの関数で結果を出す）。
 
+import { CLOUDY_BUFF_FACTOR, RAIN_BIG_FISH_BONUS, RAIN_CROP_HEADSTART, weatherAt } from './weather';
 import {
   BIG_FISH_RATE,
   BOUNTY_BIG_FISH_RATE,
   BUFF_MS,
+  CROPS,
   FISH_GOOD_HALF,
   FISH_PERFECT_HALF,
   SWIFT_FISH_WIDEN,
@@ -336,7 +338,7 @@ function plantTiles(world: World, save: SaveState, plot: Plot, x: number, y: num
   let xpGained = 0;
   for (const t of candidates) {
     if (!spend(save, 1, now)) break;
-    state.tiles[key(t.x, t.y)] = { crop, plantedAt: now };
+    state.tiles[key(t.x, t.y)] = { crop, plantedAt: weatherAt(now) === 'rainy' ? now - CROPS[crop].growMs * RAIN_CROP_HEADSTART : now };
     planted.push(t);
     xpGained += 1;
   }
@@ -451,7 +453,7 @@ export function cook(save: SaveState, mealId: MealId, now: number): Result {
   if (save.stamina.value >= max) save.stamina.updatedAt = now;
   // 効き目: 同じものは時間を延ばし直す（重ねがけで長くはならない）
   save.buffs = save.buffs.filter((b) => b.until > now && !def.buffs.includes(b.id));
-  for (const id of def.buffs) save.buffs.push({ id, until: now + BUFF_MS });
+  for (const id of def.buffs) save.buffs.push({ id, until: now + BUFF_MS * (weatherAt(now) === 'cloudy' ? CLOUDY_BUFF_FACTOR : 1) });
   return { ok: true, events: [{ type: 'ate', meal: mealId, restore: save.stamina.value - before }] };
 }
 
@@ -470,7 +472,7 @@ export function fishQuality(pos: number, swift = false): CatchQuality {
  */
 export function fish(save: SaveState, quality: CatchQuality, roll: number, now: number): Result {
   if (!spend(save, 1, now)) return { ok: false, reason: 'noStamina' };
-  const item = quality === 'perfect' ? (roll < (hasBuff(save, 'bounty', now) ? BOUNTY_BIG_FISH_RATE : BIG_FISH_RATE) ? 'bigFish' : 'fish') : quality === 'good' ? 'fish' : null;
+  const item = quality === 'perfect' ? (roll < ((hasBuff(save, 'bounty', now) ? BOUNTY_BIG_FISH_RATE : BIG_FISH_RATE) + (weatherAt(now) === 'rainy' ? RAIN_BIG_FISH_BONUS : 0)) ? 'bigFish' : 'fish') : quality === 'good' ? 'fish' : null;
   if (item) addItem(save, item, 1, now);
   const events: GameEvent[] = [{ type: 'fished', item }];
   settleRequest(save, events, now);

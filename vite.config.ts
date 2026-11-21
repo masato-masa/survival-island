@@ -17,5 +17,6 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     include: ['__tests__/**/*.test.ts'],
+    setupFiles: ['__tests__/setup/weather.ts'],
   },
 });

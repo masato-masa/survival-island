@@ -3,6 +3,7 @@
 // （CLAUDE.md: 操作でレイアウトが 1px も動かないこと）。
 
 import { AnimatePresence } from 'motion/react';
+import { WEATHERS, weatherAt } from '@/game/weather';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { AREAS, CROPS, FURNITURE, FURNITURE_FUNCTION, ISLAND_LEVEL_POINTS, REQUESTS, SHIP_STAGES, TOWER_STAGES, BUFFS, MEALS, TREE_SPECIES } from '@/game/data';
@@ -19,7 +20,7 @@ import { GoalSheet } from './GoalSheet';
 import { formatCountdown } from './format';
 import { HelpSheet } from './HelpSheet';
 import { hapticCraft, hapticFail, hapticHarvest, hapticHit, hapticLevelUp, hapticPlace, hapticTap } from './haptics';
-import { BagIcon, BrushIcon, GoalIcon, HeartIcon, SproutIcon, StarIcon } from './icons';
+import { BagIcon, BrushIcon, GoalIcon, HeartIcon, SproutIcon, StarIcon, WeatherIcon } from './icons';
 import { IntroSheet } from './IntroSheet';
 import { InventorySheet } from './InventorySheet';
 import { PlaceSheet } from './PlaceSheet';
@@ -31,7 +32,7 @@ import { ShipSheet } from './ShipSheet';
 import { TowerSheet } from './TowerSheet';
 import { SkillSheet } from './SkillSheet';
 import { StationInfoSheet } from './StationInfoSheet';
-import { playCraft, playFell, playPop, playFail, playHarvest, playLevelUp, playPlace, playPlant } from './sound';
+import { playBuild, playCatch, playCraft, playEat, playFell, playGift, playPop, playFail, playHarvest, playLevelUp, playPlace, playPlant, playRequestDone, setRainSound } from './sound';
 
 type SheetState =
   | { kind: 'inventory' }
@@ -101,6 +102,17 @@ export function Game() {
     return () => window.clearInterval(id);
   }, []);
 
+  // 雨の日は、雨音を小さく流す（設定で効果音を切っていれば鳴らさない）
+  useEffect(() => {
+    const sync = () => setRainSound(weatherAt(store.now()) === 'rainy' && isSoundEnabled());
+    sync();
+    const id = window.setInterval(sync, 2000);
+    return () => {
+      window.clearInterval(id);
+      setRainSound(false);
+    };
+  }, []);
+
   useEffect(() => {
     const showFail = (reason: Fail, detail?: string) => {
       if (reason === 'cooldown') return; // クールダウンは見せるほどの情報ではない
@@ -151,7 +163,7 @@ export function Game() {
           case 'fished':
             if (ev.item) {
               showBanner(ev.item === 'bigFish' ? '大物が釣れた！' : 'さかなが釣れた！');
-              playHarvest();
+              playCatch(ev.item === 'bigFish');
               hapticHarvest();
             } else {
               playFail();
@@ -160,34 +172,34 @@ export function Game() {
             break;
           case 'ate':
             showBanner(`${MEALS[ev.meal].name}を食べた！ スタミナ +${ev.restore}／${MEALS[ev.meal].buffs.map((b) => BUFFS[b].name).join('・')}`);
-            playHarvest();
+            playEat();
             hapticHarvest();
             break;
           case 'requestDone': {
             const r = REQUESTS.find((q) => q.id === ev.id);
             showBanner(`島のおねがい「${r?.name ?? ev.name ?? ''}」をかなえた！ ごほうびを受け取りました`);
-            playHarvest();
+            playRequestDone();
             hapticHarvest();
             break;
           }
           case 'shipRepaired':
             showBanner(`商船を直した！ ${SHIP_STAGES[ev.stage - 1]?.after ?? ''}`);
-            playLevelUp();
+            playBuild();
             hapticLevelUp();
             break;
           case 'towerBuilt':
             showBanner(`見張り台を建て増した！ ${TOWER_STAGES[ev.stage - 1]?.after ?? ''}`);
-            playLevelUp();
+            playBuild();
             hapticLevelUp();
             break;
           case 'towerGift':
             showBanner('見張り台の贈り物を受け取りました');
-            playHarvest();
+            playGift();
             hapticHarvest();
             break;
           case 'shipGift':
             showBanner('商船のお届けを受け取りました');
-            playHarvest();
+            playGift();
             hapticHarvest();
             break;
           case 'placed':
@@ -339,6 +351,10 @@ export function Game() {
             <img src={spriteDataUrl('player_down0')} alt="" />
           </button>
           <span className="hud-area-name">{areaName}</span>
+          <button className="hud-weather" aria-label={`今日の天気 ${WEATHERS[weatherAt(store.now())].name}。くわしく見る`} onClick={() => setSheet({ kind: 'goal' })}>
+            <WeatherIcon id={weatherAt(store.now())} />
+            {WEATHERS[weatherAt(store.now())].name}
+          </button>
           {menuOpen ? (
             <MenuPopover
               onClose={() => setMenuOpen(false)}

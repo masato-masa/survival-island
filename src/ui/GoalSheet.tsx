@@ -7,6 +7,9 @@ import { currentRequest, hasBuff, isAreaOpen } from '@/game/rules';
 import { islandPoints } from '@/game/score';
 import type { SaveState, World } from '@/game/types';
 
+import { tomorrowWeather, WEATHERS, weatherAt } from '@/game/weather';
+
+import { WeatherIcon } from './icons';
 import { Sheet } from './Sheets';
 
 export function GoalSheet({
@@ -35,6 +38,17 @@ export function GoalSheet({
   return (
     <Sheet title="もくひょう" onClose={onClose}>
       <div className="goal-scroll">
+        <div className="goal-card goal-weather">
+          <div className="goal-head">
+            <b className="goal-weather-now">
+              <WeatherIcon id={weatherAt(now)} />
+              今日は{WEATHERS[weatherAt(now)].name}
+            </b>
+            {save.tower.stage >= 2 ? <span>あしたは{WEATHERS[tomorrowWeather(now)].name}</span> : null}
+          </div>
+          <p className="goal-main">{WEATHERS[weatherAt(now)].effect}</p>
+          {save.tower.stage < 2 ? <p className="goal-note">見張り台を 2 段階建て増すと、あしたの天気が分かります。</p> : null}
+        </div>
         <div className="goal-card">
           <div className="goal-head">
             <b>島レベル {islandLevel}</b>

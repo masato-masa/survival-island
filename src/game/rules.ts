@@ -1,5 +1,6 @@
 // スキル段階の上限、ダメージ、クールダウン、覚えているレシピ・種、エリアの開放判定。
 
+import { RAIN_ACTION_FACTOR, SUNNY_ACTION_FACTOR, weatherAt } from './weather';
 import {
   AREAS,
   CHOP_ACTION_MS,
@@ -102,7 +103,8 @@ export function currentRequest(save: SaveState): { def: RequestDef; locked: bool
 
 /** 時間のかかる行動 1 回の長さ（ミリ秒）。伐採・採掘は速度スキル 1 段階ごとに 10% 短い。 */
 export function actionMs(save: SaveState, tool: 'axe' | 'pick' | 'gather' | 'farm', now = 0): number {
-  const swift = hasBuff(save, 'swift', now) ? SWIFT_FACTOR : 1;
+  const w = weatherAt(now);
+  const swift = (hasBuff(save, 'swift', now) ? SWIFT_FACTOR : 1) * (w === 'sunny' ? SUNNY_ACTION_FACTOR : w === 'rainy' ? RAIN_ACTION_FACTOR : 1);
   if (tool === 'farm') return FARM_ACTION_MS * swift;
   if (tool === 'gather') return GATHER_ACTION_MS * swift;
   const level = save.skills[tool === 'axe' ? 'axeSpeed' : 'pickSpeed'] ?? 0;

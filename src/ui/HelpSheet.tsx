@@ -2,7 +2,7 @@
 // 数字は data.ts から読む（数値を変えても説明が古くならない）。
 
 import { ISLAND_LEVEL_POINTS, SERIES_BONUS, STAMINA_BASE, STAMINA_REGEN_MS, XP_PER_STAMINA } from '../game/data';
-import { HeartIcon, SproutIcon, StarIcon } from './icons';
+import { HeartIcon, SproutIcon, StarIcon, WeatherIcon } from './icons';
 import { Sheet } from './Sheets';
 
 const regenMin = Math.round(STAMINA_REGEN_MS / 60000);
@@ -20,6 +20,24 @@ export function HelpSheet({ onClose }: { onClose: () => void }) {
             <li>とれたものはポンと飛び出して、自動で持ち物に入ります。</li>
             <li>木は切ると幹になり、幹を切ると苗木がとれます。花を摘むと花びらと花の種がとれます。</li>
             <li>右の「模様替え」で、家具を置く・しまう・動かす、苗木や種を植える、ができます。</li>
+          </ul>
+        </section>
+
+        <section className="help-sec">
+          <h3>
+            <WeatherIcon id="sunny" />
+            天気（日本時間の 0 時に変わる）
+          </h3>
+          <ul>
+            <li>
+              <b>晴れ</b>: 木・岩・花・畑の作業が 1 割はやい。
+            </li>
+            <li>
+              <b>くもり</b>: ごはんの効き目が 15 分に長持ち。
+            </li>
+            <li>
+              <b>雨</b>: 畑の作物が早く育ち、大物が釣れやすい。作業は 1 割おそい。
+            </li>
           </ul>
         </section>
 

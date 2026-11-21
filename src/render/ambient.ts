@@ -381,3 +381,41 @@ export function leafAt(tx: number, ty: number, now: number): { x: number; y: num
 export function liftPx(z: number, k: number): number {
   return z * HEIGHT_SCALE * k;
 }
+
+// ---------------------------------------------------------------------------
+// 天気（SI-18）。雨は斜めの線が落ちる。くもりは空気が灰色にくもる。晴れは光が少し強い（drawLightBreath 側）。
+
+/** 雨の線の本数。1 フレームで fillRect でなく 1 本の path にまとめて描く。 */
+const RAIN_DROPS = 110;
+
+export function drawWeather(ctx: Ctx, w: number, h: number, now: number, weather: 'sunny' | 'cloudy' | 'rainy' | 'plain'): void {
+  if (weather === 'cloudy') {
+    ctx.save();
+    ctx.fillStyle = 'rgba(120,135,150,0.14)';
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+    return;
+  }
+  if (weather !== 'rainy') return;
+  ctx.save();
+  ctx.fillStyle = 'rgba(70,90,115,0.2)';
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = 'rgba(240,248,255,0.75)';
+  ctx.lineWidth = 1.6;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  const t = now / 1000;
+  const slant = 0.22;
+  const len = 13;
+  for (let i = 0; i < RAIN_DROPS; i++) {
+    const speed = 0.9 + hash2(i, 3) * 0.5; // 画面の高さ/秒に対する割合
+    const phase = hash2(i, 1);
+    const fy = (phase + t * speed * 0.9) % 1;
+    const y = fy * (h + len * 2) - len;
+    const x = ((hash2(i, 2) * (w + h * slant) - fy * h * slant * 0.3) % (w + 20)) + (fy * len * slant);
+    ctx.moveTo(x, y);
+    ctx.lineTo(x - len * slant, y + len);
+  }
+  ctx.stroke();
+  ctx.restore();
+}

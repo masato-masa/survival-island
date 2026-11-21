@@ -20,6 +20,7 @@ import type {
   TimedAction,
   World,
 } from '@/game/types';
+import { weatherAt } from '@/game/weather';
 import { FURNITURE_BY_ID, ITEMS, NODES, STATIONS } from '@/game/data';
 import { cropProgress } from '@/game/time';
 import { allNodes, isBuildable, nodeAlive, nodeRequirement, placementRect } from '@/game/rules';
@@ -44,6 +45,7 @@ import {
   liftPx,
   swayAmpFor,
   windAt,
+  drawWeather,
 } from './ambient';
 
 
@@ -1094,6 +1096,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
   const inCave = region.id === 'cave';
   if (ambientOn && amb.clouds !== false && !inCave) drawCloudShadows(ctx, camera, viewport, now, world.width * TILE, world.height * TILE);
   if (ambientOn && amb.light !== false) drawLightBreath(ctx, W, H, now);
+  if (ambientOn && !inCave) drawWeather(ctx, W, H, now, weatherAt(now));
   // 今いる区画（島・洞窟）の外は塗りつぶす（同じ地図の別の行にあるもう一方を見せない）。
   // 島の下の端は、水の泡の帯が見えないよう半マス手前から海の色にする。
   {

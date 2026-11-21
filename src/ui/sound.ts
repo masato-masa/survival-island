@@ -119,9 +119,29 @@ function sample(c: AudioContext, name: string, spread = 0.06): boolean {
   const amp = c.createGain();
   amp.gain.value = (SAMPLE_GAIN[name] ?? 0.5) * (0.88 + Math.random() * 0.24);
   src.connect(amp);
-  amp.connect(c.destination);
+  amp.connect(master(c));
   src.start();
   return true;
+}
+
+/** すべての音の出口。軽いコンプレッサーを通して、連打で音が重なっても割れない・急に大きくならないようにする。 */
+let masterNode: AudioNode | null = null;
+let masterFor: AudioContext | null = null;
+function master(c: AudioContext): AudioNode {
+  if (masterNode && masterFor === c) return masterNode;
+  const comp = c.createDynamicsCompressor();
+  comp.threshold.value = -16;
+  comp.knee.value = 14;
+  comp.ratio.value = 4;
+  comp.attack.value = 0.004;
+  comp.release.value = 0.16;
+  const out = c.createGain();
+  out.gain.value = 0.95;
+  comp.connect(out);
+  out.connect(c.destination);
+  masterNode = comp;
+  masterFor = c;
+  return comp;
 }
 
 let lastPlayedAt = 0;
@@ -158,7 +178,7 @@ function tone(audioCtx: AudioContext, opts: ToneOptions): void {
   amp.gain.exponentialRampToValueAtTime(Math.max(gain, 0.0005), t0 + Math.min(0.014, duration / 3));
   amp.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
   osc.connect(amp);
-  amp.connect(audioCtx.destination);
+  amp.connect(master(audioCtx));
   osc.start(t0);
   osc.stop(t0 + duration + 0.03);
 }
@@ -178,7 +198,7 @@ function noiseBurst(audioCtx: AudioContext, duration: number, gain: number, dela
   amp.gain.setValueAtTime(gain, t0);
   amp.gain.exponentialRampToValueAtTime(0.0005, t0 + duration);
   src.connect(amp);
-  amp.connect(audioCtx.destination);
+  amp.connect(master(audioCtx));
   src.start(t0);
   src.stop(t0 + duration + 0.02);
 }
@@ -317,4 +337,149 @@ export function playCollect(): void {
     if (sample(c, 'collect', 0.1)) return;
     tone(c, { freq: 1180, freqEnd: 1560, duration: 0.07, type: 'sine', gain: 0.07 });
   });
+}
+
+// ---------------------------------------------------------------------------
+// 合成だけで作る音（SI-18 で足した。ファイルを持たない）
+
+/** 低めのノイズに帯域フィルターをかけた短い音（水しぶき・かじる音・足音に使う）。 */
+function filteredNoise(c: AudioContext, opts: { duration: number; gain: number; freq: number; q?: number; type?: BiquadFilterType; delay?: number; sweepTo?: number }): void {
+  const { duration, gain, freq, q = 1, type = 'bandpass', delay = 0, sweepTo } = opts;
+  const size = Math.floor(c.sampleRate * duration);
+  const buf = c.createBuffer(1, size, c.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < size; i++) d[i] = Math.random() * 2 - 1;
+  const src = c.createBufferSource();
+  src.buffer = buf;
+  const f = c.createBiquadFilter();
+  f.type = type;
+  const t0 = c.currentTime + delay;
+  f.frequency.setValueAtTime(freq, t0);
+  if (sweepTo) f.frequency.exponentialRampToValueAtTime(sweepTo, t0 + duration);
+  f.Q.value = q;
+  const amp = c.createGain();
+  amp.gain.setValueAtTime(0.0001, t0);
+  amp.gain.exponentialRampToValueAtTime(gain, t0 + Math.min(0.012, duration / 4));
+  amp.gain.exponentialRampToValueAtTime(0.0005, t0 + duration);
+  src.connect(f);
+  f.connect(amp);
+  amp.connect(master(c));
+  src.start(t0);
+  src.stop(t0 + duration + 0.02);
+}
+
+/** ごはんを食べる: もぐもぐ 2 回と、ほっとする上がり音。 */
+export function playEat(): void {
+  play(true, (c) => {
+    [0, 0.14].forEach((d) => {
+      filteredNoise(c, { duration: 0.09, gain: 0.2, freq: 700, q: 1.2, delay: d });
+      tone(c, { freq: 190, freqEnd: 140, duration: 0.09, type: 'sine', gain: 0.1, delay: d });
+    });
+    tone(c, { freq: 660, duration: 0.16, type: 'triangle', gain: 0.08, delay: 0.32 });
+    tone(c, { freq: 880, duration: 0.2, type: 'triangle', gain: 0.08, delay: 0.4 });
+  });
+}
+
+/** 釣り: 浮きを投げる「ぽちゃ」。 */
+export function playCast(): void {
+  play(true, (c) => {
+    filteredNoise(c, { duration: 0.22, gain: 0.22, freq: 2400, q: 0.7, sweepTo: 500 });
+    tone(c, { freq: 420, freqEnd: 150, duration: 0.14, type: 'sine', gain: 0.14 });
+  });
+}
+
+/** 釣れた: 水しぶきと明るい音。大物は音が増える。 */
+export function playCatch(big: boolean): void {
+  play(true, (c) => {
+    filteredNoise(c, { duration: 0.3, gain: 0.2, freq: 3200, q: 0.8, sweepTo: 900 });
+    const notes = big ? [660, 880, 1100, 1320] : [660, 990];
+    notes.forEach((freq, i) => tone(c, { freq, duration: 0.2, type: 'triangle', gain: 0.12, delay: 0.05 + i * 0.07 }));
+  });
+}
+
+/** 修理・建て増しが 1 段進む: 木槌の 2 打ちと、できあがりの和音。 */
+export function playBuild(): void {
+  play(true, (c) => {
+    [0, 0.13].forEach((d) => {
+      noiseBurst(c, 0.05, 0.22, d);
+      tone(c, { freq: 160, freqEnd: 110, duration: 0.08, type: 'triangle', gain: 0.16, delay: d });
+    });
+    [523, 659, 784].forEach((freq, i) => tone(c, { freq, duration: 0.5, type: 'sine', gain: 0.1, delay: 0.3 + i * 0.03 }));
+  });
+}
+
+/** 贈り物・お届けを受け取る: きらきらした上昇。 */
+export function playGift(): void {
+  play(true, (c) => {
+    [880, 1175, 1480, 1760].forEach((freq, i) => tone(c, { freq, duration: 0.18, type: 'sine', gain: 0.09, delay: i * 0.06 }));
+  });
+}
+
+/** おねがいをかなえた: 短いファンファーレ。 */
+export function playRequestDone(): void {
+  play(true, (c) => {
+    [523, 659, 784, 1047].forEach((freq, i) => tone(c, { freq, duration: 0.2, type: 'triangle', gain: 0.12, delay: i * 0.1 }));
+    tone(c, { freq: 1047, duration: 0.5, type: 'sine', gain: 0.1, delay: 0.42 });
+  });
+}
+
+/** 足音: ごく小さな土のとん。歩き始めてから一定の間隔で、WorldView が鳴らす。 */
+export function playStep(): void {
+  if (!isSoundEnabled()) return;
+  try {
+    const c = getContext();
+    if (!c) return;
+    filteredNoise(c, { duration: 0.05, gain: 0.05 + Math.random() * 0.02, freq: 420 + Math.random() * 120, q: 0.8 });
+  } catch {
+    // 鳴らせなくても続行
+  }
+}
+
+// 雨の音: 帯域をしぼったノイズを小さく流し続ける（雨の天気のあいだだけ）。
+let rainNodes: { src: AudioBufferSourceNode; amp: GainNode } | null = null;
+
+export function setRainSound(on: boolean): void {
+  try {
+    if (!on) {
+      if (rainNodes && ctx) {
+        const { src, amp } = rainNodes;
+        amp.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.25);
+        src.stop(ctx.currentTime + 1.2);
+      }
+      rainNodes = null;
+      return;
+    }
+    if (rainNodes || !isSoundEnabled()) return;
+    const c = getContext();
+    if (!c) return;
+    const size = c.sampleRate * 3;
+    const buf = c.createBuffer(1, size, c.sampleRate);
+    const d = buf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < size; i++) {
+      // 少し低めに寄せた（ピンクがかった）ノイズ
+      last = last * 0.6 + (Math.random() * 2 - 1) * 0.4;
+      d[i] = last;
+    }
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    const hp = c.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 900;
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 6000;
+    const amp = c.createGain();
+    amp.gain.setValueAtTime(0.0001, c.currentTime);
+    amp.gain.setTargetAtTime(0.06, c.currentTime, 0.6);
+    src.connect(hp);
+    hp.connect(lp);
+    lp.connect(amp);
+    amp.connect(master(c));
+    src.start();
+    rainNodes = { src, amp };
+  } catch {
+    rainNodes = null;
+  }
 }

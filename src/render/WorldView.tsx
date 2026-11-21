@@ -25,7 +25,7 @@ import {
 } from './camera';
 import { draw, effects, IMPACT_TIMES, type RenderState, type Vec2 } from './renderer';
 import { NODES } from '@/game/data';
-import { playChop, playCollect, playDig, playMine, playPick } from '@/ui/sound';
+import { playChop, playCollect, playDig, playMine, playPick, playStep } from '@/ui/sound';
 import { hapticHit } from '@/ui/haptics';
 import { paintTerrainAsync, type PaintedTerrain } from './terrain';
 import { buildGroundDecor, type TreeInstance } from './forestTrees';
@@ -122,6 +122,7 @@ export function WorldView(props: WorldViewProps): JSX.Element {
 
     // --- 入力状態 ---
     let moveVector: Vec2 = { x: 0, y: 0 };
+    let stepAcc = 0;
     let stickVisual: { anchor: Vec2; finger: Vec2 } | null = null;
     let zoom = 1;
 
@@ -213,7 +214,16 @@ export function WorldView(props: WorldViewProps): JSX.Element {
         const kbVector = pointerCtl.getKeyboardVector();
         const dx = moveVector.x !== 0 || moveVector.y !== 0 ? moveVector.x : kbVector.x;
         const dy = moveVector.x !== 0 || moveVector.y !== 0 ? moveVector.y : kbVector.y;
-        if (dx !== 0 || dy !== 0) store.move(dx, dy, dtSec);
+        if (dx !== 0 || dy !== 0) {
+          store.move(dx, dy, dtSec);
+          stepAcc += dtSec;
+          if (stepAcc >= 0.34) {
+            stepAcc = 0;
+            playStep();
+          }
+        } else {
+          stepAcc = 0.2; // 次に歩き出したとき、すぐ 1 歩目が鳴る
+        }
 
         if (pointerCtl.consumeAction()) actOnTarget();
       }

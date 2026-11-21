@@ -1,3 +1,4 @@
+import { setWeatherOverride } from './game/weather';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MotionConfig } from 'motion/react';
@@ -8,6 +9,12 @@ import { loadArt } from './render/sprites';
 
 // 開発中だけ、ブラウザのコンソールや自動テストから状態を覗けるようにする。
 // 公開版でも URL に ?dev を付けると出せる（実機・公開版の確認用）。
+// ?dev&weather=rainy のように、確認用に天気を決められる（保存しない）。
+{
+  const q = new URLSearchParams(location.search);
+  const w = q.get('weather');
+  if (q.has('dev') && (w === 'sunny' || w === 'cloudy' || w === 'rainy')) setWeatherOverride(w);
+}
 if (import.meta.env.DEV || new URLSearchParams(location.search).has('dev')) (window as unknown as { __store: typeof store }).__store = store;
 
 function render() {
