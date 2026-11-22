@@ -3,6 +3,7 @@
 // （CLAUDE.md: 操作でレイアウトが 1px も動かないこと）。
 
 import { AnimatePresence } from 'motion/react';
+import { triggerDig } from '@/render/ambient';
 import { WEATHERS, weatherAt } from '@/game/weather';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
@@ -183,6 +184,7 @@ export function Game() {
             break;
           }
           case 'treasureFound':
+            triggerDig(ev.x, ev.y, store.now());
             showBanner(`光る地面を掘った！ ${Object.entries(ev.items).map(([k, n]) => `${ITEMS[k as keyof typeof ITEMS].name}×${n}`).join('・')}`);
             playGift();
             hapticHarvest();

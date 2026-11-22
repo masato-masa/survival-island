@@ -590,9 +590,9 @@ button.hud-portrait:active {
   bottom: calc(12px + env(safe-area-inset-bottom));
   border: 2px solid var(--wood);
   border-radius: 999px;
-  padding: 3px 12px;
+  padding: 7px 14px;
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--ink);
   background: rgb(255 251 241 / 0.85);
@@ -1526,17 +1526,17 @@ button.hud-portrait:active {
   flex: none;
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
-  margin: -4px -8px -4px 6px;
+  width: 34px;
+  height: 34px;
+  margin: -8px -10px -8px 4px;
   padding: 0;
   border: 0;
   background: none;
   cursor: pointer;
 }
 .hud-weather img {
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   object-fit: contain;
   pointer-events: none;
 }

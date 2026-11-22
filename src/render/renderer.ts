@@ -1098,8 +1098,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
   const inCave = region.id === 'cave';
   if (ambientOn && amb.clouds !== false && !inCave) drawCloudShadows(ctx, camera, viewport, now, world.width * TILE, world.height * TILE);
   if (ambientOn && !inCave) {
-    const glint = todaysTreasure(save, now);
-    if (glint) drawTreasureGlint(ctx, camera, viewport, now, glint, save.player);
+    drawTreasureGlint(ctx, camera, viewport, now, todaysTreasure(save, now), save.player);
   }
   if (ambientOn && amb.light !== false) drawLightBreath(ctx, W, H, now);
   if (ambientOn && !inCave) drawWeather(ctx, W, H, now, weatherAt(now));

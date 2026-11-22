@@ -449,51 +449,82 @@ export function drawWeather(ctx: Ctx, w: number, h: number, now: number, weather
 }
 
 // ---------------------------------------------------------------------------
-// たから探しの光（SI-28）: 今日の宝のマスが、近づくほどはっきりきらきらする。遠くでは見えない。
+// たから探しの光（SI-28）: ChatGPT 製の絵（光る土の山・きらめき・光の玉。scripts/slice-gen.mjs の treasure シート）。
+// 近づくほどはっきり見える。遠く（GLINT_RANGE より外）では見えない。掘ると土しぶき（tr_dirt）が 0.8 秒ふくらんで消える。
+
+import trMoundUrl from '@/assets/gen/tr_mound.png';
+import trSparkleUrl from '@/assets/gen/tr_sparkle.png';
+import trOrbUrl from '@/assets/gen/tr_orb.png';
+import trDirtUrl from '@/assets/gen/tr_dirt.png';
+
+const loadImg = (src: string) => {
+  const i = new Image();
+  i.src = src;
+  return i;
+};
+const imgMound = loadImg(trMoundUrl);
+const imgSparkle = loadImg(trSparkleUrl);
+const imgOrb = loadImg(trOrbUrl);
+const imgDirt = loadImg(trDirtUrl);
+const ready = (i: HTMLImageElement) => i.complete && i.naturalWidth > 0;
 
 /** 光が見え始める距離（マス）。これより近いと見える。 */
 export const GLINT_RANGE = 9;
+
+let digFx: { x: number; y: number; at: number } | null = null;
+/** 掘った瞬間に呼ぶ（土しぶきの出どころ）。 */
+export function triggerDig(x: number, y: number, now: number): void {
+  digFx = { x, y, at: now };
+}
 
 export function drawTreasureGlint(
   ctx: Ctx,
   camera: CameraState,
   viewport: Viewport,
   now: number,
-  spot: { x: number; y: number },
+  spot: { x: number; y: number } | null,
   player: { x: number; y: number },
 ): void {
+  const k = effectiveScale(camera, viewport.baseScale);
+  if (digFx) {
+    const life = (now - digFx.at) / 800;
+    if (life >= 1 || life < 0) digFx = null;
+    else if (ready(imgDirt)) {
+      const p = worldToScreen((digFx.x + 0.5) * TILE, (digFx.y + 0.5) * TILE, camera, viewport);
+      const w = TILE * (0.9 + 0.7 * life) * k;
+      ctx.save();
+      ctx.globalAlpha = 1 - life;
+      ctx.drawImage(imgDirt, p.x - w / 2, p.y - w * 0.8 - life * TILE * 0.5 * k, w, w * (imgDirt.naturalHeight / imgDirt.naturalWidth));
+      ctx.restore();
+    }
+  }
+  if (!spot) return;
   const dist = Math.hypot(spot.x + 0.5 - player.x, spot.y + 0.5 - player.y);
   if (dist > GLINT_RANGE) return;
-  const near = 1 - dist / GLINT_RANGE; // 0（遠い）〜 1（そば）
+  const near = 1 - dist / GLINT_RANGE;
   const p = worldToScreen((spot.x + 0.5) * TILE, (spot.y + 0.5) * TILE, camera, viewport);
   const t = now / 1000;
   const pulse = 0.5 + 0.5 * Math.sin(TAU * (t / 1.6));
-  const r = (TILE * 0.28 + TILE * 0.18 * pulse) * (0.6 + 0.6 * near) * effectiveScale(camera, viewport.baseScale);
   ctx.save();
-  ctx.globalAlpha = 0.35 + 0.55 * near * (0.6 + 0.4 * pulse);
-  // やわらかい光の玉
-  const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r * 1.6);
-  g.addColorStop(0, 'rgba(255,248,200,0.95)');
-  g.addColorStop(1, 'rgba(255,230,120,0)');
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(p.x, p.y, r * 1.6, 0, TAU);
-  ctx.fill();
-  // 4 方向のきらめき
-  ctx.fillStyle = 'rgba(255,255,255,0.95)';
-  for (let k = 0; k < 2; k++) {
-    const a = k * (Math.PI / 4) + t * 0.6;
-    ctx.save();
-    ctx.translate(p.x, p.y);
-    ctx.rotate(a);
-    ctx.beginPath();
-    ctx.moveTo(0, -r * 1.2);
-    ctx.lineTo(r * 0.16, 0);
-    ctx.lineTo(0, r * 1.2);
-    ctx.lineTo(-r * 0.16, 0);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
+  // 光る土の山（そばに寄るほど濃く、大きく）
+  if (ready(imgMound)) {
+    const w = TILE * (0.7 + 0.5 * near) * k;
+    ctx.globalAlpha = 0.25 + 0.75 * near;
+    ctx.drawImage(imgMound, p.x - w / 2, p.y - w * (imgMound.naturalHeight / imgMound.naturalWidth) * 0.8, w, w * (imgMound.naturalHeight / imgMound.naturalWidth));
+  }
+  // 光の玉（呼吸）
+  if (ready(imgOrb)) {
+    const w = TILE * (0.5 + 0.2 * pulse) * k;
+    ctx.globalAlpha = (0.15 + 0.35 * near) * (0.6 + 0.4 * pulse);
+    ctx.drawImage(imgOrb, p.x - w / 2, p.y - w / 2 - TILE * 0.2 * k, w, w);
+  }
+  // きらめき 2 つ（ゆっくり回る）
+  if (ready(imgSparkle)) {
+    for (let j = 0; j < 2; j++) {
+      const w = TILE * (0.3 + 0.2 * near) * (0.7 + 0.3 * Math.sin(TAU * (t / 1.3 + j * 0.5))) * k;
+      ctx.globalAlpha = 0.5 + 0.5 * near;
+      ctx.drawImage(imgSparkle, p.x + (j ? 0.3 : -0.3) * TILE * k - w / 2, p.y - TILE * (0.45 + 0.2 * j) * k - w / 2, w, w);
+    }
   }
   ctx.restore();
 }

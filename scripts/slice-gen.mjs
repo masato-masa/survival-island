@@ -43,6 +43,13 @@ const SHEETS = {
     maxSize: 192,
     names: ['ui_bag', 'ui_flag', 'ui_sofa', 'ui_heart', 'ui_sprout', 'ui_star'],
   },
+  treasure: {
+    file: 'refs/gen/treasure.png',
+    cols: 3,
+    rows: 2,
+    maxSize: 256,
+    names: ['tr_mound', 'tr_sparkle', 'tr_orb', 'tr_dirt', 'tr_bag', 'tr_coin'],
+  },
   fish: {
     file: 'refs/gen/fish.png',
     cols: 2,
