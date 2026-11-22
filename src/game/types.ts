@@ -453,6 +453,8 @@ export type GameEvent =
   /** 暮らしの記録（SI-25）の段を越えた。 */
   /** 今日の宝を掘り当てた（SI-28）。 */
   | { type: 'treasureFound'; items: Partial<Record<ItemId, number>>; x: number; y: number }
+  /** 暮らしの位が上がった（SI-30）。最大スタミナが増える。 */
+  | { type: 'lifeRank'; rank: number; name: string }
   | { type: 'lifeTier'; id: string; name: string; tier: number; reward: Partial<Record<ItemId, number>> }
   | { type: 'skill'; skill: SkillId; level: number };
 

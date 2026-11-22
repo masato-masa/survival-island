@@ -127,4 +127,7 @@
 - **たから探し（SI-28）。** 島レベル 5 以降、毎日 1 か所（日付から決まる。歩いて行ける空きマス、開いているエリアの中）に宝が出る（`game/treasure.ts`、`save.treasure`）。
   近づくと地面がきらきら光り（`ambient.ts` の `drawTreasureGlint`、9 マス以内）、触ると 1 スタミナで掘って宝（作業 5〜6 相当、`TREASURES`）。手がかりは もくひょう（エリア名、見張り台 1 段で方角、3 段で距離）。
   暮らしの記録に「たから探し」（3・10・30 回）。`__tests__/treasure.test.ts` が場所・手がかり・宝の強さを測る。
+- **暮らしの位（SI-30）。** 暮らしの記録の段の合計（7 項目×3 段 = 21）が 6・12・18・21 で位が上がり、最大スタミナが +2 ずつ増える（`game/lifeRank.ts`、`rules.ts` の `staminaMax`）。
+  位に着くまでの日数（1 日 40 スタミナ、粗い見積もり）は 3・10・25・39 日（`__tests__/liferank.test.ts`）。位が上がるとバナー（`lifeRank` の知らせ）。もくひょうの暮らしの記録に位と「あと N 段」。
+- 光る地面・きらめき・土しぶき（SI-29）は ChatGPT 製（`refs/gen/treasure.png` → `slice-gen.mjs treasure`、元画像は game-assets）。`ambient.ts` の `drawTreasureGlint`・`triggerDig`。
 

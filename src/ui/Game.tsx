@@ -4,6 +4,7 @@
 
 import { AnimatePresence } from 'motion/react';
 import { triggerDig } from '@/render/ambient';
+import { LIFE_RANK_STAMINA } from '@/game/lifeRank';
 import { WEATHERS, weatherAt } from '@/game/weather';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
@@ -188,6 +189,11 @@ export function Game() {
             showBanner(`光る地面を掘った！ ${Object.entries(ev.items).map(([k, n]) => `${ITEMS[k as keyof typeof ITEMS].name}×${n}`).join('・')}`);
             playGift();
             hapticHarvest();
+            break;
+          case 'lifeRank':
+            showBanner(`暮らしの位「${ev.name}」！ 最大スタミナ +${LIFE_RANK_STAMINA}`);
+            playLevelUp();
+            hapticLevelUp();
             break;
           case 'lifeTier':
             showBanner(`暮らしの記録「${ev.name}」${ev.tier} 段目！ ${Object.entries(ev.reward).map(([k, n]) => `${ITEMS[k as keyof typeof ITEMS].name}×${n}`).join('・')}`);

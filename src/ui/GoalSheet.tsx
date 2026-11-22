@@ -2,6 +2,7 @@
 // エリアごとの開放状況と必要スキルを見せる。
 
 import { AREA_ORDER, AREAS, BUFFS, ISLAND_LEVEL_POINTS, ITEMS, REQUESTS, SHIP_STAGES, SKILLS, TOWER_STAGES } from '@/game/data';
+import { LIFE_RANK_AT, LIFE_RANK_NAMES, LIFE_RANK_STAMINA, lifeRank, lifeTierTotal } from '@/game/lifeRank';
 import { LIFE, lifeCount } from '@/game/lifelog';
 import { compass } from '@/game/tower';
 import { TREASURE_LEVEL, treasureClue } from '@/game/treasure';
@@ -159,9 +160,13 @@ export function GoalSheet({
           <div className="goal-head">
             <b>暮らしの記録</b>
             <span>
-              {LIFE.reduce((n, d) => n + (save.life.tier[d.id] ?? 0), 0)} / {LIFE.length * 3}
+              {lifeTierTotal(save)} / {LIFE.length * 3}
             </span>
           </div>
+          <p className="goal-note">
+            位: <b>{lifeRank(save) > 0 ? LIFE_RANK_NAMES[lifeRank(save) - 1] : 'まだ'}</b>
+            {LIFE_RANK_AT[lifeRank(save)] != null ? `（あと ${LIFE_RANK_AT[lifeRank(save)]! - lifeTierTotal(save)} 段で「${LIFE_RANK_NAMES[lifeRank(save)]}」、最大スタミナ +${LIFE_RANK_STAMINA}）` : '（最高位。最大スタミナ +' + LIFE_RANK_STAMINA * LIFE_RANK_AT.length + '）'}
+          </p>
           {LIFE.map((d) => {
             const have = lifeCount(save, d.id);
             const tier = save.life.tier[d.id] ?? 0;

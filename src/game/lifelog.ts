@@ -3,6 +3,7 @@
 // 時刻は now を引数で受ける。ごほうびは「集めた」には数えない（おねがいの進みにならない）。
 
 import { dailyDay } from './daily';
+import { lifeRank, LIFE_RANK_NAMES } from './lifeRank';
 import type { GameEvent, ItemId, SaveState } from './types';
 import { weatherAt } from './weather';
 
@@ -80,6 +81,7 @@ export function recordLife(save: SaveState, events: GameEvent[], now: number): v
     const w = weatherAt(now);
     if (w === 'sunny' || w === 'cloudy' || w === 'rainy') life.days[w] += 1;
   }
+  const before = lifeRank(save);
   const g = gain(events);
   for (const [id, n] of Object.entries(g) as [LifeId, number][]) life.count[id] = (life.count[id] ?? 0) + n;
   for (const def of LIFE) {
@@ -93,4 +95,6 @@ export function recordLife(save: SaveState, events: GameEvent[], now: number): v
       events.push({ type: 'lifeTier', id: def.id, name: def.name, tier, reward });
     }
   }
+  const rank = lifeRank(save);
+  if (rank > before) events.push({ type: 'lifeRank', rank, name: LIFE_RANK_NAMES[rank - 1]! });
 }

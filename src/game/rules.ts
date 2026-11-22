@@ -1,5 +1,6 @@
 // スキル段階の上限、ダメージ、クールダウン、覚えているレシピ・種、エリアの開放判定。
 
+import { lifeStaminaBonus } from './lifeRank';
 import { RAIN_ACTION_FACTOR, SUNNY_ACTION_FACTOR, weatherAt } from './weather';
 import {
   AREAS,
@@ -30,7 +31,7 @@ import {
 import type { AreaId, BuffId, CropId, FurnitureId, LiveNode, MapNode, MealId, RequestDef, SaveState, SkillId, World } from './types';
 
 export function staminaMax(save: SaveState): number {
-  return STAMINA_BASE + STAMINA_PER_LEVEL * (save.skills.staminaMax ?? 0);
+  return STAMINA_BASE + STAMINA_PER_LEVEL * (save.skills.staminaMax ?? 0) + lifeStaminaBonus(save);
 }
 
 /** maxPoints から島レベルを決める（下がらない）。 */
