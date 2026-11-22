@@ -3,8 +3,14 @@
 
 import { isHapticsEnabled } from './settings';
 
+/** 連打で鳴らしすぎない: 直前の振動から 60ms 以内の要求は捨てる。 */
+let lastVibrateAt = 0;
+
 function vibrate(pattern: number | number[]): void {
   if (!isHapticsEnabled()) return;
+  const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  if (now - lastVibrateAt < 60) return;
+  lastVibrateAt = now;
   try {
     if (typeof navigator === 'undefined') return;
     if (typeof navigator.vibrate !== 'function') return;
