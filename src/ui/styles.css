@@ -1598,3 +1598,30 @@ body {
   position: absolute;
   inset: -8px -6px;
 }
+
+/* 幅 360px 以下（320px の小さい端末）: 左上の札と右上のゲージがぶつからないように縮める */
+@media (max-width: 360px) {
+  .hud-portrait {
+    width: 46px;
+    height: 46px;
+  }
+  .hud-area-name {
+    padding: 3px 8px 3px 14px;
+    font-size: 12px;
+  }
+  .hud-area-name .hud-weather {
+    width: 30px;
+    height: 30px;
+    margin-left: 2px;
+  }
+  .hud-area-name .hud-weather img {
+    width: 26px;
+    height: 26px;
+  }
+  .gauge {
+    width: 104px;
+  }
+  .sheet {
+    width: 86vw;
+  }
+}
