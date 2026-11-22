@@ -30,7 +30,7 @@ function daysToFinish(session: number, buffed: boolean, treasure = 0): number {
 describe('テンポ: 島レベル 5 以降', () => {
   it('1 日 1 回あそぶ人が、商船と見張り台を直し終えるまでの日数（表）', () => {
     const rows: string[] = [];
-    for (const session of [30, 40, 60]) {
+    for (const session of [30, 40, 44, 48, 60]) {
       const a = daysToFinish(session, false);
       const b = daysToFinish(session, true);
       const c = daysToFinish(session, true, TREASURE_DAILY);
@@ -39,6 +39,8 @@ describe('テンポ: 島レベル 5 以降', () => {
     // eslint-disable-next-line no-console
     console.log('[山場のテンポ]\n' + rows.join('\n'));
     // 目安: 40 スタミナの人が 1〜3 週間で直し終える（延々と続かず、すぐ終わりもしない）
+    // 暮らしの位（SI-30）で最大スタミナが 40 → 48 になっても、直し終えるまでが 5 日を切らない（テンポを壊さない）
+    expect(daysToFinish(48, true, TREASURE_DAILY)).toBeGreaterThanOrEqual(4);
     const d = daysToFinish(40, true);
     expect(d).toBeGreaterThanOrEqual(5);
     expect(d).toBeLessThanOrEqual(21);
