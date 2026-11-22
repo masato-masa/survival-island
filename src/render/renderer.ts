@@ -581,6 +581,50 @@ function drawGroundImage(
   }
 }
 
+// 地面は帯ごとに 400 回ほど drawImage する重い処理（遅い端末の計測で最大の時間）。カメラが止まっているあいだ（立ち止まる・作業中）は、
+// 描いた結果を 1 枚の画面サイズの絵に取っておき、1 回の drawImage で済ませる（SI-37）。動いている間は今までどおり。
+let groundCache: { canvas: HTMLCanvasElement; key: string; src: unknown } | null = null;
+let lastGroundKey = '';
+function drawTerrainCached(
+  ctx: CanvasRenderingContext2D,
+  t: NonNullable<RenderState['terrain']>,
+  camera: CameraState,
+  viewport: Viewport,
+): void {
+  const cw = ctx.canvas.width;
+  const ch = ctx.canvas.height;
+  const key = `${cw}x${ch}|${camera.x.toFixed(2)}|${camera.y.toFixed(2)}|${camera.zoom.toFixed(3)}|${viewport.baseScale.toFixed(3)}|${viewport.anchorY ?? 0}`;
+  const paste = (c: HTMLCanvasElement) => {
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(c, 0, 0);
+    ctx.restore();
+  };
+  if (groundCache && groundCache.key === key && groundCache.src === t.canvas) {
+    paste(groundCache.canvas);
+    return;
+  }
+  const drawInto = (g: CanvasRenderingContext2D) =>
+    drawGroundImage(g, t.canvas, t.width * TERRAIN_PX, t.height * TERRAIN_PX, 0, 0, t.width * TILE, t.height * TILE, camera, viewport);
+  if (lastGroundKey !== key) {
+    // 動いている最中（毎フレーム違う）は取っておかず、そのまま描く
+    lastGroundKey = key;
+    drawInto(ctx);
+    return;
+  }
+  // 2 フレーム続けて同じ位置: 画面サイズの絵へ描いて取っておき、それを貼る
+  const cvs = groundCache?.canvas ?? document.createElement('canvas');
+  cvs.width = cw;
+  cvs.height = ch;
+  const g = cvs.getContext('2d')!;
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = 'high';
+  g.setTransform(cw / viewport.widthCssPx, 0, 0, cw / viewport.widthCssPx, 0, 0);
+  drawInto(g);
+  groundCache = { canvas: cvs, key, src: t.canvas };
+  paste(cvs);
+}
+
 /** タイル (tx,ty) の四隅を画面へ投影した台形。 */
 function tileQuad(tx: number, ty: number, w: number, h: number, camera: CameraState, viewport: Viewport): Vec2[] {
   return [
@@ -613,8 +657,8 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
   // 島の空気（風の揺れ・雲・蝶・落ち葉・波・光）。計測のため window.__ambientOff = true で止められる
   const amb = (globalThis as { __ambient?: Record<string, boolean> }).__ambient ?? {};
   const ambientOn = !(globalThis as { __ambientOff?: boolean }).__ambientOff;
-  const ambSway = ambientOn && amb.sway !== false;
-  const ambCritters = ambientOn && amb.critters !== false;
+  const ambSway = ambientOn && amb.sway !== false && !perfLow;
+  const ambCritters = ambientOn && amb.critters !== false && !perfLow;
   const maxButterflies = butterfliesForLevel(islandLevel(save));
 
   const occlusionDtSec = lastFrameNow == null ? 0 : Math.max(0, Math.min(0.2, (now - lastFrameNow) / 1000));
@@ -645,18 +689,11 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
   const drawShadow = (sx: number, sy: number, w: number, strength = 1) => {
     const rx = w * 0.42;
     const ry = rx * 0.42 * GROUND_DEPTH;
-    const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, rx);
-    g.addColorStop(0, `rgba(30,55,30,${(0.28 * strength).toFixed(3)})`);
-    g.addColorStop(1, 'rgba(30,55,30,0)');
-    ctx.save();
-    ctx.translate(0, sy);
-    ctx.scale(1, ry / rx);
-    ctx.translate(0, -sy);
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(sx, sy, rx, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    // 毎フレーム・影ごとにグラデーションを作らず、焼いた 1 枚の絵を縮めて描く（SI-37。drawImage 1 回 + globalAlpha）。
+    const prev = ctx.globalAlpha;
+    ctx.globalAlpha = prev * Math.min(1, strength);
+    ctx.drawImage(getShadowSprite(), sx - rx, sy - ry, rx * 2, ry * 2);
+    ctx.globalAlpha = prev;
   };
 
   /** 立つ物の落ち影（シルエットを右奥へ倒す）。(sx,sy) は足元、w,h は描画サイズ（画面 px）。 */
@@ -824,7 +861,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
   // --- 地面 ---
   if (state.terrain) {
     const t = state.terrain;
-    drawGroundImage(ctx, t.canvas, t.width * TERRAIN_PX, t.height * TERRAIN_PX, 0, 0, t.width * TILE, t.height * TILE, camera, viewport);
+    drawTerrainCached(ctx, t, camera, viewport);
     drawWaterSparkles(ctx, world, camera, viewport, now, minTx, minTy, maxTx, maxTy);
     if (ambientOn && amb.waves !== false) drawShoreWaves(ctx, world.width, world.height, world.ground, camera, viewport, now, minTx, minTy, maxTx, maxTy);
   }
@@ -1100,7 +1137,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
   // 雲の影（物の上にもかかる）と、ゆっくり呼吸するあたたかい光
   const region = regionAt(world, save.player.y);
   const inCave = region.id === 'cave';
-  if (ambientOn && amb.clouds !== false && !inCave) drawCloudShadows(ctx, camera, viewport, now, world.width * TILE, world.height * TILE);
+  if (ambientOn && amb.clouds !== false && !inCave && !perfLow) drawCloudShadows(ctx, camera, viewport, now, world.width * TILE, world.height * TILE);
   if (ambientOn && !inCave) {
     drawTreasureGlint(ctx, camera, viewport, now, todaysTreasure(save, now), save.player);
   }
@@ -1401,6 +1438,29 @@ function targetLabel(t: Target): string | null {
   if (t.kind === 'treasure') return '掘る';
   if (t.kind === 'furniture') return FURNITURE_BY_ID[t.furnitureId]?.name ?? null;
   return null;
+}
+
+/** 低負荷モード（フレームが遅い端末）。風の揺れ・蝶・落ち葉・雲の影を止めて、描く量を減らす（SI-37）。WorldView の動的解像度が切り替える。 */
+let perfLow = false;
+export function setPerfLow(low: boolean): void {
+  perfLow = low;
+}
+
+let shadowSprite: HTMLCanvasElement | null = null;
+/** 足元の影の元絵（やわらかい円。縦横に引き延ばして楕円にする）。1 度だけ焼く。 */
+function getShadowSprite(): HTMLCanvasElement {
+  if (shadowSprite) return shadowSprite;
+  const c = document.createElement('canvas');
+  c.width = 96;
+  c.height = 96;
+  const g = c.getContext('2d')!;
+  const gr = g.createRadialGradient(48, 48, 0, 48, 48, 48);
+  gr.addColorStop(0, 'rgba(30,55,30,0.28)');
+  gr.addColorStop(1, 'rgba(30,55,30,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 96, 96);
+  shadowSprite = c;
+  return c;
 }
 
 /** 描画の失敗は、同じ内容を 1 度だけ知らせる。 */

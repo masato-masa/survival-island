@@ -23,7 +23,7 @@ import {
   GROUND_DEPTH,
   worldToScreen,
 } from './camera';
-import { draw, effects, IMPACT_TIMES, type RenderState, type Vec2 } from './renderer';
+import { draw, effects, IMPACT_TIMES, setPerfLow, type RenderState, type Vec2 } from './renderer';
 import { NODES } from '@/game/data';
 import { playChop, playCollect, playDig, playMine, playPick, playStep } from '@/ui/sound';
 import { hapticHit } from '@/ui/haptics';
@@ -103,13 +103,18 @@ export function WorldView(props: WorldViewProps): JSX.Element {
     });
 
     let viewport: Viewport = { widthCssPx: 0, heightCssPx: 0, baseScale: 1 };
-    let dpr = window.devicePixelRatio || 1;
+    // 描く解像度（動的）: 端末の dpr（上限 2）から始め、フレームが遅いときは 0.5 ずつ下げ、余裕があれば戻す（SI-37）。
+    const dprCap = Math.min(2, window.devicePixelRatio || 1);
+    let dpr = dprCap;
+    let slowSince = 0;
+    let fastSince = 0;
+    let lastDprChange = 0;
+    let emaMs = 16;
 
     const resize = () => {
       const rect = container.getBoundingClientRect();
       const w = Math.max(1, rect.width);
       const h = Math.max(1, rect.height);
-      dpr = window.devicePixelRatio || 1;
       viewport = { widthCssPx: w, heightCssPx: h, baseScale: baseScaleFor(w, h), anchorY: CAMERA_ANCHOR_Y };
       canvas.width = Math.round(w * dpr);
       canvas.height = Math.round(h * dpr);
@@ -197,8 +202,42 @@ export function WorldView(props: WorldViewProps): JSX.Element {
 
     const loop = (t: number) => {
       raf = requestAnimationFrame(loop);
-      const dtMs = Math.min(MAX_DT_MS, t - lastT);
+      const rawDt = t - lastT;
+      const dtMs = Math.min(MAX_DT_MS, rawDt);
       lastT = t;
+      // 動的解像度: 80〜250ms 空いたフレームは（タブが裏だった等でなく）本当に遅かったものとして数える
+      if (rawDt < 250) {
+        emaMs = emaMs * 0.92 + rawDt * 0.08;
+        if (emaMs > 26 && dpr > 1) {
+          if (!slowSince) slowSince = t;
+          if (t - slowSince > 1200 && t - lastDprChange > 1500) {
+            dpr = Math.max(1, dpr - 0.5);
+            setPerfLow(dpr <= 1);
+            lastDprChange = t;
+            slowSince = 0;
+            emaMs = 16;
+            resize();
+          }
+        } else if (emaMs > 30 && dpr <= 1) {
+          // これ以上解像度を下げられない: 風・蝶などの飾りも止める
+          if (!slowSince) slowSince = t;
+          if (t - slowSince > 1500) setPerfLow(true);
+        } else {
+          slowSince = 0;
+        }
+        if (emaMs < 14 && dpr < dprCap) {
+          if (!fastSince) fastSince = t;
+          if (t - fastSince > 20000 && t - lastDprChange > 20000) {
+            dpr = Math.min(dprCap, dpr + 0.5);
+            setPerfLow(dpr <= 1);
+            lastDprChange = t;
+            fastSince = 0;
+            resize();
+          }
+        } else {
+          fastSince = 0;
+        }
+      }
       const dtSec = dtMs / 1000;
       const now = store.now();
 
