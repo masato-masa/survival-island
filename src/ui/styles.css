@@ -74,6 +74,7 @@ body {
   font-weight: 700;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation; /* ダブルタップ拡大を止める */
   overscroll-behavior: none;
 }
 
