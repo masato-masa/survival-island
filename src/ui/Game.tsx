@@ -4,7 +4,7 @@
 
 import { AnimatePresence } from 'motion/react';
 import { triggerDig } from '@/render/ambient';
-import { LIFE_RANK_STAMINA } from '@/game/lifeRank';
+import { LIFE_RANK_NAMES, LIFE_RANK_STAMINA, lifeRank } from '@/game/lifeRank';
 import { WEATHERS, weatherAt } from '@/game/weather';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
@@ -410,7 +410,13 @@ export function Game() {
               回復まで {formatCountdown(stamina.value < stamina.max ? stamina.nextInMs : 0)}
             </span>
 
-            <div className="gauge is-level" aria-label={`島レベル ${islandLevel}`}>
+            <div
+              className="gauge is-level hud-clickable"
+              role="button"
+              tabIndex={0}
+              aria-label={`島レベル ${islandLevel}${lifeRank(save) > 0 ? `、暮らしの位 ${LIFE_RANK_NAMES[lifeRank(save) - 1]}` : ''}。くわしく見る`}
+              onClick={() => setSheet({ kind: 'goal' })}
+            >
               <span className="gauge-icon">
                 <SproutIcon />
                 <span className="gauge-badge">{islandLevel}</span>
@@ -418,7 +424,7 @@ export function Game() {
               <span className="gauge-bar">
                 <span className="gauge-track"><span className="gauge-fill" style={{ width: `${levelProgress * 100}%` }} /></span>
                 <span className="gauge-text">
-                  {nextThreshold ? `あと${Math.max(0, nextThreshold - points.total)}pt` : 'MAX'}
+                  {nextThreshold ? `あと${Math.max(0, nextThreshold - points.total)}pt` : lifeRank(save) > 0 ? LIFE_RANK_NAMES[lifeRank(save) - 1] : 'MAX'}
                 </span>
               </span>
             </div>

@@ -24,7 +24,7 @@ import { todaysTreasure } from '@/game/treasure';
 import { weatherAt } from '@/game/weather';
 import { FURNITURE_BY_ID, ITEMS, NODES, STATIONS } from '@/game/data';
 import { cropProgress } from '@/game/time';
-import { allNodes, isBuildable, nodeAlive, nodeRequirement, placementRect } from '@/game/rules';
+import { allNodes, isBuildable, islandLevel, nodeAlive, nodeRequirement, placementRect } from '@/game/rules';
 import { store } from '@/game/store';
 import { regionAt } from '@/game/world';
 
@@ -47,6 +47,7 @@ import {
   swayAmpFor,
   windAt,
   drawTreasureGlint,
+  drawDaylight,
   drawWeather,
 } from './ambient';
 
@@ -612,6 +613,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
   const ambientOn = !(globalThis as { __ambientOff?: boolean }).__ambientOff;
   const ambSway = ambientOn && amb.sway !== false;
   const ambCritters = ambientOn && amb.critters !== false;
+  const maxButterflies = butterfliesForLevel(islandLevel(save));
 
   const occlusionDtSec = lastFrameNow == null ? 0 : Math.max(0, Math.min(0.2, (now - lastFrameNow) / 1000));
   lastFrameNow = now;
@@ -917,7 +919,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
         draw: () => drawNode(node, now, state, acting, drawOccludable, drawAtTile),
       });
       const stumpNow = save.nodes[node.id]?.stump === true;
-      if (ambCritters && node.kind === 'flower' && !node.growing && butterflies < MAX_BUTTERFLIES) {
+      if (ambCritters && node.kind === 'flower' && !node.growing && butterflies < maxButterflies) {
         // 花のまわりの蝶
         const b = butterflyAt(node.x, node.y, now);
         if (b) {
@@ -1101,6 +1103,7 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     drawTreasureGlint(ctx, camera, viewport, now, todaysTreasure(save, now), save.player);
   }
   if (ambientOn && amb.light !== false) drawLightBreath(ctx, W, H, now);
+  if (ambientOn && !inCave) drawDaylight(ctx, W, H, now);
   if (ambientOn && !inCave) drawWeather(ctx, W, H, now, weatherAt(now));
   // 今いる区画（島・洞窟）の外は塗りつぶす（同じ地図の別の行にあるもう一方を見せない）。
   // 島の下の端は、水の泡の帯が見えないよう半マス手前から海の色にする。
@@ -1496,7 +1499,8 @@ function drawNode(node: LiveNode, now: number, state: RenderState, acting: Timed
 }
 
 /** 1 画面に出す蝶・落ち葉の上限（にぎやかになりすぎないように）。 */
-const MAX_BUTTERFLIES = 4;
+/** 蝶の数は島レベルで増える（2 + レベル。レベル 5 で 7）。島が育つほど、にぎやかになる（SI-33）。 */
+const butterfliesForLevel = (level: number): number => 2 + Math.min(5, level);
 const MAX_LEAVES = 3;
 
 /** 主人公の当たり判定の箱（ワールド px）。見え隠れ・ゲージの位置に使う。 */

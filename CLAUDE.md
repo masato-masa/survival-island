@@ -130,4 +130,6 @@
 - **暮らしの位（SI-30）。** 暮らしの記録の段の合計（7 項目×3 段 = 21）が 6・12・18・21 で位が上がり、最大スタミナが +2 ずつ増える（`game/lifeRank.ts`、`rules.ts` の `staminaMax`）。
   位に着くまでの日数（1 日 40 スタミナ、粗い見積もり）は 3・10・25・39 日（`__tests__/liferank.test.ts`）。位が上がるとバナー（`lifeRank` の知らせ）。もくひょうの暮らしの記録に位と「あと N 段」。
 - 光る地面・きらめき・土しぶき（SI-29）は ChatGPT 製（`refs/gen/treasure.png` → `slice-gen.mjs treasure`、元画像は game-assets）。`ambient.ts` の `drawTreasureGlint`・`triggerDig`。
+- **島の景色の変化（SI-33、新しい絵なし）。** 時間帯の光（`ambient.ts` の `daylightAt`・`drawDaylight`。端末の時刻で朝=桃・夕=橙・夜=青を最大 0.2 の濃さで重ねる）、蝶の数は島レベルで増える（2+レベル、`renderer.ts` の `butterfliesForLevel`）。
+  島レベルのゲージは押せて（もくひょうを開く）、位が付くと「あと N pt」の代わりに位の名前が出る。島レベル別の絵（道しるべ・ランタンなど）は ChatGPT 待ち（Vault の backlog SI-32）。
 

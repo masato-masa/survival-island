@@ -1588,3 +1588,13 @@ body {
   font-weight: 800;
   color: var(--ink);
 }
+
+/* 島レベルのゲージは、タップで もくひょう（島レベル・暮らしの位の詳細）を開く。押せる範囲を 44px に */
+.gauge.is-level {
+  cursor: pointer;
+}
+.gauge.is-level::after {
+  content: '';
+  position: absolute;
+  inset: -8px -6px;
+}

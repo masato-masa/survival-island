@@ -528,3 +528,45 @@ export function drawTreasureGlint(
   }
   ctx.restore();
 }
+
+// ---------------------------------------------------------------------------
+// 時間帯の光（SI-33）。端末の時刻（朝・昼・夕・夜）で、画面全体にごく薄い色を重ねる。新しい絵は使わない。
+// 朝: 桃色のやわらかい光 / 昼: なし / 夕: 橙 / 夜: 青く暗い（見えなくならない程度。最大 0.2）。
+
+/** 時刻（0〜24 の小数）→ 重ねる色と濃さ。昼は null。 */
+export function daylightAt(hour: number): { rgb: [number, number, number]; alpha: number } | null {
+  const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+  const key: { h: number; rgb: [number, number, number]; a: number }[] = [
+    { h: 0, rgb: [30, 45, 110], a: 0.2 },
+    { h: 5, rgb: [30, 45, 110], a: 0.2 },
+    { h: 6.5, rgb: [255, 190, 170], a: 0.1 },
+    { h: 8, rgb: [255, 220, 190], a: 0.0 },
+    { h: 16, rgb: [255, 220, 190], a: 0.0 },
+    { h: 17.5, rgb: [255, 150, 70], a: 0.14 },
+    { h: 19, rgb: [150, 90, 130], a: 0.16 },
+    { h: 20.5, rgb: [30, 45, 110], a: 0.2 },
+    { h: 24, rgb: [30, 45, 110], a: 0.2 },
+  ];
+  const h = ((hour % 24) + 24) % 24;
+  for (let i = 0; i + 1 < key.length; i++) {
+    const a = key[i]!;
+    const b = key[i + 1]!;
+    if (h >= a.h && h <= b.h) {
+      const t = (h - a.h) / (b.h - a.h);
+      const alpha = lerp(a.a, b.a, t);
+      if (alpha < 0.005) return null;
+      return { rgb: [lerp(a.rgb[0], b.rgb[0], t), lerp(a.rgb[1], b.rgb[1], t), lerp(a.rgb[2], b.rgb[2], t)], alpha };
+    }
+  }
+  return null;
+}
+
+export function drawDaylight(ctx: Ctx, w: number, h: number, now: number): void {
+  const d = new Date(now);
+  const c = daylightAt(d.getHours() + d.getMinutes() / 60);
+  if (!c) return;
+  ctx.save();
+  ctx.fillStyle = `rgba(${Math.round(c.rgb[0])},${Math.round(c.rgb[1])},${Math.round(c.rgb[2])},${c.alpha.toFixed(3)})`;
+  ctx.fillRect(0, 0, w, h);
+  ctx.restore();
+}
