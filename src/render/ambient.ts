@@ -570,3 +570,13 @@ export function drawDaylight(ctx: Ctx, w: number, h: number, now: number): void 
   ctx.fillRect(0, 0, w, h);
   ctx.restore();
 }
+
+// 季節の薄い色（SI-35）: 春=桃・秋=橙・冬=青白（最大 0.1）。夏は何も重ねない。時間帯の光（drawDaylight）の下に重なる。
+export function drawSeasonTint(ctx: Ctx, w: number, h: number, season: 'spring' | 'summer' | 'autumn' | 'winter' | 'none'): void {
+  const c = season === 'spring' ? 'rgba(255,190,205,0.07)' : season === 'autumn' ? 'rgba(255,150,60,0.08)' : season === 'winter' ? 'rgba(205,225,255,0.12)' : null;
+  if (!c) return;
+  ctx.save();
+  ctx.fillStyle = c;
+  ctx.fillRect(0, 0, w, h);
+  ctx.restore();
+}

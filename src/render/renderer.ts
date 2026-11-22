@@ -20,6 +20,7 @@ import type {
   TimedAction,
   World,
 } from '@/game/types';
+import { seasonAt } from '@/game/season';
 import { todaysTreasure } from '@/game/treasure';
 import { weatherAt } from '@/game/weather';
 import { FURNITURE_BY_ID, ITEMS, NODES, STATIONS } from '@/game/data';
@@ -48,6 +49,7 @@ import {
   windAt,
   drawTreasureGlint,
   drawDaylight,
+  drawSeasonTint,
   drawWeather,
 } from './ambient';
 
@@ -1103,7 +1105,10 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
     drawTreasureGlint(ctx, camera, viewport, now, todaysTreasure(save, now), save.player);
   }
   if (ambientOn && amb.light !== false) drawLightBreath(ctx, W, H, now);
-  if (ambientOn && !inCave) drawDaylight(ctx, W, H, now);
+  if (ambientOn && !inCave) {
+    drawSeasonTint(ctx, W, H, seasonAt(now));
+    drawDaylight(ctx, W, H, now);
+  }
   if (ambientOn && !inCave) drawWeather(ctx, W, H, now, weatherAt(now));
   // 今いる区画（島・洞窟）の外は塗りつぶす（同じ地図の別の行にあるもう一方を見せない）。
   // 島の下の端は、水の泡の帯が見えないよう半マス手前から海の色にする。

@@ -1,6 +1,7 @@
 // プレイヤーの行動。すべて save を書き換えて Result を返す。
 // 行動にかかる時間（約 3 秒）はここでは見ない（store.ts が始めて、終わったときにここの関数で結果を出す）。
 
+import { cropHeadstart, fishBonus, flowerPetalBonus } from './season';
 import { digTreasure } from './treasure';
 import { CLOUDY_BUFF_FACTOR, RAIN_BIG_FISH_BONUS, RAIN_CROP_HEADSTART, weatherAt } from './weather';
 import {
@@ -153,10 +154,13 @@ export function hitNode(world: World, save: SaveState, node: HittableNode, now: 
 
   if (def.tool === 'gather') {
     // 花を摘む：摘むたびに drops が出る
-    addDrops(save, def.drops);
+    const gatherDrops: Drops = { ...def.drops };
+    const petals = node.kind === 'flower' ? flowerPetalBonus(now) : 0;
+    if (petals > 0) gatherDrops.petal = (gatherDrops.petal ?? 0) + petals;
+    addDrops(save, gatherDrops);
     const remaining = Math.max(0, hpAfter);
     events.push({ type: 'gathered', x: node.x, y: node.y, kind: node.kind, remaining }, xpEvent(1));
-    events.push({ type: 'dropped', x: node.x, y: node.y, items: { ...def.drops } });
+    events.push({ type: 'dropped', x: node.x, y: node.y, items: { ...gatherDrops } });
     if (remaining > 0) {
       save.nodes[node.id] = { hp: remaining, destroyedAt: null };
     } else {
@@ -339,7 +343,7 @@ function plantTiles(world: World, save: SaveState, plot: Plot, x: number, y: num
   let xpGained = 0;
   for (const t of candidates) {
     if (!spend(save, 1, now)) break;
-    state.tiles[key(t.x, t.y)] = { crop, plantedAt: weatherAt(now) === 'rainy' ? now - CROPS[crop].growMs * RAIN_CROP_HEADSTART : now };
+    state.tiles[key(t.x, t.y)] = { crop, plantedAt: now - CROPS[crop].growMs * ((weatherAt(now) === 'rainy' ? RAIN_CROP_HEADSTART : 0) + cropHeadstart(crop, now)) };
     planted.push(t);
     xpGained += 1;
   }
@@ -473,7 +477,7 @@ export function fishQuality(pos: number, swift = false): CatchQuality {
  */
 export function fish(save: SaveState, quality: CatchQuality, roll: number, now: number): Result {
   if (!spend(save, 1, now)) return { ok: false, reason: 'noStamina' };
-  const item = quality === 'perfect' ? (roll < ((hasBuff(save, 'bounty', now) ? BOUNTY_BIG_FISH_RATE : BIG_FISH_RATE) + (weatherAt(now) === 'rainy' ? RAIN_BIG_FISH_BONUS : 0)) ? 'bigFish' : 'fish') : quality === 'good' ? 'fish' : null;
+  const item = quality === 'perfect' ? (roll < ((hasBuff(save, 'bounty', now) ? BOUNTY_BIG_FISH_RATE : BIG_FISH_RATE) + (weatherAt(now) === 'rainy' ? RAIN_BIG_FISH_BONUS : 0) + fishBonus(now)) ? 'bigFish' : 'fish') : quality === 'good' ? 'fish' : null;
   if (item) addItem(save, item, 1, now);
   const events: GameEvent[] = [{ type: 'fished', item }];
   settleRequest(save, events, now);

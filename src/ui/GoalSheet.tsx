@@ -11,6 +11,7 @@ import { currentRequest, hasBuff, isAreaOpen } from '@/game/rules';
 import { islandPoints } from '@/game/score';
 import type { SaveState, World } from '@/game/types';
 
+import { SEASONS, seasonAt, type SeasonId } from '@/game/season';
 import { tomorrowWeather, WEATHERS, weatherAt } from '@/game/weather';
 
 import { WeatherIcon } from './icons';
@@ -48,10 +49,12 @@ export function GoalSheet({
             <b className="goal-weather-now">
               <WeatherIcon id={weatherAt(now)} />
               今日は{WEATHERS[weatherAt(now)].name}
+              {seasonAt(now) !== 'none' ? <small className="goal-season">（{SEASONS[seasonAt(now) as Exclude<SeasonId, 'none'>].name}）</small> : null}
             </b>
             {save.tower.stage >= 2 ? <span>あしたは{WEATHERS[tomorrowWeather(now)].name}</span> : null}
           </div>
           <p className="goal-main">{WEATHERS[weatherAt(now)].effect}</p>
+          {seasonAt(now) !== 'none' ? <p className="goal-note">{SEASONS[seasonAt(now) as Exclude<SeasonId, 'none'>].name}: {SEASONS[seasonAt(now) as Exclude<SeasonId, 'none'>].effect}</p> : null}
           {save.tower.stage < 2 ? <p className="goal-note">見張り台を 2 段階建て増すと、あしたの天気が分かります。</p> : null}
         </div>
         <div className="goal-card">

@@ -132,4 +132,7 @@
 - 光る地面・きらめき・土しぶき（SI-29）は ChatGPT 製（`refs/gen/treasure.png` → `slice-gen.mjs treasure`、元画像は game-assets）。`ambient.ts` の `drawTreasureGlint`・`triggerDig`。
 - **島の景色の変化（SI-33、新しい絵なし）。** 時間帯の光（`ambient.ts` の `daylightAt`・`drawDaylight`。端末の時刻で朝=桃・夕=橙・夜=青を最大 0.2 の濃さで重ねる）、蝶の数は島レベルで増える（2+レベル、`renderer.ts` の `butterfliesForLevel`）。
   島レベルのゲージは押せて（もくひょうを開く）、位が付くと「あと N pt」の代わりに位の名前が出る。島レベル別の絵（道しるべ・ランタンなど）は ChatGPT 待ち（Vault の backlog SI-32）。
+- **季節（SI-35）。** 日本時間の月から 春(3〜5)・夏(6〜8)・秋(9〜11)・冬(12〜2)（`game/season.ts`）。季節の作物は育ちが 3 割はやい（春カブ・夏ヒマワリ・秋トマト。植えた時点で進んだ状態にする）、冬はカブ以外 2 割おそい。
+  魚の大物率は 夏 +5%・秋 +10%・冬 -5%、春は花を摘むと花びら +1。画面は季節の薄い色（`drawSeasonTint`）。もくひょうの天気カードと あそびかた に出る。`?dev&season=winter` で確認用に決められる。
+  テストは `__tests__/setup/weather.ts` が `none`（何も効かない）に固定。`__tests__/season.test.ts` が 1 年の平均（作物の年平均の進み 2.5〜7.5%）を測る。季節ごとの新しい絵は ChatGPT 待ち（Vault の backlog SI-36）。
 

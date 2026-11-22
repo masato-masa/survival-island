@@ -1,3 +1,4 @@
+import { setSeasonOverride } from './game/season';
 import { setWeatherOverride } from './game/weather';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -14,6 +15,8 @@ import { loadArt } from './render/sprites';
   const q = new URLSearchParams(location.search);
   const w = q.get('weather');
   if (q.has('dev') && (w === 'sunny' || w === 'cloudy' || w === 'rainy')) setWeatherOverride(w);
+  const sn = q.get('season');
+  if (q.has('dev') && (sn === 'spring' || sn === 'summer' || sn === 'autumn' || sn === 'winter')) setSeasonOverride(sn);
 }
 // 音量の測定用（?dev）。各効果音の関数を window.__sound に出す。
 if (import.meta.env.DEV || new URLSearchParams(location.search).has('dev')) void import('./ui/sound').then((m) => ((window as unknown as { __sound: unknown }).__sound = m));

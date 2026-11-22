@@ -25,6 +25,27 @@ export function HelpSheet({ onClose }: { onClose: () => void }) {
 
         <section className="help-sec">
           <h3>
+            <WeatherIcon id="cloudy" />
+            季節（3 か月ごと）
+          </h3>
+          <ul>
+            <li>
+              <b>春</b>: カブが 3 割はやく育つ。花を摘むと花びらが 1 枚多い。
+            </li>
+            <li>
+              <b>夏</b>: ヒマワリが 3 割はやく育つ。大物が少し釣れやすい。
+            </li>
+            <li>
+              <b>秋</b>: トマトが 3 割はやく育つ。大物が釣れやすい。
+            </li>
+            <li>
+              <b>冬</b>: カブ以外の作物が 2 割おそい。大物は少し釣れにくい。
+            </li>
+          </ul>
+        </section>
+
+        <section className="help-sec">
+          <h3>
             <WeatherIcon id="sunny" />
             天気（日本時間の 0 時に変わる）
           </h3>
