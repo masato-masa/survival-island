@@ -1,3 +1,4 @@
+import type { TreasureState } from './treasure';
 import type { LifeState } from './lifelog';
 // ゲーム全体で使う型。描画にも React にも依存しない。
 // 座標はすべて「マス」単位。1 マス = 32 ワールドピクセル（描画側の都合）。
@@ -381,6 +382,8 @@ export interface SaveState {
   tower: TowerState;
   /** 暮らしの記録（SI-25）。 */
   life: LifeState;
+  /** たから探し（SI-28）。 */
+  treasure: TreasureState;
   /** 植えた苗木・花の種（"x,y" → 状態）。資源としての体力などは nodes["p:x,y"] に入る。 */
   planted: Record<string, PlantedState>;
   /** 最初から置く家具（作業台・柱など）を placements に入れ終えたか。古いセーブに一度だけ入れるための印。 */
@@ -448,6 +451,8 @@ export type GameEvent =
   | { type: 'fished'; item: 'fish' | 'bigFish' | null }
   | { type: 'placed'; slot: string; furniture: FurnitureId | null }
   /** 暮らしの記録（SI-25）の段を越えた。 */
+  /** 今日の宝を掘り当てた（SI-28）。 */
+  | { type: 'treasureFound'; items: Partial<Record<ItemId, number>>; x: number; y: number }
   | { type: 'lifeTier'; id: string; name: string; tier: number; reward: Partial<Record<ItemId, number>> }
   | { type: 'skill'; skill: SkillId; level: number };
 
@@ -477,5 +482,7 @@ export type Target =
   | { kind: 'sign'; x: number; y: number; plot: Plot }
   | { kind: 'chest'; x: number; y: number; chest: Chest }
   | { kind: 'station'; x: number; y: number; station: Station }
+  /** 今日のたから探しの宝（SI-28）。 */
+  | { kind: 'treasure'; x: number; y: number }
   /** 機能のある家具（作業台）。anchor は家具の左上マスの "x,y"。 */
   | { kind: 'furniture'; x: number; y: number; furnitureId: FurnitureId; anchor: string };

@@ -3,6 +3,7 @@
 import { FURNITURE_BY_ID, FURNITURE_FUNCTION, TARGET_ORIGIN_UP, TARGET_RADIUS } from './data';
 import { allNodes, canHit, nodeAlive, placementAt, placementRect } from './rules';
 import { isReady } from './time';
+import { todaysTreasure, treasureReach } from './treasure';
 import { key, worldIndex } from './world';
 import type { Dir, Fail, SaveState, Target, World } from './types';
 
@@ -121,6 +122,13 @@ export function findTarget(
         target: { kind: 'furniture', x: best.x, y: best.y, furnitureId, anchor },
       });
     }
+  }
+
+  // 今日のたから探しの宝（島レベル 5 以降に出る）
+  const treasure = todaysTreasure(save, now);
+  if (treasure) {
+    const d = treasureReach(px, py, treasure, TARGET_ORIGIN_UP);
+    if (d <= TARGET_RADIUS) candidates.push({ dist: d, x: treasure.x, y: treasure.y, target: { kind: 'treasure', x: treasure.x, y: treasure.y } });
   }
 
   if (candidates.length === 0) return null;

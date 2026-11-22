@@ -124,4 +124,7 @@
   `store.runAction` が `recordLife` を呼び、段を越えると `lifeTier` の知らせ（バナーと音）。`save.life`（古いセーブは空で読む）。もくひょうの「暮らしの記録」で進みが見える。
   ごほうびは「その段までの作業スタミナの 5〜33%」（`__tests__/lifelog.test.ts` が全段を測る）。数を変えたらそのテストを見る。
 - 効果音の音量は `scripts/measure-levels.js`・`measure-rain.js` で測る（足音・採取・食べる・釣り・雨音の RMS が 4.8dB 以内、ピーク -2.7dBFS 以下）。`?dev` で `window.__sound` が出る。
+- **たから探し（SI-28）。** 島レベル 5 以降、毎日 1 か所（日付から決まる。歩いて行ける空きマス、開いているエリアの中）に宝が出る（`game/treasure.ts`、`save.treasure`）。
+  近づくと地面がきらきら光り（`ambient.ts` の `drawTreasureGlint`、9 マス以内）、触ると 1 スタミナで掘って宝（作業 5〜6 相当、`TREASURES`）。手がかりは もくひょう（エリア名、見張り台 1 段で方角、3 段で距離）。
+  暮らしの記録に「たから探し」（3・10・30 回）。`__tests__/treasure.test.ts` が場所・手がかり・宝の強さを測る。
 

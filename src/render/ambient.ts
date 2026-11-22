@@ -11,7 +11,7 @@
 //
 // どれも 1 フレームに数十回の drawImage / 図形で済む量にしてある（スマホで 60fps を守る）。
 
-import { GROUND_DEPTH, HEIGHT_SCALE, project3, TILE, worldToScreen, type CameraState, type Viewport } from './camera';
+import { effectiveScale, GROUND_DEPTH, HEIGHT_SCALE, project3, TILE, worldToScreen, type CameraState, type Viewport } from './camera';
 
 import rainDropUrl from '@/assets/gen/rain_drop.png';
 import rainRippleUrl from '@/assets/gen/rain_ripple.png';
@@ -444,6 +444,56 @@ export function drawWeather(ctx: Ctx, w: number, h: number, now: number, weather
       ctx.globalAlpha = (1 - life) * 0.5;
       ctx.drawImage(rainRippleImg, x - rw / 2, y - rw * 0.2, rw, rw * 0.4);
     }
+  }
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
+// たから探しの光（SI-28）: 今日の宝のマスが、近づくほどはっきりきらきらする。遠くでは見えない。
+
+/** 光が見え始める距離（マス）。これより近いと見える。 */
+export const GLINT_RANGE = 9;
+
+export function drawTreasureGlint(
+  ctx: Ctx,
+  camera: CameraState,
+  viewport: Viewport,
+  now: number,
+  spot: { x: number; y: number },
+  player: { x: number; y: number },
+): void {
+  const dist = Math.hypot(spot.x + 0.5 - player.x, spot.y + 0.5 - player.y);
+  if (dist > GLINT_RANGE) return;
+  const near = 1 - dist / GLINT_RANGE; // 0（遠い）〜 1（そば）
+  const p = worldToScreen((spot.x + 0.5) * TILE, (spot.y + 0.5) * TILE, camera, viewport);
+  const t = now / 1000;
+  const pulse = 0.5 + 0.5 * Math.sin(TAU * (t / 1.6));
+  const r = (TILE * 0.28 + TILE * 0.18 * pulse) * (0.6 + 0.6 * near) * effectiveScale(camera, viewport.baseScale);
+  ctx.save();
+  ctx.globalAlpha = 0.35 + 0.55 * near * (0.6 + 0.4 * pulse);
+  // やわらかい光の玉
+  const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r * 1.6);
+  g.addColorStop(0, 'rgba(255,248,200,0.95)');
+  g.addColorStop(1, 'rgba(255,230,120,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, r * 1.6, 0, TAU);
+  ctx.fill();
+  // 4 方向のきらめき
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  for (let k = 0; k < 2; k++) {
+    const a = k * (Math.PI / 4) + t * 0.6;
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(a);
+    ctx.beginPath();
+    ctx.moveTo(0, -r * 1.2);
+    ctx.lineTo(r * 0.16, 0);
+    ctx.lineTo(0, r * 1.2);
+    ctx.lineTo(-r * 0.16, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
   }
   ctx.restore();
 }

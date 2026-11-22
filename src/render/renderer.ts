@@ -20,6 +20,7 @@ import type {
   TimedAction,
   World,
 } from '@/game/types';
+import { todaysTreasure } from '@/game/treasure';
 import { weatherAt } from '@/game/weather';
 import { FURNITURE_BY_ID, ITEMS, NODES, STATIONS } from '@/game/data';
 import { cropProgress } from '@/game/time';
@@ -45,6 +46,7 @@ import {
   liftPx,
   swayAmpFor,
   windAt,
+  drawTreasureGlint,
   drawWeather,
 } from './ambient';
 
@@ -1095,6 +1097,10 @@ export function draw(ctx: CanvasRenderingContext2D, state: RenderState): void {
   const region = regionAt(world, save.player.y);
   const inCave = region.id === 'cave';
   if (ambientOn && amb.clouds !== false && !inCave) drawCloudShadows(ctx, camera, viewport, now, world.width * TILE, world.height * TILE);
+  if (ambientOn && !inCave) {
+    const glint = todaysTreasure(save, now);
+    if (glint) drawTreasureGlint(ctx, camera, viewport, now, glint, save.player);
+  }
   if (ambientOn && amb.light !== false) drawLightBreath(ctx, W, H, now);
   if (ambientOn && !inCave) drawWeather(ctx, W, H, now, weatherAt(now));
   // 今いる区画（島・洞窟）の外は塗りつぶす（同じ地図の別の行にあるもう一方を見せない）。
@@ -1385,6 +1391,7 @@ function targetLabel(t: Target): string | null {
   if (t.kind === 'station') return STATIONS[t.station.kind].name;
   if (t.kind === 'sign') return '看板';
   if (t.kind === 'chest') return '宝箱';
+  if (t.kind === 'treasure') return '掘る';
   if (t.kind === 'furniture') return FURNITURE_BY_ID[t.furnitureId]?.name ?? null;
   return null;
 }

@@ -6,7 +6,7 @@ import { dailyDay } from './daily';
 import type { GameEvent, ItemId, SaveState } from './types';
 import { weatherAt } from './weather';
 
-export type LifeId = 'fish' | 'crop' | 'wood' | 'flower' | 'meal' | 'sky';
+export type LifeId = 'fish' | 'crop' | 'wood' | 'flower' | 'meal' | 'sky' | 'treasure';
 
 export interface LifeDef {
   id: LifeId;
@@ -26,6 +26,7 @@ export const LIFE: LifeDef[] = [
   { id: 'wood', name: 'きこり', unit: '本', tiers: [8, 30, 100], rewards: [{ sapling: 2 }, { sapling: 4 }, { sapling: 10 }], hint: '木を切り倒す' },
   { id: 'flower', name: '花つみ', unit: '輪', tiers: [10, 40, 120], rewards: [{ petal: 6 }, { petal: 16 }, { petal: 40 }], hint: '花を摘みきる' },
   { id: 'meal', name: 'ごはん好き', unit: '食', tiers: [5, 20, 60], rewards: [{ fish: 2 }, { fish: 3 }, { bigFish: 3 }], hint: '作業台で食べる' },
+  { id: 'treasure', name: 'たから探し', unit: '回', tiers: [3, 10, 30], rewards: [{ petal: 6 }, { copper: 4 }, { bigFish: 3 }], hint: '光る地面を掘る（島レベル 5 から）' },
   { id: 'sky', name: '三つの空', unit: '日', tiers: [1, 3, 8], rewards: [{ copper: 3 }, { copper: 6 }, { copper: 10 }], hint: '晴れ・くもり・雨を それぞれ遊ぶ' },
 ];
 
@@ -62,6 +63,7 @@ function gain(events: GameEvent[]): Partial<Record<LifeId, number>> {
       if (TREE_KINDS.has(ev.kind) && (ev.drops.wood ?? 0) > 0) add('wood', 1);
       else if (ev.kind === 'flower') add('flower', 1);
     } else if (ev.type === 'ate') add('meal', 1);
+    else if (ev.type === 'treasureFound') add('treasure', 1);
   }
   return g;
 }

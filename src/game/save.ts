@@ -1,3 +1,4 @@
+import { emptyTreasure } from './treasure';
 import { emptyLife } from './lifelog';
 // 新規セーブ、localStorage の読み書き、形式の補正。
 // localStorage に触るのはこのファイルだけ（try/catch で必ず守る）。
@@ -59,6 +60,7 @@ function newSaveBare(world: World, now: number): SaveState {
     ship: { stage: 0, giftDay: -1 },
     tower: { stage: 0, giftDay: -1 },
     life: emptyLife(),
+    treasure: emptyTreasure(),
     planted: {},
     seededV2: false,
     crafting: null,
@@ -97,6 +99,7 @@ export function migrate(raw: unknown, world: World = getWorld()): SaveState {
     ship: { stage: r.ship?.stage ?? 0, giftDay: r.ship?.giftDay ?? -1 },
     tower: { stage: r.tower?.stage ?? 0, giftDay: r.tower?.giftDay ?? -1 },
     life: { ...emptyLife(), ...(r.life ?? {}), days: { ...emptyLife().days, ...(r.life?.days ?? {}) } },
+    treasure: { ...emptyTreasure(), ...(r.treasure ?? {}) },
     planted: r.planted ?? {},
     seededV2: r.seededV2 ?? false,
     crafting: r.crafting ?? null,

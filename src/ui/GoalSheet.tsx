@@ -3,6 +3,8 @@
 
 import { AREA_ORDER, AREAS, BUFFS, ISLAND_LEVEL_POINTS, ITEMS, REQUESTS, SHIP_STAGES, SKILLS, TOWER_STAGES } from '@/game/data';
 import { LIFE, lifeCount } from '@/game/lifelog';
+import { compass } from '@/game/tower';
+import { TREASURE_LEVEL, treasureClue } from '@/game/treasure';
 import { dailyOpen, dailyTitle, dailyView } from '@/game/daily';
 import { currentRequest, hasBuff, isAreaOpen } from '@/game/rules';
 import { islandPoints } from '@/game/score';
@@ -34,6 +36,7 @@ export function GoalSheet({
     Object.entries(m)
       .map(([k, n]) => `${ITEMS[k as keyof typeof ITEMS].name}×${n}`)
       .join('・');
+  const clue = treasureClue(world, save, now, compass);
   const openAreas = AREA_ORDER.filter((area) => isAreaOpen(world, save, area)).length;
 
   return (
@@ -135,6 +138,23 @@ export function GoalSheet({
               : '島一番の高さになりました'}
           </p>
         </div>
+        {islandLevel >= TREASURE_LEVEL ? (
+          <div className="goal-card">
+            <div className="goal-head">
+              <b>今日のたから探し</b>
+              <span>{clue?.found ? '見つけた' : 'まだ'}</span>
+            </div>
+            {clue && !clue.found ? (
+              <p className="goal-main">
+                手がかり: {clue.area}のどこかが光っている
+                {clue.dir ? `（いまの場所から ${clue.dir}${clue.dist != null ? `へ 約 ${clue.dist} マス` : 'の方角'}）` : ''}
+              </p>
+            ) : (
+              <p className="goal-note">{clue?.found ? 'あしたは また ちがう場所に出ます。' : '日付が替わると光る場所が出ます。'}</p>
+            )}
+            {!clue?.dir && !clue?.found ? <p className="goal-note">見張り台を建て増すと、方角と距離が分かります。</p> : null}
+          </div>
+        ) : null}
         <div className="goal-card">
           <div className="goal-head">
             <b>暮らしの記録</b>

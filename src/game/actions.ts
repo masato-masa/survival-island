@@ -1,6 +1,7 @@
 // プレイヤーの行動。すべて save を書き換えて Result を返す。
 // 行動にかかる時間（約 3 秒）はここでは見ない（store.ts が始めて、終わったときにここの関数で結果を出す）。
 
+import { digTreasure } from './treasure';
 import { CLOUDY_BUFF_FACTOR, RAIN_BIG_FISH_BONUS, RAIN_CROP_HEADSTART, weatherAt } from './weather';
 import {
   BIG_FISH_RATE,
@@ -531,4 +532,9 @@ export function travel(world: World, save: SaveState, from: 'caveEntrance' | 'ca
   save.player.y = to.y + 1.5;
   save.player.dir = 'down';
   return { ok: true, events: [{ type: 'traveled', to: from === 'caveEntrance' ? 'cave' : 'island' }] };
+}
+
+/** 今日のたから探しの宝を掘る（SI-28）。1 スタミナ。 */
+export function dig(save: SaveState, now: number): Result {
+  return digTreasure(save, now, spend);
 }

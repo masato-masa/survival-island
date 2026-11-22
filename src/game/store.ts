@@ -1,3 +1,4 @@
+import { rollTreasure, TREASURE_LEVEL } from './treasure';
 import { recordLife } from './lifelog';
 // 実行時の状態（セーブ＋時計）。React と Canvas の両方がこれを購読する。
 // ここだけが Date.now() を直接呼んでよい（now()）。
@@ -6,7 +7,7 @@ import { ISLAND_LEVEL_POINTS, NODES, WALK_SPEED } from './data';
 import * as Actions from './actions';
 import * as Ship from './ship';
 import * as Tower from './tower';
-import { actionMs, islandLevel as islandLevelOf, liveNodeById, needSkillDetail, staminaMax } from './rules';
+import { actionMs, isAreaOpen, islandLevel as islandLevelOf, liveNodeById, needSkillDetail, staminaMax } from './rules';
 import { applyRespawns, currentStamina } from './time';
 import { islandPoints } from './score';
 import { findTarget, tryMove } from './target';
@@ -24,8 +25,7 @@ import type {
   SkillId,
   Target,
   TimedAction,
-  World,
-} from './types';
+  World, AreaId } from './types';
 
 const DEV_OFFSET_KEY = 'survival-island:devOffset';
 
@@ -234,7 +234,10 @@ export function createStore(opts: CreateStoreOptions = {}): GameStore {
       applyRespawns(world, save, t, playerTile);
       const afterNodes = Object.keys(save.nodes).length;
       const stam = currentStamina(save, t);
-      const changed = beforeNodes !== afterNodes || stam.value !== lastStaminaValue;
+      // たから探し（島レベル 5 以降）: 日が替わったら今日の場所を決める
+      const treasureDay = save.treasure.day;
+      if (islandLevelOf(save) >= TREASURE_LEVEL) rollTreasure(world, save, t, (a) => isAreaOpen(world, save, a as AreaId));
+      const changed = beforeNodes !== afterNodes || stam.value !== lastStaminaValue || treasureDay !== save.treasure.day;
       lastStaminaValue = stam.value;
       if (changed) notify();
     },
@@ -248,6 +251,12 @@ export function createStore(opts: CreateStoreOptions = {}): GameStore {
 
       // 看板・設備・作業台は画面を開くだけ。開くのは UI 側（target().kind を見て判断する）。
       if (tgt.kind === 'sign' || tgt.kind === 'station' || tgt.kind === 'furniture') return { ok: true, events: [] };
+
+      if (tgt.kind === 'treasure') {
+        const result = Actions.dig(save, t);
+        if (result.ok) lastActionInfo = { at: t, x: tgt.x, y: tgt.y, kind: 'other' };
+        return runAction(result);
+      }
 
       if (tgt.kind === 'chest') {
         const result = Actions.openChest(world, save, tgt.chest);

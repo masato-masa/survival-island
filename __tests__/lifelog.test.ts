@@ -68,7 +68,7 @@ describe('暮らしの記録', () => {
 
   it('ごほうびは、その段までの作業スタミナの 4 割以下（なさすぎもしない 5% 以上）。sky は日数なので除く', () => {
     // 1 つあたりの作業スタミナと、品物の値打ち（スタミナ換算。cooking・ship のテストと同じ見積もり）
-    const costPer: Record<string, number> = { fish: 1.5, crop: 2, wood: 4, flower: 3, meal: 4 };
+    const costPer: Record<string, number> = { fish: 1.5, crop: 2, wood: 4, flower: 3, meal: 4, treasure: 3 };
     const value: Record<string, number> = { copper: 2.5, sapling: 2, petal: 0.5, turnip: 2, sunflower: 2.5, tomato: 3, fish: 1.5, bigFish: 5, wood: 1, stone: 1, flowerSeed: 1 };
     const rows: string[] = [];
     for (const d of LIFE) {

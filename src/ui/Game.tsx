@@ -182,6 +182,11 @@ export function Game() {
             hapticHarvest();
             break;
           }
+          case 'treasureFound':
+            showBanner(`光る地面を掘った！ ${Object.entries(ev.items).map(([k, n]) => `${ITEMS[k as keyof typeof ITEMS].name}×${n}`).join('・')}`);
+            playGift();
+            hapticHarvest();
+            break;
           case 'lifeTier':
             showBanner(`暮らしの記録「${ev.name}」${ev.tier} 段目！ ${Object.entries(ev.reward).map(([k, n]) => `${ITEMS[k as keyof typeof ITEMS].name}×${n}`).join('・')}`);
             playRequestDone();
