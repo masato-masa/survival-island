@@ -393,7 +393,7 @@ const rainDropImg = new Image();
 rainDropImg.src = rainDropUrl;
 const rainRippleImg = new Image();
 rainRippleImg.src = rainRippleUrl;
-const RAIN_DROPS = 46;
+const RAIN_DROPS = 26; // 雨でも島の様子が読めるよう、水滴は少なめ・薄めに（SI-39。46→26、不透明度 0.55〜0.85→0.35〜0.6）
 const RIPPLES = 14;
 
 export function drawWeather(ctx: Ctx, w: number, h: number, now: number, weather: 'sunny' | 'cloudy' | 'rainy' | 'plain'): void {
@@ -424,7 +424,7 @@ export function drawWeather(ctx: Ctx, w: number, h: number, now: number, weather
     if (dropsReady) {
       const dw = 6 + near * 5;
       const dh = dw * (rainDropImg.naturalHeight / rainDropImg.naturalWidth);
-      ctx.globalAlpha = 0.55 + near * 0.3;
+      ctx.globalAlpha = 0.35 + near * 0.25;
       ctx.drawImage(rainDropImg, x, y, dw, dh);
     } else {
       ctx.moveTo(x, y);
